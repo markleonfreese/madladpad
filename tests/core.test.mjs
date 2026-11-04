@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeProject, normaliseProject, nextQuantizedTime, findRecorderMime, extensionForMime, PAD_COUNT, supportedMediaFile, isPadAudible } from '../site/core.js';
+import { makeProject, normaliseProject, nextQuantizedTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, PAD_COUNT, supportedMediaFile, isPadAudible } from '../site/core.js';
 
 test('initial layout has 12 visible pads and 16 backing slots', () => {
   const project = makeProject();
@@ -24,6 +24,14 @@ test('recorder preserves true video container rather than relabelling WebM as MP
   const supported = type => type === 'video/webm;codecs=vp8,opus';
   const mime = findRecorderMime(supported);
   assert.equal(extensionForMime(mime), 'webm');
+});
+test('audio recorder picks a supported audio container and matching extension',()=>{
+  const mime=findAudioRecorderMime(type=>type==='audio/webm;codecs=opus');
+  assert.equal(mime,'audio/webm;codecs=opus');
+  assert.equal(findAudioRecorderMime(()=>false),'');
+  assert.equal(extensionForAudioMime('audio/mp4;codecs=mp4a.40.2'),'m4a');
+  assert.equal(extensionForAudioMime('audio/ogg;codecs=opus'),'ogg');
+  assert.equal(extensionForAudioMime(mime),'webm');
 });
 test('picker only imports recognised media types', () => {
   assert.equal(supportedMediaFile({type:'video/mp4'}), true);

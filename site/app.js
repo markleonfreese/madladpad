@@ -1,4 +1,4 @@
-import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, makeProject, normaliseProject, clamp, supportedMediaFile, findRecorderMime, extensionForMime, isPadAudible } from './core.js';
+import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, makeProject, normaliseProject, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, isPadAudible } from './core.js';
 import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, blobAsDataUrl, dataUrlAsBlob } from './storage.js';
 import { pickFromDrive, pickFromPhotos } from './google.js';
@@ -12,6 +12,7 @@ let transportTimer = null;
 let nextStep = 0;
 let nextStepTime = 0;
 let recording = null;
+let audioRecording = null;
 let cameraStream = null;
 let saveTimer;
 let toastTimer;
@@ -312,6 +313,7 @@ function download(blob,name) {
 
 async function toggleSetRecording() {
   if (recording) { if(recording.state!=='inactive')recording.stop(); return; }
+  if(audioRecording)return notify('Stop the audio-only take before recording an audiovisual set.');
   if (!window.MediaRecorder || !$('capture-canvas').captureStream) return notify('Video recording is unavailable in this browser.');
   try {
     await audio.unlock();
@@ -338,6 +340,34 @@ async function toggleSetRecording() {
     $('start-record').setAttribute('aria-pressed','true');
     notify('Recording your audiovisual performance. Tap pads or start the beat maker.');
   } catch(error) { drawing=false;recording=null;notify(error.message); }
+}
+
+async function toggleAudioRecording() {
+  if(audioRecording){if(audioRecording.state!=='inactive')audioRecording.stop();return;}
+  if(recording)return notify('Stop the audiovisual set before recording an audio-only mix.');
+  if(!window.MediaRecorder)return notify('Audio recording is unavailable in this browser.');
+  try{
+    await audio.unlock();
+    const stream=audio.recordOut.stream;
+    if(!stream.getAudioTracks().length)throw new Error('The audio mix stream is unavailable.');
+    const mime=findAudioRecorderMime();
+    const recorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined),chunks=[];
+    recorder.ondataavailable=event=>{if(event.data.size)chunks.push(event.data);};
+    recorder.onerror=event=>notify(`Audio recording failed: ${event.error?.message||'unknown error'}`);
+    recorder.onstop=()=>{
+      const type=recorder.mimeType||mime||'audio/webm';
+      const blob=new Blob(chunks,{type});
+      if(blob.size)download(blob,`madladpad-audio-${Date.now()}.${extensionForAudioMime(type)}`);
+      else notify('The browser did not capture audio.');
+      audioRecording=null;
+      $('record-audio').classList.remove('recording');$('record-audio').textContent='♪ RECORD AUDIO MIX';
+      $('record-audio').setAttribute('aria-pressed','false');
+    };
+    audioRecording=recorder;recorder.start(200);
+    $('record-audio').classList.add('recording');$('record-audio').textContent='■ STOP AUDIO TAKE';
+    $('record-audio').setAttribute('aria-pressed','true');
+    notify('Recording the master audio mix. Stop to download the supported audio format.');
+  }catch(error){audioRecording=null;notify(error.message);}
 }
 
 async function openCamera() {
@@ -472,6 +502,7 @@ function bindControls() {
   $('clear-steps').addEventListener('click',()=>{project.pads[selected].steps.fill(false);renderSteps();queueSave();});
   $('track-view').addEventListener('click',()=>{trackGridVisible=!trackGridVisible;$('steps').hidden=trackGridVisible;$('track-grid').hidden=!trackGridVisible;$('track-view').textContent=trackGridVisible?'SELECTED PAD':'ALL TRACKS';$('track-view').setAttribute('aria-pressed',String(trackGridVisible));if(trackGridVisible)renderTrackGrid();});
   $('start-record').addEventListener('click',toggleSetRecording);
+  $('record-audio').addEventListener('click',toggleAudioRecording);
   $('google-drive').addEventListener('click',()=>pickFromDrive(files=>placeFiles(files)).catch(error=>notify(error.message)));
   $('google-photos').addEventListener('click',()=>pickFromPhotos(files=>placeFiles(files),notify).catch(error=>notify(error.message)));
   window.addEventListener('madladpad-error',event=>notify(event.detail));
