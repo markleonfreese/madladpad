@@ -182,28 +182,27 @@ try {
           levels.push(Math.sqrt(energy/Math.max(1,end-start)));
         }
         const peak=Math.max(...levels),active=levels.map((level,index)=>level>peak*.1?index:-1).filter(index=>index>=0);
-        let bestStart=0,bestRms=0;const window=Math.floor(decoded.sampleRate*.08);
-        for(let start=0;start+window<samples.length;start+=block){
-          let energy=0;for(let i=start;i<start+window;i++)energy+=samples[i]*samples[i];
-          const rms=Math.sqrt(energy/window);if(rms>bestRms){bestRms=rms;bestStart=start;}
-        }
+        const activeStart=active[0]*block,activeEnd=(active.at(-1)+1)*block;
+        const window=Math.min(Math.floor(decoded.sampleRate*.3),Math.floor((activeEnd-activeStart)*.6));
+        const bestStart=Math.floor(activeStart+((activeEnd-activeStart-window)/2));
         let crossings=0;for(let i=bestStart+1;i<bestStart+window;i++)if(samples[i-1]<=0&&samples[i]>0)crossings++;
         return {frequency:crossings*decoded.sampleRate/window,activeDuration:active.length*block/decoded.sampleRate,containerDuration:decoded.duration,peakRms:peak};
       }finally{await context.close();}
     },audioBytes.toString('base64'));
     const neutral=await analyzeMix(await recordPitchMix());
     assert.ok(neutral.peakRms>.02,`neutral audio playback should reach the recording mix, got ${JSON.stringify(neutral)}`);
-    assert.ok(Math.abs(neutral.frequency-440)<25,`Pitch 0 should preserve the 440 Hz source, got ${neutral.frequency.toFixed(1)} Hz`);
+    assert.ok(Math.abs(neutral.frequency-440)<10,`Pitch 0 should preserve the 440 Hz source, got ${neutral.frequency.toFixed(1)} Hz`);
     assert.ok(Math.abs(neutral.activeDuration-1)<.2,`Speed 1× should retain the one-second sample duration, got ${neutral.activeDuration.toFixed(2)} s`);
     await setRange('#pitch',4);
     const speedOne=await analyzeMix(await recordPitchMix());
-    assert.ok(Math.abs(speedOne.frequency-554.4)<35,`Pitch +4 at Speed 1× should export near 554 Hz, got ${JSON.stringify(speedOne)}`);
+    assert.ok(Math.abs(speedOne.frequency-554.4)<10,`Pitch +4 at Speed 1× should export near 554 Hz, got ${JSON.stringify(speedOne)}`);
     assert.ok(Math.abs(speedOne.activeDuration-1)<.2,`Pitch +4 should preserve the one-second duration at Speed 1×, got ${speedOne.activeDuration.toFixed(2)} s`);
     await setRange('#speed',2);
     const speedTwo=await analyzeMix(await recordPitchMix());
-    assert.ok(Math.abs(speedTwo.frequency-554.4)<35,`Pitch +4 at Speed 2× should stay near 554 Hz, got ${JSON.stringify(speedTwo)}`);
+    assert.ok(Math.abs(speedTwo.frequency-554.4)<10,`Pitch +4 at Speed 2× should stay near 554 Hz, got ${JSON.stringify(speedTwo)}`);
     assert.ok(Math.abs(speedTwo.activeDuration-.5)<.2,`Speed 2× should halve the sample duration, got ${speedTwo.activeDuration.toFixed(2)} s`);
-    checkpoint(`integrated Pitch export (${neutral.frequency.toFixed(0)} Hz neutral, ${speedOne.frequency.toFixed(0)} Hz at 1× and ${speedTwo.frequency.toFixed(0)} Hz at 2×)`);
+    assert.ok(Math.abs(speedOne.frequency-speedTwo.frequency)<10,`Pitch should stay stable across Speed values, got ${speedOne.frequency.toFixed(1)} Hz at 1× and ${speedTwo.frequency.toFixed(1)} Hz at 2×`);
+    checkpoint(`integrated Pitch export (${neutral.frequency.toFixed(1)} Hz neutral, ${speedOne.frequency.toFixed(1)} Hz at 1× and ${speedTwo.frequency.toFixed(1)} Hz at 2×)`);
 
     if(recordingSupported){
       const videoTone=await page.evaluate(async()=>{
@@ -237,13 +236,14 @@ try {
         await page.locator('.pad video').nth(1).evaluate(video=>{video.pause();video.currentTime=0;});
         await setRange('#pitch',4);await setRange('#speed',1);
         const videoOne=await analyzeMix(await recordPitchMix(1,2300));
-        assert.ok(Math.abs(videoOne.frequency-554.4)<40,`video Pitch +4 at Speed 1× should export near 554 Hz, got ${JSON.stringify(videoOne)}`);
+        assert.ok(Math.abs(videoOne.frequency-554.4)<10,`video Pitch +4 at Speed 1× should export near 554 Hz, got ${JSON.stringify(videoOne)}`);
         assert.ok(Math.abs(videoOne.activeDuration-2)<.3,`video should play for about two seconds at Speed 1×, got ${videoOne.activeDuration.toFixed(2)} s`);
         await setRange('#speed',2);
         const videoTwo=await analyzeMix(await recordPitchMix(1,2300));
-        assert.ok(Math.abs(videoTwo.frequency-554.4)<40,`video Pitch +4 at Speed 2× should stay near 554 Hz, got ${JSON.stringify(videoTwo)}`);
+        assert.ok(Math.abs(videoTwo.frequency-554.4)<10,`video Pitch +4 at Speed 2× should stay near 554 Hz, got ${JSON.stringify(videoTwo)}`);
         assert.ok(Math.abs(videoTwo.activeDuration-1)<.25,`video should play for about one second at Speed 2×, got ${videoTwo.activeDuration.toFixed(2)} s`);
-        checkpoint(`video-element Pitch export (${videoOne.frequency.toFixed(0)} Hz at 1× and ${videoTwo.frequency.toFixed(0)} Hz at 2×)`);
+        assert.ok(Math.abs(videoOne.frequency-videoTwo.frequency)<10,`video Pitch should stay stable across Speed values, got ${videoOne.frequency.toFixed(1)} Hz at 1× and ${videoTwo.frequency.toFixed(1)} Hz at 2×`);
+        checkpoint(`video-element Pitch export (${videoOne.frequency.toFixed(1)} Hz at 1× and ${videoTwo.frequency.toFixed(1)} Hz at 2×)`);
       }else{
         console.log('Skipped video Pitch export: synthetic VP8/Opus MediaRecorder format is unavailable.');
       }
