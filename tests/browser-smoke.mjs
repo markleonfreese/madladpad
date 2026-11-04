@@ -1,8 +1,9 @@
 // Run after installing Playwright and Chromium; uses disposable browser storage.
 import { chromium } from 'playwright';
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
-import { resolve, extname } from 'node:path';
+import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
+import { resolve, extname, join } from 'node:path';
+import { tmpdir } from 'node:os';
 import assert from 'node:assert/strict';
 import { access } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -35,13 +36,16 @@ regionWav.writeUInt32LE(16,16);regionWav.writeUInt16LE(1,20);regionWav.writeUInt
 regionWav.writeUInt32LE(wavSampleRate,24);regionWav.writeUInt32LE(wavSampleRate*2,28);regionWav.writeUInt16LE(2,32);
 regionWav.writeUInt16LE(16,34);regionWav.write('data',36);regionWav.writeUInt32LE(regionFrames*2,40);
 for(const second of [.5,2,3.5])for(let i=0;i<80;i++)regionWav.writeInt16LE(Math.round(18000*Math.sin(i*.8)),44+Math.round(second*wavSampleRate+i)*2);
-let browser;
+let browser, browserTemp;
 try {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = `http://localhost:${server.address().port}`;
+  browserTemp=await mkdtemp(join(tmpdir(),'madladpad-smoke-'));
+  const micFixturePath=join(browserTemp,'microphone-tone.wav');
+  await writeFile(micFixturePath,wav);
   const executablePath=process.env.MADLADPAD_CHROMIUM_PATH;
   if(executablePath) await access(executablePath);
-  browser = await chromium.launch({headless:true,args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream'],...(executablePath?{executablePath}:{})});
+  browser = await chromium.launch({headless:true,args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream',`--use-file-for-audio-capture=${micFixturePath}`],...(executablePath?{executablePath}:{})});
   const context = await browser.newContext({acceptDownloads:true});
   await context.grantPermissions(['camera','microphone'],{origin});
   await context.route('**/*', route => {
@@ -265,6 +269,21 @@ try {
     assert.equal(await page.locator('#voice-overdub-layers .vocal-layer button').nth(2).isEnabled(),true,'a decodable raw take should be previewable');
     await page.locator('#voice-overdub-layers .vocal-layer button').nth(2).click();
     await page.locator('#play-seq').click();
+    const vocalMixDownload=page.waitForEvent('download',{timeout:8000});
+    await page.locator('#record-audio').click();
+    await vocalRow.locator('button').nth(2).click();
+    await page.waitForTimeout(500);
+    await page.locator('#record-audio').click();
+    const vocalMixFile=await vocalMixDownload;
+    const vocalMixBytes=await readFile(await vocalMixFile.path());
+    const vocalMixRms=await page.evaluate(async encoded=>{
+      const bytes=Uint8Array.from(atob(encoded),character=>character.charCodeAt(0));
+      const context=new AudioContext();
+      try { const decoded=await context.decodeAudioData(bytes.buffer);const samples=decoded.getChannelData(0);return Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length); }
+      finally { await context.close(); }
+    },vocalMixBytes.toString('base64'));
+    assert.ok(vocalMixRms>.01,`a saved vocal overdub should be audible in the exported master mix, got RMS ${vocalMixRms}`);
+    checkpoint('saved vocal overdub reaches the exported audio mix');
   }
   await page.waitForTimeout(500);
   await page.reload();
@@ -533,5 +552,6 @@ try {
   console.log('Browser smoke passed: layouts, demo/keyboard, live patterns/scenes, integrated Pitch/Speed audio exports, audio/video recording, adaptive one-to-three-clip composition, local media, pack round-trip, offline reopen and mobile overflow.');
 } finally {
   if (browser) await browser.close();
+  if (browserTemp) await rm(browserTemp,{recursive:true,force:true});
   await new Promise(resolve => server.close(resolve));
 }
