@@ -22,11 +22,13 @@ const server = createServer(async (req, res) => {
   catch { res.writeHead(404).end(); }
 });
 const wait = (page, selector) => page.waitForSelector(selector, {timeout: 10000});
-const wav = Buffer.alloc(44 + 1600);
-wav.write('RIFF', 0); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8);
-wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
-wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(16000, 28); wav.writeUInt16LE(2, 32);
-wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(1600, 40);
+const wavSampleRate=8000,wavFrames=8000;
+const wav=Buffer.alloc(44+wavFrames*2);
+wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);
+wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);
+wav.writeUInt32LE(wavSampleRate,24);wav.writeUInt32LE(wavSampleRate*2,28);wav.writeUInt16LE(2,32);
+wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(wavFrames*2,40);
+for(let frame=0;frame<wavFrames;frame++)wav.writeInt16LE(Math.round(12000*Math.sin(2*Math.PI*440*frame/wavSampleRate)),44+frame*2);
 let browser;
 try {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -133,6 +135,60 @@ try {
   assert.equal(await page.locator('#scene-select option').count(),1,'named scenes should persist across reload');
   assert.ok(await page.locator('#steps .step.on').count()>0,'scene pattern should persist across reload');
   checkpoint('local audio import and reload');
+  if(audioRecordingSupported){
+    await page.waitForFunction(()=>!document.querySelector('#pitch').disabled);
+    const fixtureRms=await page.evaluate(async encoded=>{const bytes=Uint8Array.from(atob(encoded),character=>character.charCodeAt(0));const context=new AudioContext();const decoded=await context.decodeAudioData(bytes.buffer);const samples=decoded.getChannelData(0);const rms=Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length);await context.close();return {duration:decoded.duration,rms};},wav.toString('base64'));
+    assert.ok(fixtureRms.rms>.2,`generated WAV should contain a 440 Hz tone, got ${JSON.stringify(fixtureRms)}`);
+    const setRange=async(id,value)=>page.locator(id).evaluate((element,next)=>{element.value=String(next);element.dispatchEvent(new Event('input',{bubbles:true}));},value);
+    await setRange('#pitch',0);
+    const recordPitchMix=async()=>{
+      const downloaded=page.waitForEvent('download',{timeout:8000});
+      await page.locator('#record-audio').click();
+      await page.waitForFunction(()=>document.querySelector('#record-audio').textContent.includes('STOP AUDIO TAKE'));
+      await page.locator('.pad-hit').first().click();
+      await page.waitForTimeout(1300);
+      await page.locator('#record-audio').click();
+      const file=await downloaded;
+      return readFile(await file.path());
+    };
+    const analyzeMix=async audioBytes=>page.evaluate(async encoded=>{
+      const bytes=Uint8Array.from(atob(encoded),character=>character.charCodeAt(0));
+      const context=new AudioContext();
+      try{
+        const decoded=await context.decodeAudioData(bytes.buffer);
+        const samples=decoded.getChannelData(0),block=Math.max(1,Math.floor(decoded.sampleRate*.01));
+        const levels=[];
+        for(let start=0;start<samples.length;start+=block){
+          let energy=0;const end=Math.min(samples.length,start+block);
+          for(let i=start;i<end;i++)energy+=samples[i]*samples[i];
+          levels.push(Math.sqrt(energy/Math.max(1,end-start)));
+        }
+        const peak=Math.max(...levels),active=levels.map((level,index)=>level>peak*.1?index:-1).filter(index=>index>=0);
+        let bestStart=0,bestRms=0;const window=Math.floor(decoded.sampleRate*.08);
+        for(let start=0;start+window<samples.length;start+=block){
+          let energy=0;for(let i=start;i<start+window;i++)energy+=samples[i]*samples[i];
+          const rms=Math.sqrt(energy/window);if(rms>bestRms){bestRms=rms;bestStart=start;}
+        }
+        let crossings=0;for(let i=bestStart+1;i<bestStart+window;i++)if(samples[i-1]<=0&&samples[i]>0)crossings++;
+        return {frequency:crossings*decoded.sampleRate/window,activeDuration:active.length*block/decoded.sampleRate,containerDuration:decoded.duration,peakRms:peak};
+      }finally{await context.close();}
+    },audioBytes.toString('base64'));
+    const neutral=await analyzeMix(await recordPitchMix());
+    assert.ok(neutral.peakRms>.02,`neutral audio playback should reach the recording mix, got ${JSON.stringify(neutral)}`);
+    assert.ok(Math.abs(neutral.frequency-440)<25,`Pitch 0 should preserve the 440 Hz source, got ${neutral.frequency.toFixed(1)} Hz`);
+    assert.ok(Math.abs(neutral.activeDuration-1)<.2,`Speed 1× should retain the one-second sample duration, got ${neutral.activeDuration.toFixed(2)} s`);
+    await setRange('#pitch',4);
+    const speedOne=await analyzeMix(await recordPitchMix());
+    assert.ok(Math.abs(speedOne.frequency-554.4)<35,`Pitch +4 at Speed 1× should export near 554 Hz, got ${JSON.stringify(speedOne)}`);
+    assert.ok(Math.abs(speedOne.activeDuration-1)<.2,`Pitch +4 should preserve the one-second duration at Speed 1×, got ${speedOne.activeDuration.toFixed(2)} s`);
+    await setRange('#speed',2);
+    const speedTwo=await analyzeMix(await recordPitchMix());
+    assert.ok(Math.abs(speedTwo.frequency-554.4)<35,`Pitch +4 at Speed 2× should stay near 554 Hz, got ${JSON.stringify(speedTwo)}`);
+    assert.ok(Math.abs(speedTwo.activeDuration-.5)<.2,`Speed 2× should halve the sample duration, got ${speedTwo.activeDuration.toFixed(2)} s`);
+    checkpoint(`integrated Pitch export (${neutral.frequency.toFixed(0)} Hz neutral, ${speedOne.frequency.toFixed(0)} Hz at 1× and ${speedTwo.frequency.toFixed(0)} Hz at 2×)`);
+  }else{
+    console.log('Skipped integrated Pitch export: MediaRecorder or AudioContext is unavailable.');
+  }
   const downloadPromise = page.waitForEvent('download');
   await page.locator('#export-button').click();
   const download = await downloadPromise;
@@ -238,7 +294,7 @@ try {
   await page.setViewportSize({width:390,height:844});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'mobile layout should not overflow horizontally');
   assert.deepEqual(errors, []);
-  console.log('Browser smoke passed: layouts, demo/keyboard, live patterns/scenes, audio/video recording, adaptive one-to-three-clip composition, local media, pack round-trip, offline reopen and mobile overflow.');
+  console.log('Browser smoke passed: layouts, demo/keyboard, live patterns/scenes, integrated Pitch/Speed audio exports, audio/video recording, adaptive one-to-three-clip composition, local media, pack round-trip, offline reopen and mobile overflow.');
 } finally {
   if (browser) await browser.close();
   await new Promise(resolve => server.close(resolve));
