@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeProject, normaliseProject, nextQuantizedTime, findRecorderMime, extensionForMime, PAD_COUNT, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime } from '../site/core.js';
+import { makeProject, normaliseProject, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime } from '../site/core.js';
 
 test('initial layout has 12 visible pads and 16 backing slots', () => {
   const project = makeProject();
@@ -19,6 +19,18 @@ test('malformed project metadata is bounded and cannot inject extra pads', () =>
 test('quantisation schedules forward on 16th-note grid', () => {
   assert.equal(nextQuantizedTime(1.07, 0, 120, '1/16'), 1.125);
   assert.equal(nextQuantizedTime(1.07, 0, 120, 'off'), 1.07);
+});
+test('scene launch schedules on the next bar and scenes normalize safely',()=>{
+  assert.equal(nextBarTime(.5,0,120),2);
+  assert.equal(nextBarTime(2,0,120),2);
+  assert.equal(nextBarTime(2.01,0,120),4);
+  assert.equal(nextBarTime(2.01,0,60),4);
+  const p=normaliseProject({scenes:[{name:'A'.repeat(60),pads:[{steps:[true],stepOffsets:[.25,3]}]},...Array.from({length:12},()=>({}))]});
+  assert.equal(p.scenes.length,MAX_SCENES);
+  assert.equal(p.scenes[0].name.length,32);
+  assert.equal(p.scenes[0].pads[0].steps[0],true);
+  assert.deepEqual(p.scenes[0].pads[0].stepOffsets.slice(0,2),[.25,.9999]);
+  assert.deepEqual(makeProject().scenes,[]);
 });
 test('pattern capture can snap or retain timing offsets within a step',()=>{
   assert.deepEqual(captureStepPosition(.1,120,'nearest'),{step:1,offset:0});

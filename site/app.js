@@ -1,4 +1,4 @@
-import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, makeProject, normaliseProject, clamp, supportedMediaFile, findRecorderMime, extensionForMime, isPadAudible, captureStepPosition, stepTriggerTime } from './core.js';
+import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, makeProject, normaliseProject, clamp, supportedMediaFile, findRecorderMime, extensionForMime, isPadAudible, captureStepPosition, stepTriggerTime, nextBarTime } from './core.js';
 import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, blobAsDataUrl, dataUrlAsBlob } from './storage.js';
 import { pickFromDrive, pickFromPhotos } from './google.js';
@@ -14,6 +14,8 @@ let nextStepTime = 0;
 let recording = null;
 let patternRecording = null;
 let patternUndoSnapshot = null;
+let pendingScene = null;
+let selectedSceneIndex = -1;
 let cameraStream = null;
 let saveTimer;
 let toastTimer;
@@ -172,8 +174,69 @@ function renderSession() {
   $('layout-select').value = project.layout;
   $('bpm-input').value = project.bpm;
   $('quantize-select').value = project.quantize;
-  renderGrid(); renderControls(); renderSteps();
+  renderGrid(); renderControls(); renderSteps(); renderScenes();
   audio.setTransport(project.bpm,project.quantize);
+}
+
+function sceneSnapshot(name){
+  return {name,pads:project.pads.map(pad=>({steps:[...pad.steps],stepOffsets:[...pad.stepOffsets]}))};
+}
+
+function renderScenes(){
+  const select=$('scene-select');select.replaceChildren();
+  if(!project.scenes.length){const option=document.createElement('option');option.value='';option.textContent='No saved scenes';option.disabled=true;select.append(option);selectedSceneIndex=-1;$('scene-status').textContent=pendingScene?`Queued: ${pendingScene.scene.name} · next bar`:'Save the current pattern as a named scene.';}
+  else {
+    selectedSceneIndex=clamp(selectedSceneIndex<0?0:selectedSceneIndex,0,project.scenes.length-1);
+    project.scenes.forEach((scene,index)=>{const option=document.createElement('option');option.value=String(index);option.textContent=scene.name;select.append(option);});
+    select.value=String(selectedSceneIndex);$('scene-name').value=project.scenes[selectedSceneIndex].name;
+    $('scene-status').textContent=pendingScene?`Queued: ${pendingScene.scene.name} · next bar`:`${project.scenes.length} of ${MAX_SCENES} scenes saved.`;
+  }
+  $('save-scene').disabled=project.scenes.length>=MAX_SCENES||!$('scene-name').value.trim();
+  $('update-scene').disabled=selectedSceneIndex<0;
+  $('launch-scene').disabled=selectedSceneIndex<0;
+  $('launch-scene').textContent=transportTimer?'QUEUE NEXT BAR':'LOAD SCENE';
+  $('delete-scene').disabled=selectedSceneIndex<0;
+}
+
+function applyScene(scene){
+  project.pads.forEach((pad,id)=>{
+    const lane=scene.pads[id]||{};
+    pad.steps=Array.from({length:16},(_,step)=>Boolean(lane.steps?.[step]));
+    pad.stepOffsets=Array.from({length:16},(_,step)=>clamp(lane.stepOffsets?.[step]??0,0,.9999));
+  });
+  renderSteps();queueSave();
+}
+
+function saveScene(){
+  const name=$('scene-name').value.trim().slice(0,32);
+  if(!name)return notify('Give this scene a name first.');
+  if(project.scenes.length>=MAX_SCENES)return notify(`You can save up to ${MAX_SCENES} scenes in a project.`);
+  project.scenes.push(sceneSnapshot(name));selectedSceneIndex=project.scenes.length-1;renderScenes();queueSave();notify(`Scene “${name}” saved.`);
+}
+
+function updateScene(){
+  if(selectedSceneIndex<0)return;
+  const name=$('scene-name').value.trim().slice(0,32)||project.scenes[selectedSceneIndex].name;
+  project.scenes[selectedSceneIndex]=sceneSnapshot(name);renderScenes();queueSave();notify(`Scene “${name}” updated.`);
+}
+
+function deleteScene(){
+  if(selectedSceneIndex<0)return;
+  const scene=project.scenes[selectedSceneIndex];
+  if(!confirm(`Delete the saved scene “${scene.name}”?`))return;
+  project.scenes.splice(selectedSceneIndex,1);
+  if(pendingScene?.scene.name===scene.name)pendingScene=null;
+  selectedSceneIndex=Math.min(selectedSceneIndex,project.scenes.length-1);renderScenes();queueSave();
+}
+
+function launchScene(){
+  if(selectedSceneIndex<0)return;
+  const scene=JSON.parse(JSON.stringify(project.scenes[selectedSceneIndex]));
+  if(transportTimer){
+    const earliest=Math.max(audio.context.currentTime+.14,nextStepTime);
+    pendingScene={scene,at:nextBarTime(earliest,audio.transportEpoch,project.bpm)};
+    renderScenes();notify(`Scene “${scene.name}” queued for the next bar.`);
+  } else {applyScene(scene);notify(`Scene “${scene.name}” loaded.`);}
 }
 
 async function playPad(id, scheduledAt) {
@@ -287,6 +350,7 @@ function startSequencer() {
     const tick=() => {
       while (nextStepTime<audio.context.currentTime+.12) {
         const time=nextStepTime;
+        if(pendingScene&&time>=pendingScene.at-1e-4){const queued=pendingScene;pendingScene=null;applyScene(queued.scene);renderScenes();notify(`Scene “${queued.scene.name}” launched.`);}
         const step=nextStep%16;
         project.pads.slice(0,PAD_COUNT[project.layout]).forEach(pad => {
           if (pad.steps[step]&&padIsAudible(pad.id)) audio.trigger(pad.id,pad,flashPad,stepTriggerTime(time,project.bpm,pad.stepOffsets?.[step]||0));
@@ -299,6 +363,7 @@ function startSequencer() {
     transportTimer=setInterval(tick,25);
     tick();
     $('play-seq').textContent='■ STOP'; $('play-seq').classList.add('active');
+    renderScenes();
   }).catch(error=>notify(error.message));
 }
 
@@ -310,6 +375,8 @@ function updateBeatIndicator(step) {
 
 function stopSequencer() {
   clearInterval(transportTimer); transportTimer=null;
+  if(pendingScene){pendingScene=null;renderScenes();notify('Queued scene canceled because the sequencer stopped.');}
+  else renderScenes();
   $('play-seq').textContent='▶ PLAY'; $('play-seq').classList.remove('active');
   [...$('steps').children].forEach(el=>el.classList.remove('current'));
   $('track-grid').querySelectorAll('.current').forEach(el=>el.classList.remove('current'));
@@ -528,6 +595,12 @@ function bindControls() {
   $('clear-steps').addEventListener('click',()=>{project.pads[selected].steps.fill(false);project.pads[selected].stepOffsets.fill(0);patternUndoSnapshot=null;renderSteps();renderPatternRecordingState();queueSave();});
   $('record-pattern').addEventListener('click',togglePatternRecording);
   $('undo-pattern').addEventListener('click',undoPatternRecording);
+  $('scene-select').addEventListener('change',event=>{selectedSceneIndex=Number(event.target.value);renderScenes();});
+  $('scene-name').addEventListener('input',()=>{$('save-scene').disabled=project.scenes.length>=MAX_SCENES||!$('scene-name').value.trim();});
+  $('save-scene').addEventListener('click',saveScene);
+  $('update-scene').addEventListener('click',updateScene);
+  $('launch-scene').addEventListener('click',launchScene);
+  $('delete-scene').addEventListener('click',deleteScene);
   $('track-view').addEventListener('click',()=>{trackGridVisible=!trackGridVisible;$('steps').hidden=trackGridVisible;$('track-grid').hidden=!trackGridVisible;$('track-view').textContent=trackGridVisible?'SELECTED PAD':'ALL TRACKS';$('track-view').setAttribute('aria-pressed',String(trackGridVisible));if(trackGridVisible)renderTrackGrid();});
   $('start-record').addEventListener('click',toggleSetRecording);
   $('google-drive').addEventListener('click',()=>pickFromDrive(files=>placeFiles(files)).catch(error=>notify(error.message)));
