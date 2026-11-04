@@ -33,8 +33,9 @@ try {
   const origin = `http://localhost:${server.address().port}`;
   const executablePath=process.env.MADLADPAD_CHROMIUM_PATH;
   if(executablePath) await access(executablePath);
-  browser = await chromium.launch({headless:true,...(executablePath?{executablePath}:{})});
+  browser = await chromium.launch({headless:true,args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream'],...(executablePath?{executablePath}:{})});
   const context = await browser.newContext({acceptDownloads:true});
+  await context.grantPermissions(['camera','microphone'],{origin});
   await context.route('**/*', route => {
     const url = route.request().url();
     return url.startsWith(`${origin}/`) ? route.continue() : route.abort();
@@ -148,6 +149,35 @@ try {
   await page.getByText(/synthetic.wav.*stored on this device/).waitFor();
   assert.equal(await page.locator('#project-title').inputValue(), 'Smoke pack');
   checkpoint('pack round-trip');
+  const captureSupported=await page.evaluate(()=>Boolean(navigator.mediaDevices?.getUserMedia&&window.MediaRecorder));
+  if(captureSupported){
+    await page.locator('#camera-button').click();
+    await page.locator('#capture-target-dialog').waitFor({state:'visible'});
+    const captureTarget=Number(await page.locator('#capture-target-select').inputValue());
+    assert.notEqual(captureTarget,0,'occupied pad media should remain protected until Keep');
+    await page.locator('#capture-target-new').click();
+    await page.locator('#camera-dialog').waitFor({state:'visible'});
+    await page.locator('#camera-length').selectOption('3');
+    await page.waitForFunction(()=>!document.querySelector('#camera-capture').disabled);
+    await page.locator('#camera-capture').click();
+    await page.waitForFunction(()=>document.querySelector('#camera-capture').textContent.includes('STOP'));
+    await page.waitForTimeout(700);
+    await page.locator('#camera-capture').click();
+    await page.locator('#camera-keep').waitFor({state:'visible'});
+    await page.waitForFunction(()=>!document.querySelector('#camera-keep').disabled);
+    await page.locator('#camera-keep').click();
+    await page.waitForFunction(()=>!document.querySelector('#camera-dialog').open&&document.querySelector('#sample-info').textContent.includes('stored on this device'));
+    await page.reload();
+    await page.getByText(/synthetic.wav.*stored on this device/).waitFor();
+    const capturePackPromise=page.waitForEvent('download');
+    await page.locator('#export-button').click();
+    const capturePack=JSON.parse(await readFile(await (await capturePackPromise).path(),'utf8'));
+    assert.ok(capturePack.media[0].startsWith('data:audio/'),'saving a new capture must preserve the occupied pad');
+    assert.ok(capturePack.media[captureTarget]?.startsWith('data:video/'),'kept camera media should survive a project-pack export');
+    checkpoint('fake camera capture and safe save-as-new');
+  }else{
+    console.log('Skipped camera capture: getUserMedia or MediaRecorder is unavailable.');
+  }
   await page.waitForFunction(async()=>{
     if(!('serviceWorker' in navigator))return false;
     const registrations=await navigator.serviceWorker.getRegistrations();
