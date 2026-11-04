@@ -4,3 +4,4 @@ node_modules/
 site/google-config.local.js
 site/voice-inference-worker.bundle.js
 site/ort-wasm-simd-threaded.wasm
+site/ort-wasm-simd-threaded.mjs

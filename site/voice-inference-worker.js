@@ -9,7 +9,10 @@ self.onmessage = async event => {
   try {
     env.allowLocalModels = false;
     env.allowRemoteModels = true;
-    env.backends.onnx.wasm.wasmPaths = '/ort-wasm-simd-threaded.wasm';
+    env.backends.onnx.wasm.wasmPaths = {
+      mjs: '/ort-wasm-simd-threaded.mjs',
+      wasm: '/ort-wasm-simd-threaded.wasm'
+    };
     env.backends.onnx.wasm.numThreads = 1;
     const asr = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en', {
       dtype: 'q8', device: 'wasm', progress_callback: state => {
