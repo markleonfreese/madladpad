@@ -26,10 +26,10 @@
       </div>
     </header>
 
-    <div class="intro">
+    <section class="intro" aria-label="Introduction">
       <div><p class="overline"><span class="live-dot"></span> THE WORLD IS YOUR INSTRUMENT</p><h2>Collect the moment.<br><em>Play the unexpected.</em></h2></div>
       <p>Record a door slam. Sample a laugh. Chop up a holiday video. Turn ordinary moments into extraordinary noise.</p>
-    </div>
+    </section>
 
     <section class="transport-panel" aria-label="Performance controls">
       <div class="project-name"><label for="project-title">YOUR SESSION</label><input id="project-title" maxlength="80" value="Untitled mixtape" aria-label="Project name"></div>
@@ -44,7 +44,7 @@
     <main class="workspace">
       <section class="performance-area" aria-label="Sampler grid">
         <div class="section-label"><span>01 / PLAYGROUND</span><span>TOUCH · KEYS · MIDI</span></div>
-        <div id="pad-grid" class="pad-grid layout-3x4" aria-label="Playable sample pads"></div>
+        <div id="pad-grid" class="pad-grid layout-3x4" role="group" aria-label="Playable sample pads"></div>
         <div class="pad-bottom">
           <p>Tap a loaded pad to play. Tap an empty pad to add a sound. Use Q W E R / A S D F / Z X C V on a keyboard.</p>
           <button id="demo-button" class="pill-button" aria-pressed="false">TRY DEMO SOUNDS</button>

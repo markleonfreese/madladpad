@@ -1,16 +1,24 @@
-# Browser smoke (experimental)
+# Browser smoke
 
-This script is an **unverified draft**, not a passing CI gate. It depends on the demo and pack fixes in PR #3. It uses a disposable Chromium profile, synthetic silent WAV, an ephemeral local HTTP server, and blocks off-origin requests. It does not touch the live service or real media.
+This local Chromium smoke suite depends on the demo and pack fixes in PR #3. It uses a disposable browser context, synthetic audio, an ephemeral local HTTP server, and blocks off-origin requests. It does not touch the live service or real media.
 
-From the repository root with Node and npm installed:
+From the repository root with Node and npm installed, install the locked dependencies and the Playwright Chromium build once:
 
 ```sh
-npm install --no-save playwright@1.64.1
+npm ci --ignore-scripts
 npx playwright install chromium
-node tests/browser-smoke.mjs
+npm run test:browser
 ```
 
-The intended checks are layout changes, demo triggering without page errors, sequencer start/stop, local WAV import, IndexedDB reload, and pack export/import. This has only passed `node --check`; execution stopped before launch because Chromium was unavailable and its download returned an invalid archive in the development environment. Selectors, timing, codec support, and the complete flow need validation on a working browser before introducing CI. Video, recordings, actual quota errors, service-worker offline behaviour, mobile touch and iOS Safari are not covered.
+The browser executable can also be supplied when it is already installed locally:
+
+```sh
+MADLADPAD_CHROMIUM_PATH="/path/to/chrome-or-chromium" npm run test:browser
+```
+
+The suite checks initial load with axe-core 4.12.1, 12/4/16 pad layouts, demo and keyboard playback, sequencer start/stop, local WAV import, IndexedDB reload, pack export/import, MediaRecorder set capture where supported, service-worker offline reopen, and 390px horizontal overflow. It passed locally with Playwright 1.64.1 and managed Chrome for Testing 152.0.7977.82. This is desktop headless Chromium evidence. It does not establish camera/microphone permissions, video file codec coverage, real IndexedDB quota failures, physical touch behaviour, or iOS Safari. Run `npm test` separately for the Node regression suite.
+
+The test initially used `127.0.0.1`; the app only registers its service worker for HTTPS or the `localhost` hostname. It now binds the ephemeral server on loopback and navigates through `localhost`, exercising the installable/offline path without changing application trust rules.
 
 ## Deployment preparation (no deploy)
 
