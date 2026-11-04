@@ -75,6 +75,8 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(origin);
   await wait(page, '.pad-hit');
+  const rapLayout=await page.locator('#rap-title').evaluate(title=>({rap:title.closest('.voice-card').getBoundingClientRect().width,melody:document.querySelector('#melody-title').closest('.voice-card').getBoundingClientRect().width}));
+  assert.ok(rapLayout.rap>rapLayout.melody*1.8,`desktop rap writing should use the full Voice Lab width for readable 16-bar entry: ${JSON.stringify(rapLayout)}`);
   checkpoint('initial load');
   assert.equal(await page.locator('.pad:not([hidden])').count(), 12);
   await page.addScriptTag({path:axePath});
@@ -612,6 +614,8 @@ try {
   await page.setViewportSize({width:390,height:844});
   const mobileLayout=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('body *')].filter(el=>el.getBoundingClientRect().right>innerWidth+1).slice(0,12).map(el=>({tag:el.tagName,id:el.id,className:typeof el.className==='string'?el.className:'',right:el.getBoundingClientRect().right}))}));
   assert.equal(mobileLayout.scroll<=mobileLayout.width,true,`mobile layout should not overflow horizontally: ${JSON.stringify(mobileLayout)}`);
+  const mobileRap=await page.locator('#rap-title').evaluate(title=>title.closest('.voice-card').getBoundingClientRect().width);
+  assert.ok(mobileRap<mobileLayout.width,`mobile rap editor should stay within the single-column Voice Lab: ${mobileRap}px of ${mobileLayout.width}px`);
   assert.deepEqual(errors, []);
   console.log('Browser smoke passed: layouts, demo/keyboard, live patterns/scenes, integrated Pitch/Speed audio exports, audio/video recording, adaptive one-to-three-clip composition, local media, pack round-trip, offline reopen and mobile overflow.');
 } finally {
