@@ -562,6 +562,19 @@ try {
     const performance=performanceResult.download;
     assert.ok((await readFile(await performance.path())).length>100,'adaptive audiovisual performance should export encoded media');
     checkpoint('adaptive performance capture transitions one-to-two-to-three clips');
+
+    const deniedPad=await page.locator('.pad').evaluateAll(cards=>cards.findIndex(card=>card.classList.contains('empty')&&!card.hidden));
+    assert.notEqual(deniedPad,-1,'an empty pad should remain available for permission-denial coverage');
+    await page.evaluate(()=>{
+      Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,value:()=>Promise.reject(new DOMException('Permission denied','NotAllowedError'))});
+    });
+    await page.locator('.pad-hit').nth(deniedPad).click();
+    await page.locator('#pad-source-dialog').waitFor({state:'visible'});
+    await page.locator('#pad-record').click();
+    await page.waitForFunction(()=>document.querySelector('#toast').textContent.includes('Camera unavailable'),null,{timeout:5000});
+    await page.waitForFunction(()=>!document.querySelector('#camera-dialog').open);
+    assert.equal(await page.locator('.pad').nth(deniedPad).evaluate(card=>card.classList.contains('empty')),true,'denied camera and microphone access must not create a take on the target pad');
+    checkpoint('camera and microphone permission denial leaves target pad empty');
   }else{
     console.log('Skipped camera capture: getUserMedia or MediaRecorder is unavailable.');
   }
