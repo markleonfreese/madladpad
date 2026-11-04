@@ -1,4 +1,4 @@
-import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, makeProject, normaliseProject, clamp, supportedMediaFile, findRecorderMime, extensionForMime, isPadAudible } from './core.js';
+import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, makeProject, normaliseProject, clamp, supportedMediaFile, findRecorderMime, extensionForMime, isPadAudible, captureStepPosition, stepTriggerTime } from './core.js';
 import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, blobAsDataUrl, dataUrlAsBlob } from './storage.js';
 import { pickFromDrive, pickFromPhotos } from './google.js';
@@ -12,6 +12,8 @@ let transportTimer = null;
 let nextStep = 0;
 let nextStepTime = 0;
 let recording = null;
+let patternRecording = null;
+let patternUndoSnapshot = null;
 let cameraStream = null;
 let saveTimer;
 let toastTimer;
@@ -135,8 +137,12 @@ function renderSteps() {
     button.textContent = String(i+1).padStart(2,'0');
     button.setAttribute('aria-label',`Step ${i+1} ${enabled?'on':'off'}`);
     button.setAttribute('aria-pressed',String(enabled));
+    button.disabled=Boolean(patternRecording);
     button.addEventListener('click', () => {
+      if(patternRecording)return;
+      patternUndoSnapshot=null;renderPatternRecordingState();
       project.pads[selected].steps[i] = !project.pads[selected].steps[i];
+      project.pads[selected].stepOffsets[i]=0;
       button.classList.toggle('on',project.pads[selected].steps[i]);button.setAttribute('aria-pressed',String(project.pads[selected].steps[i]));button.setAttribute('aria-label',`Step ${i+1} ${project.pads[selected].steps[i]?'on':'off'}`);
       renderTrackGrid();queueSave();
     });
@@ -155,7 +161,7 @@ function renderTrackGrid(){
     for(const [key,label] of [['muted','M'],['solo','S']]){const button=document.createElement('button');button.type='button';button.dataset.control=key;button.className=`track-toggle${pad[key]?' active':''}`;button.textContent=label;button.setAttribute('aria-label',`${pad[key]?'Disable':'Enable'} ${key} for pad ${id+1}`);button.setAttribute('aria-pressed',String(pad[key]));button.addEventListener('click',()=>{pad[key]=!pad[key];renderTrackGrid();queueSave();});head.append(button);}
     const gain=document.createElement('input');gain.type='range';gain.min='0';gain.max='150';gain.value=String(Math.round(pad.volume*100));gain.className='track-gain';gain.setAttribute('aria-label',`Volume for pad ${id+1}`);gain.addEventListener('input',()=>{pad.volume=Number(gain.value)/100;if(selected===id){$('volume').value=gain.value;$('volume-out').textContent=`${gain.value}%`;}queueSave();});head.append(gain);row.append(head);
     const cells=document.createElement('div');cells.className='track-steps';
-    pad.steps.forEach((enabled,index)=>{const button=document.createElement('button');button.type='button';button.dataset.step=String(index);button.className=`step${enabled?' on':''}`;button.textContent=String(index+1).padStart(2,'0');button.setAttribute('aria-label',`Pad ${id+1}, step ${index+1}, ${enabled?'on':'off'}`);button.setAttribute('aria-pressed',String(enabled));button.addEventListener('click',()=>{pad.steps[index]=!pad.steps[index];renderSteps();queueSave();});cells.append(button);});row.append(cells);
+    pad.steps.forEach((enabled,index)=>{const button=document.createElement('button');button.type='button';button.dataset.step=String(index);button.className=`step${enabled?' on':''}`;button.textContent=String(index+1).padStart(2,'0');button.setAttribute('aria-label',`Pad ${id+1}, step ${index+1}, ${enabled?'on':'off'}`);button.setAttribute('aria-pressed',String(enabled));button.disabled=Boolean(patternRecording);button.addEventListener('click',()=>{if(patternRecording)return;patternUndoSnapshot=null;renderPatternRecordingState();pad.steps[index]=!pad.steps[index];pad.stepOffsets[index]=0;renderSteps();queueSave();});cells.append(button);});row.append(cells);
     if(hasSolo&&!pad.solo)row.classList.add('solo-muted');holder.append(row);
   }
   if(focused?.pad!==undefined){const target=holder.querySelector(`.track-row[data-pad="${focused.pad}"] [${focused.control?`data-control="${focused.control}"`:`data-step="${focused.step}"`}]`);target?.focus();}
@@ -174,9 +180,57 @@ async function playPad(id, scheduledAt) {
   if(!padIsAudible(id))return;
   await audio.unlock();
   audio.setTransport(project.bpm,project.quantize);
+  if(!audio.demoEnabled&&!audio.sources.get(id)?.file){notify('This pad is empty. Add a clip or switch on demo sounds.');return;}
+  if(patternRecording)capturePatternTap(id);
   if (!audio.trigger(id,project.pads[id],flashPad,scheduledAt)) {
     notify('This pad is empty. Add a clip or switch on demo sounds.');
   }
+}
+
+function renderPatternRecordingState(){
+  const active=Boolean(patternRecording),button=$('record-pattern');
+  button.textContent=active?'■ STOP TAKE':'● RECORD PATTERN';
+  button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));
+  $('pattern-take-mode').disabled=active;$('pattern-quantize').disabled=active;
+  $('auto-beat').disabled=active;$('clear-steps').disabled=active;
+  $('undo-pattern').disabled=active||!patternUndoSnapshot;
+  $('pattern-record-status').textContent=active
+    ?`${patternRecording.mode==='replace'?'Replace':'Overdub'} · ${patternRecording.quantize==='nearest'?'nearest 16th':'free timing'}`
+    :patternUndoSnapshot?'Take saved locally · undo available':'Ready to record pad taps into the 16-step loop.';
+}
+
+function capturePatternTap(id){
+  const take=patternRecording,pad=project.pads[id];
+  const elapsed=audio.context.currentTime-take.startedAt;
+  if(elapsed<0)return;
+  const position=captureStepPosition(elapsed,take.bpm,take.quantize);
+  pad.steps[position.step]=true;
+  pad.stepOffsets[position.step]=position.offset;
+  renderSteps();queueSave();
+}
+
+async function togglePatternRecording(){
+  if(patternRecording){
+    patternRecording=null;renderSteps();renderPatternRecordingState();queueSave();
+    $('record-pattern').blur();notify('Pattern take saved on this device.');return;
+  }
+  try{await audio.unlock();}catch(error){notify(`Could not start pattern recording: ${error.message}`);return;}
+  const now=audio.context.currentTime,barDuration=60/project.bpm*4;
+  const startsOnBar=Boolean(transportTimer),startedAt=startsOnBar
+    ?audio.transportEpoch+Math.max(1,Math.ceil((now-audio.transportEpoch)/barDuration-1e-9))*barDuration
+    :now;
+  patternUndoSnapshot=project.pads.map(pad=>({steps:[...pad.steps],stepOffsets:[...pad.stepOffsets]}));
+  const mode=$('pattern-take-mode').value;
+  if(mode==='replace')for(const pad of project.pads){pad.steps.fill(false);pad.stepOffsets.fill(0);}
+  patternRecording={startedAt,bpm:project.bpm,mode,quantize:$('pattern-quantize').value,startsOnBar};
+  renderSteps();renderPatternRecordingState();queueSave();
+  $('record-pattern').blur();notify(`Recording ${mode==='replace'?'replacement':'overdub'} pattern${startsOnBar?' from the next bar':''}. Tap pads, then stop the take.`);
+}
+
+function undoPatternRecording(){
+  if(!patternUndoSnapshot||patternRecording)return;
+  project.pads.forEach((pad,id)=>{pad.steps=[...patternUndoSnapshot[id].steps];pad.stepOffsets=[...patternUndoSnapshot[id].stepOffsets];});
+  patternUndoSnapshot=null;renderSteps();renderPatternRecordingState();queueSave();notify('Last pattern take undone.');
 }
 
 function flashPad(id) {
@@ -235,7 +289,7 @@ function startSequencer() {
         const time=nextStepTime;
         const step=nextStep%16;
         project.pads.slice(0,PAD_COUNT[project.layout]).forEach(pad => {
-          if (pad.steps[step]&&padIsAudible(pad.id)) audio.trigger(pad.id,pad,flashPad,time);
+          if (pad.steps[step]&&padIsAudible(pad.id)) audio.trigger(pad.id,pad,flashPad,stepTriggerTime(time,project.bpm,pad.stepOffsets?.[step]||0));
         });
         setTimeout(()=>updateBeatIndicator(step),Math.max(0,(time-audio.context.currentTime)*1000));
         nextStep++;
@@ -264,14 +318,15 @@ function stopSequencer() {
 function surpriseBeat() {
   const count=PAD_COUNT[project.layout];
   if (!count) return;
+  patternUndoSnapshot=null;
   const a=project.pads.slice(0,count);
-  for (const pad of a) pad.steps.fill(false);
+  for (const pad of a){pad.steps.fill(false);pad.stepOffsets.fill(0);}
   const kick=a[0], snare=a[1]||a[0], hat=a[2]||a[0];
   for (const step of [0,8,Math.random()>.5?6:10]) kick.steps[step]=true;
   for (const step of [4,12]) snare.steps[step]=true;
   for (let step=0;step<16;step+=2) if (Math.random()>.16) hat.steps[step]=true;
   for (const pad of a.slice(3)) if (Math.random()<.35) pad.steps[Math.floor(Math.random()*16)]=true;
-  renderSteps();queueSave();
+  renderSteps();renderPatternRecordingState();queueSave();
   notify('New beat created. Load clips into the first three pads or enable demo sounds.');
 }
 
@@ -404,6 +459,7 @@ async function importPack(file) {
     const blobs=raw.media.map(data=>data ? dataUrlAsBlob(data):null);
     if(blobs.some(blob=>blob && blob.size>MAX_MEDIA_BYTES)) throw new Error('A sample is larger than the 80 MB limit');
     if(!confirm('Replace your current local project? Export it first if you want a backup.')) return;
+    patternRecording=null;patternUndoSnapshot=null;renderPatternRecordingState();
     stopSequencer();
     for(let i=0;i<16;i++) {
       audio.unload(i);mediaFiles.delete(i);durations.delete(i);
@@ -458,7 +514,7 @@ function bindControls() {
     if(!confirm('Remove this sample from local storage?'))return;
     audio.unload(selected);mediaFiles.delete(selected);durations.delete(selected);
     const previous=project.pads[selected],original=makeProject().pads[selected];
-    project.pads[selected]={...original,steps:previous.steps,muted:previous.muted,solo:previous.solo};
+    project.pads[selected]={...original,steps:previous.steps,stepOffsets:previous.stepOffsets,muted:previous.muted,solo:previous.solo};
     await deleteValue(`media:${selected}`);renderPad(selected);renderTrackGrid();renderControls();queueSave();
   });
   $('demo-button').addEventListener('click',()=>{
@@ -469,7 +525,9 @@ function bindControls() {
   });
   $('play-seq').addEventListener('click',()=>transportTimer?stopSequencer():startSequencer());
   $('auto-beat').addEventListener('click',surpriseBeat);
-  $('clear-steps').addEventListener('click',()=>{project.pads[selected].steps.fill(false);renderSteps();queueSave();});
+  $('clear-steps').addEventListener('click',()=>{project.pads[selected].steps.fill(false);project.pads[selected].stepOffsets.fill(0);patternUndoSnapshot=null;renderSteps();renderPatternRecordingState();queueSave();});
+  $('record-pattern').addEventListener('click',togglePatternRecording);
+  $('undo-pattern').addEventListener('click',undoPatternRecording);
   $('track-view').addEventListener('click',()=>{trackGridVisible=!trackGridVisible;$('steps').hidden=trackGridVisible;$('track-grid').hidden=!trackGridVisible;$('track-view').textContent=trackGridVisible?'SELECTED PAD':'ALL TRACKS';$('track-view').setAttribute('aria-pressed',String(trackGridVisible));if(trackGridVisible)renderTrackGrid();});
   $('start-record').addEventListener('click',toggleSetRecording);
   $('google-drive').addEventListener('click',()=>pickFromDrive(files=>placeFiles(files)).catch(error=>notify(error.message)));
@@ -505,6 +563,7 @@ async function initialise() {
     const saved=await getValue('project');
     if(saved)project=normaliseProject(saved);
     renderSession();
+    renderPatternRecordingState();
     let restored=0;
     for(let id=0;id<16;id++) {
       const file=await getValue(`media:${id}`);

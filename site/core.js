@@ -10,7 +10,8 @@ export function isPadAudible(pads,id){
 }
 export const makePad = id => ({
   id, name: `Pad ${String(id + 1).padStart(2, '0')}`, fileName: '', kind: '',
-  volume: 0.9, pitch: 0, start: 0, end: 2, muted:false, solo:false, steps: Array(STEP_COUNT).fill(false)
+  volume: 0.9, pitch: 0, start: 0, end: 2, muted:false, solo:false,
+  steps: Array(STEP_COUNT).fill(false), stepOffsets: Array(STEP_COUNT).fill(0)
 });
 export const makeProject = () => ({
   version: 1, title: 'Untitled mixtape', layout: '3x4', bpm: 120,
@@ -30,7 +31,8 @@ export function normaliseProject(value) {
       start: clamp(source.start ?? 0, 0, 3600),
       end: clamp(source.end ?? 2, 0.01, 3600),
       muted: Boolean(source.muted), solo: Boolean(source.solo),
-      steps: Array.from({ length: STEP_COUNT }, (_, j) => Boolean(source.steps?.[j]))
+      steps: Array.from({ length: STEP_COUNT }, (_, j) => Boolean(source.steps?.[j])),
+      stepOffsets: Array.from({ length: STEP_COUNT }, (_, j) => clamp(source.stepOffsets?.[j] ?? 0, 0, .9999))
     };
   });
   return { version: 1, title: String(value?.title || base.title).slice(0, 80), layout,
@@ -42,6 +44,16 @@ export function nextQuantizedTime(now, epoch, bpm, division) {
   const divisor = Number(division.split('/')[1]) / 4;
   const unit = 60 / clamp(bpm, 40, 240) / divisor;
   return epoch + Math.max(0, Math.ceil((now - epoch) / unit - 1e-7)) * unit;
+}
+export function captureStepPosition(seconds,bpm,quantize='nearest'){
+  const stepDuration=60/clamp(bpm,40,240)/4;
+  const position=Math.max(0,Number(seconds)||0)/stepDuration;
+  const base=Math.floor(position);
+  if(quantize==='off')return {step:base%STEP_COUNT,offset:position-base};
+  return {step:Math.round(position)%STEP_COUNT,offset:0};
+}
+export function stepTriggerTime(stepTime,bpm,offset=0){
+  return stepTime+clamp(offset,0,.9999)*(60/clamp(bpm,40,240)/4);
 }
 export function findRecorderMime(isSupported = type => MediaRecorder.isTypeSupported(type)) {
   return ['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm','video/mp4'].find(isSupported) || '';

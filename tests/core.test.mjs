@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeProject, normaliseProject, nextQuantizedTime, findRecorderMime, extensionForMime, PAD_COUNT, supportedMediaFile, isPadAudible } from '../site/core.js';
+import { makeProject, normaliseProject, nextQuantizedTime, findRecorderMime, extensionForMime, PAD_COUNT, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime } from '../site/core.js';
 
 test('initial layout has 12 visible pads and 16 backing slots', () => {
   const project = makeProject();
@@ -19,6 +19,20 @@ test('malformed project metadata is bounded and cannot inject extra pads', () =>
 test('quantisation schedules forward on 16th-note grid', () => {
   assert.equal(nextQuantizedTime(1.07, 0, 120, '1/16'), 1.125);
   assert.equal(nextQuantizedTime(1.07, 0, 120, 'off'), 1.07);
+});
+test('pattern capture can snap or retain timing offsets within a step',()=>{
+  assert.deepEqual(captureStepPosition(.1,120,'nearest'),{step:1,offset:0});
+  assert.deepEqual(captureStepPosition(.1,120,'off'),{step:0,offset:.8});
+  assert.deepEqual(captureStepPosition(2.125,120,'off'),{step:1,offset:0});
+  assert.deepEqual(captureStepPosition(-1,120,'off'),{step:0,offset:0});
+  assert.equal(stepTriggerTime(5,120,.8),5.1);
+  assert.equal(stepTriggerTime(5,120,2),5+.9999*.125);
+});
+test('legacy pads receive safe per-step timing offsets',()=>{
+  const pad=normaliseProject({pads:[{steps:[true],stepOffsets:[.25,4,-2,'bad']}] }).pads[0];
+  assert.equal(pad.stepOffsets.length,16);
+  assert.deepEqual(pad.stepOffsets.slice(0,5),[.25,.9999,0,0,0]);
+  assert.deepEqual(makeProject().pads[0].stepOffsets,Array(16).fill(0));
 });
 test('recorder preserves true video container rather than relabelling WebM as MP4', () => {
   const supported = type => type === 'video/webm;codecs=vp8,opus';
