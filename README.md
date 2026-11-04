@@ -9,11 +9,14 @@ An installable, local-first audiovisual sampler inspired by Smule's MadPad and t
 - Import supported audio, video and image files from the device or Files app. Trim clips and optionally find candidate sound regions with local processing.
 - Adjust per-pad volume and Speed. Independent Pitch shifting is available when the browser can start the local AudioWorklet processor; it supports semitone adjustment separately from Speed and adds a short processing delay. Pitch quality and performance vary by device.
 - Compose per-pad patterns in a 16-step sequencer or multi-track grid. Record pattern taps, quantise them, save named scenes and load a scene on the next bar.
+- Opt in to English speech transcription for a local audio/video pad. First use downloads about 65 MB total for the Whisper Tiny model and audio runtime; audio is processed on-device, timestamped words remain editable and can be arranged into reorderable sample phrases with standalone WAV export. The model does not provide word confidence, so review the draft.
+- Write a melody with MIDI pitch, sixteenth-note position and length, preview it with local synthesis or assign phrase words to pitched sample cues, then export a standard A4 = 440 Hz MIDI file. The local oscillator preview also supports a 400–480 Hz tuning reference (default 440 Hz).
+- Draft 16 rap bars at the session tempo with rough local syllable and spelling-based rhyme hints. Export lyrics as a text file.
 - Record an audiovisual performance with a fixed or active-pad-following video layout, or export an audio-only mix using a format supported by the browser.
 - Install the PWA, work offline after the app shell is cached, and save projects in IndexedDB. Export and import portable `.madladpad` project packs with their media.
 - Optionally import items the user explicitly picks from Google Drive or Google Photos. Local use does not require connecting an account.
 
-**Privacy:** Media and projects stay in the browser's device storage unless the user exports a file. Google imports download only items the user selects and store local copies. The MVP has no backend database, analytics, or public media sharing. Clearing browser site data may erase local projects; export packs as backups.
+**Privacy:** Media and projects stay in the browser's device storage unless the user exports a file. Transcription is an explicit opt-in; the speech model is downloaded from Hugging Face on first use and the selected audio is not uploaded. Google imports download only items the user selects and store local copies. The MVP has no backend database, analytics, or public media sharing. Clearing browser site data may erase local projects; export packs as backups.
 
 ## Local development and checks
 

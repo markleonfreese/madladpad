@@ -49,6 +49,17 @@ try {
     return url.startsWith(`${origin}/`) ? route.continue() : route.abort();
   });
   const page = await context.newPage();
+  await page.addInitScript(() => {
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      constructor(url, options) {
+        if (String(url).includes('voice-inference-worker')) {
+          const source = `self.onmessage=event=>{if(event.data.type==='transcribe')setTimeout(()=>self.postMessage({type:'result',words:[{text:'Hello',start:0,end:.25},{text:'from',start:.3,end:.55},{text:'MadLadPad',start:.6,end:1}]}),20)};`;
+          super(URL.createObjectURL(new Blob([source], {type:'text/javascript'})));
+        } else super(url, options);
+      }
+    };
+  });
   const checkpoint=label=>console.log(`[smoke] ${label}`);
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -58,7 +69,7 @@ try {
   assert.equal(await page.locator('.pad:not([hidden])').count(), 12);
   await page.addScriptTag({path:axePath});
   const audit=await page.evaluate(async()=>axe.run(document));
-  assert.deepEqual(audit.violations.map(violation=>violation.id),[], 'initial page should have no axe-core violations');
+  assert.deepEqual(audit.violations.map(violation=>violation.id),[], `initial page should have no axe-core violations: ${JSON.stringify(audit.violations.map(({id,nodes})=>({id,nodes:nodes.map(node=>({target:node.target,summary:node.failureSummary}))})))}`);
   checkpoint(`axe-core audit (${audit.passes.length} rules passed)`);
   for (const [value, count] of [['2x2',4],['4x4',16],['3x4',12]]) {
     await page.locator('#layout-select').selectOption(value);
@@ -163,6 +174,42 @@ try {
   assert.equal(await page.locator('#project-title').inputValue(), 'Smoke pack');
   assert.equal(await page.locator('#scene-select option').count(),1,'named scenes should persist across reload');
   assert.ok(await page.locator('#steps .step.on').count()>0,'scene pattern should persist across reload');
+  await page.locator('#voice-consent').check();
+  await page.locator('#voice-transcribe').click();
+  await page.waitForFunction(()=>document.querySelectorAll('#voice-word-list .voice-word').length===3);
+  assert.match(await page.locator('#voice-status').textContent(),/Confidence is not provided/);
+  await page.locator('#voice-word-list .voice-word').nth(0).locator('input[type=checkbox]').check();
+  await page.locator('#voice-word-list .voice-word').nth(2).locator('input[type=checkbox]').check();
+  await page.locator('#voice-make-phrase').click();
+  await page.locator('#voice-phrases .phrase-words button[aria-label="Move later Hello"]').click();
+  assert.match(await page.locator('#voice-phrases').textContent(),/MadLadPad.*Hello/,'discontiguous words should be selectable and reordered into a phrase');
+  const phraseDownload=page.waitForEvent('download');
+  await page.locator('#voice-phrases button[aria-label="Export Phrase 1 as WAV"]').click();
+  const phraseFile=await phraseDownload;
+  assert.match(phraseFile.suggestedFilename(),/\.wav$/);
+  const phraseBytes=await readFile(await phraseFile.path());
+  assert.equal(phraseBytes.toString('ascii',0,4),'RIFF','phrase export should produce a local WAV file');
+  await page.locator('#melody-add').click();
+  await page.locator('#melody-notes input[aria-label="Note 1 MIDI pitch"]').fill('69');
+  await page.locator('#melody-notes input[aria-label="Note 1 MIDI pitch"]').press('Tab');
+  await page.locator('#melody-notes select[aria-label="Assign phrase word to note 1"]').selectOption('MadLadPad');
+  await page.locator('#melody-play').click();
+  await page.locator('#rap-bars textarea').nth(0).fill('Hello from the other side');
+  assert.match(await page.locator('#rap-bars .rap-bar small').first().textContent(),/estimated syllables/);
+  const midiDownload=page.waitForEvent('download');
+  await page.locator('#melody-export').click();
+  assert.match((await midiDownload).suggestedFilename(),/\.mid$/);
+  const lyricDownload=page.waitForEvent('download');
+  await page.locator('#rap-export').click();
+  assert.match((await lyricDownload).suggestedFilename(),/\.txt$/);
+  await page.waitForTimeout(500);
+  await page.reload();
+  await page.getByText(/synthetic\.wav.*stored on this device/).waitFor();
+  assert.deepEqual(await page.locator('#voice-word-list .voice-word input[type=text]').evaluateAll(inputs=>inputs.map(input=>input.value)),['Hello','from','MadLadPad'],'transcribed words should persist locally');
+  assert.match(await page.locator('#voice-phrases').textContent(),/MadLadPad.*Hello/,'ordered phrases should persist locally');
+  assert.equal(await page.locator('#melody-notes .melody-note').count(),1,'melody note data should persist locally');
+  assert.equal(await page.locator('#rap-bars textarea').nth(0).inputValue(),'Hello from the other side','rap bars should persist locally');
+  checkpoint('local speech transcription mock, phrase selection/order, melody and rap persistence/exports');
   checkpoint('local audio import and reload');
   await page.locator('.pad').nth(11).hover();
   await page.locator('.pad .edit-pad').nth(11).click();
@@ -396,7 +443,8 @@ try {
   checkpoint('offline reopen');
   await context.setOffline(false);
   await page.setViewportSize({width:390,height:844});
-  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'mobile layout should not overflow horizontally');
+  const mobileLayout=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('body *')].filter(el=>el.getBoundingClientRect().right>innerWidth+1).slice(0,12).map(el=>({tag:el.tagName,id:el.id,className:typeof el.className==='string'?el.className:'',right:el.getBoundingClientRect().right}))}));
+  assert.equal(mobileLayout.scroll<=mobileLayout.width,true,`mobile layout should not overflow horizontally: ${JSON.stringify(mobileLayout)}`);
   assert.deepEqual(errors, []);
   console.log('Browser smoke passed: layouts, demo/keyboard, live patterns/scenes, integrated Pitch/Speed audio exports, audio/video recording, adaptive one-to-three-clip composition, local media, pack round-trip, offline reopen and mobile overflow.');
 } finally {

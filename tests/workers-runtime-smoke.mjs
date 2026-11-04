@@ -45,17 +45,20 @@ try{
   assert.equal(index.status,307,'Workers Static Assets should canonicalize /index.html');
   assert.equal(index.headers.get('location'),'/');
 
-  for(const [path,type] of [['/app.js','javascript'],['/sw.js','javascript'],['/manifest.webmanifest','json']]){
+  for(const [path,type] of [['/app.js','javascript'],['/voice.js','javascript'],['/sw.js','javascript'],['/manifest.webmanifest','json'],['/voice-inference-worker.bundle.js','javascript']]){
     const response=await fetch(`${origin}${path}`);
     assert.equal(response.status,200,`${path} should be served by the configured assets directory`);
     assert.match(response.headers.get('content-type')||'',new RegExp(type==='json'?'json':type));
     assert.ok((await response.arrayBuffer()).byteLength>100,`${path} should not be empty`);
   }
+  const wasm=await fetch(`${origin}/ort-wasm-simd-threaded.wasm`);
+  assert.equal(wasm.status,200,'on-device inference WASM should be served as a static asset');
+  assert.ok((await wasm.arrayBuffer()).byteLength>10_000_000,'inference WASM should not be truncated');
 
   const fallback=await fetch(`${origin}/runtime-smoke-route`,{headers:{'Sec-Fetch-Mode':'navigate'}});
   assert.equal(fallback.status,200,'SPA navigation should receive the app shell');
   assert.match(await fallback.text(),/<title>MadLadPad · Remix your world<\/title>/);
-  console.log('Workers runtime smoke passed: root, /index.html redirect, JS/service-worker/manifest assets, and SPA navigation fallback.');
+  console.log('Workers runtime smoke passed: root, /index.html redirect, app/service-worker/inference assets, WASM engine, and SPA navigation fallback.');
 }finally{
   if(worker.exitCode===null){
     worker.kill('SIGINT');

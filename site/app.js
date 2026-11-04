@@ -2,6 +2,7 @@ import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, makeProject, normalise
 import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
 import { pickFromDrive, pickFromPhotos } from './google.js';
+import { initVoiceLab } from './voice.js';
 
 const $ = id => document.getElementById(id);
 let project = makeProject();
@@ -402,6 +403,7 @@ async function addMedia(id,file,persist=true) {
   const kind=file.type.split('/')[0];
   const source=await audio.load(id,file,kind==='image'?null:pads[id].video);
   mediaFiles.set(id,file);
+  window.dispatchEvent(new Event('madladpad-media-change'));
   config.kind=kind;
   config.fileName=file.name;
   config.name=file.name.replace(/\.[^/.]+$/,'').slice(0,45) || `Pad ${id+1}`;
@@ -776,6 +778,7 @@ async function importPack(file) {
       } catch(error) { unavailable++; console.warn(`Failed to load restored pad ${i+1}`,error); }
     }
     renderSession();
+    window.dispatchEvent(new Event('madladpad-media-change'));
     notify(unavailable ? `Project saved, but ${unavailable} sample(s) could not load. Try reloading; your pack remains unchanged.` : 'Project restored with its media.');
   } catch(error){notify(`Import failed: ${error.message}`);}
 }
@@ -933,6 +936,7 @@ async function initialise() {
       } catch(error){console.warn(`Failed to restore pad ${id+1}`,error);}
     }
     renderSession();
+    initVoiceLab({ getProject: () => project, getMediaFiles: () => mediaFiles, getAudio: () => audio, notify, save: queueSave });
     if(restored)notify(`Restored ${restored} locally saved samples.`);
     if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost'))navigator.serviceWorker.register('/sw.js').catch(()=>{});
     $('connection-indicator').textContent=navigator.onLine?'LOCAL STUDIO':'OFFLINE READY';
