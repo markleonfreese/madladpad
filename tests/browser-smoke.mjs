@@ -72,8 +72,19 @@ try {
     await page.waitForTimeout(450);
     await page.locator('#start-record').click();
     const recording=await setDownload;
-    assert.ok(await recording.path(),'set recording should produce a downloadable media file');
-    checkpoint('audiovisual set recording');
+    const recordingPath=await recording.path();
+    assert.ok(recordingPath,'set recording should produce a downloadable media file');
+    const recordedVideo=await readFile(recordingPath);
+    assert.ok(recordedVideo.length>100,'set recording should contain encoded media');
+    await page.locator('.pad').nth(1).hover();
+    await page.locator('.pad .edit-pad').nth(1).click();
+    await page.locator('#media-input').setInputFiles({name:'synthetic-set.webm',mimeType:'video/webm',buffer:recordedVideo});
+    await page.getByText(/synthetic-set\.webm.*stored on this device/).waitFor();
+    await page.locator('.pad-hit').nth(1).click();
+    await page.waitForTimeout(250);
+    await page.locator('.pad').first().hover();
+    await page.locator('.pad .edit-pad').first().click();
+    checkpoint('audiovisual set recording and local WebM playback');
   }else{
     console.log('Skipped audiovisual set recording: MediaRecorder or canvas captureStream is unavailable.');
   }
@@ -91,6 +102,7 @@ try {
   const pack = JSON.parse(await readFile(await download.path(), 'utf8'));
   assert.equal(pack.format, 'madladpad');
   assert.ok(pack.media[0].startsWith('data:audio/'));
+  if(recordingSupported)assert.ok(pack.media[1].startsWith('data:video/'),'portable pack should retain the synthetic video sample');
   await page.locator('#project-title').fill('Before restore');
   page.once('dialog', dialog => dialog.accept());
   await page.locator('#project-input').setInputFiles({name:'smoke.madladpad',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(pack))});

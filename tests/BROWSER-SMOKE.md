@@ -16,7 +16,7 @@ The browser executable can also be supplied when it is already installed locally
 MADLADPAD_CHROMIUM_PATH="/path/to/chrome-or-chromium" npm run test:browser
 ```
 
-The suite checks initial load with axe-core 4.12.1, 12/4/16 pad layouts, demo and keyboard playback, sequencer start/stop, local WAV import, IndexedDB reload, pack export/import, MediaRecorder set capture where supported, service-worker offline reopen, and 390px horizontal overflow. It passed locally with Playwright 1.64.1 and managed Chrome for Testing 152.0.7977.82. This is desktop headless Chromium evidence. It does not establish camera/microphone permissions, video file codec coverage, real IndexedDB quota failures, physical touch behaviour, or iOS Safari. Run `npm test` separately for the Node regression suite.
+The suite checks initial load with axe-core 4.12.1, 12/4/16 pad layouts, demo and keyboard playback, sequencer start/stop, local WAV import, IndexedDB reload, pack export/import, MediaRecorder set capture and importing/playing the generated WebM as a local sample, service-worker offline reopen, and 390px horizontal overflow. It passed locally with Playwright 1.64.1 and managed Chrome for Testing 152.0.7977.82. This is desktop headless Chromium evidence. It does not establish camera/microphone permissions, arbitrary video codec coverage, real IndexedDB quota failures, physical touch behaviour, or iOS Safari. Run `npm test` separately for the Node regression suite.
 
 The test initially used `127.0.0.1`; the app only registers its service worker for HTTPS or the `localhost` hostname. It now binds the ephemeral server on loopback and navigates through `localhost`, exercising the installable/offline path without changing application trust rules.
 
