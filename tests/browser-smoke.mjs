@@ -13,6 +13,9 @@ const root = resolve('site');
 const mime = {'.html':'text/html','.js':'text/javascript','.css':'text/css','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.png':'image/png'};
 const server = createServer(async (req, res) => {
   const pathname = new URL(req.url, 'http://localhost').pathname;
+  // Workers Static Assets redirects /index.html to /. Preserve that response
+  // shape so the offline-shell test exercises the deployed runtime's route.
+  if(pathname==='/index.html'){res.writeHead(307,{Location:'/'}).end();return;}
   const path = resolve(root, `.${pathname === '/' ? '/index.html' : pathname}`);
   if (!path.startsWith(`${root}/`)) { res.writeHead(403).end(); return; }
   try { res.setHeader('Content-Type', mime[extname(path)] || 'application/octet-stream'); res.end(await readFile(path)); }
