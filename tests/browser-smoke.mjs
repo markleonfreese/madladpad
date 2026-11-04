@@ -64,6 +64,11 @@ try {
   assert.deepEqual(errors, [], 'demo pad should not produce a page error');
   await page.locator('#track-view').click();
   assert.equal(await page.locator('#track-grid .track-row').count(),12,'all-tracks view should expose each lane in the 12-pad layout');
+  assert.ok((await page.locator('#track-grid .track-row').first().locator('.track-name').textContent()).includes('Demo synth 01'),'demo-enabled empty lanes should be identified as demo synths');
+  await page.locator('#demo-button').click();
+  assert.ok((await page.locator('#track-grid .track-row').first().locator('.track-name').textContent()).includes('Empty pad'),'turning demo sounds off should refresh visible lane labels');
+  await page.locator('#demo-button').click();
+  assert.ok((await page.locator('#track-grid .track-row').first().locator('.track-name').textContent()).includes('Demo synth 01'),'turning demo sounds back on should restore lane labels');
   assert.equal(await page.locator('#track-grid .track-row').first().locator('.track-steps .step').count(),16);
   for(const [pad,step] of [[0,0],[1,4],[2,8]])await page.locator(`.track-row[data-pad="${pad}"] [data-step="${step}"]`).click();
   for(const [pad,step] of [[0,0],[1,4],[2,8]])assert.equal(await page.locator(`.track-row[data-pad="${pad}"] [data-step="${step}"]`).getAttribute('aria-pressed'),'true',`pad ${pad+1} should retain its own step`);
