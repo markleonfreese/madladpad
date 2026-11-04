@@ -28,6 +28,8 @@ function normaliseVoice(value) {
   const phrases = Array.isArray(source.phrases) ? source.phrases.slice(0, MAX_VOICE_PHRASES).map(phrase => ({
     id: String(phrase?.id || Math.random().toString(36).slice(2)).slice(0, 80),
     name: String(phrase?.name || 'Phrase').slice(0, 48),
+    gapMs: clamp(phrase?.gapMs ?? 35, 0, 500),
+    crossfadeMs: clamp(phrase?.crossfadeMs ?? 0, 0, 250),
     words: (Array.isArray(phrase?.words) ? phrase.words : []).slice(0, MAX_TRANSCRIPT_WORDS).map(word => ({
       text: String(word?.text || '').slice(0, 120), sourcePad: clamp(word?.sourcePad ?? 0, 0, 15),
       start: clamp(word?.start ?? 0, 0, 3600), end: clamp(word?.end ?? 0, 0, 3600)
