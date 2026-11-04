@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeProject, normaliseProject, nextQuantizedTime, findRecorderMime, extensionForMime, PAD_COUNT, supportedMediaFile } from '../site/core.js';
+import { makeProject, normaliseProject, nextQuantizedTime, findRecorderMime, extensionForMime, PAD_COUNT, supportedMediaFile, isPadAudible } from '../site/core.js';
 
 test('initial layout has 12 visible pads and 16 backing slots', () => {
   const project = makeProject();
@@ -28,4 +28,11 @@ test('recorder preserves true video container rather than relabelling WebM as MP
 test('picker only imports recognised media types', () => {
   assert.equal(supportedMediaFile({type:'video/mp4'}), true);
   assert.equal(supportedMediaFile({type:'text/html'}), false);
+});
+test('track mute and solo state defaults for old packs and gates lanes correctly', () => {
+  const pads=normaliseProject({pads:[{solo:true},{muted:true}]}).pads;
+  assert.equal(pads[0].solo,true);assert.equal(pads[1].muted,true);assert.equal(pads[2].muted,false);
+  assert.equal(isPadAudible(pads,0),true);assert.equal(isPadAudible(pads,1),false);assert.equal(isPadAudible(pads,2),false);
+  const withoutSolo=normaliseProject({}).pads;withoutSolo[1].muted=true;
+  assert.equal(isPadAudible(withoutSolo,0),true);assert.equal(isPadAudible(withoutSolo,1),false);
 });

@@ -1,4 +1,4 @@
-import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, makeProject, normaliseProject, clamp, supportedMediaFile, findRecorderMime, extensionForMime } from './core.js';
+import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, makeProject, normaliseProject, clamp, supportedMediaFile, findRecorderMime, extensionForMime, isPadAudible } from './core.js';
 import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, blobAsDataUrl, dataUrlAsBlob } from './storage.js';
 import { pickFromDrive, pickFromPhotos } from './google.js';
@@ -6,6 +6,7 @@ import { pickFromDrive, pickFromPhotos } from './google.js';
 const $ = id => document.getElementById(id);
 let project = makeProject();
 let selected = 0;
+let trackGridVisible = false;
 let audio;
 let transportTimer = null;
 let nextStep = 0;
@@ -19,6 +20,7 @@ const durations = new Map();
 const mediaFiles = new Map();
 const pads = [];
 const activeUntil = new Map();
+const visualUntil = new Map();
 const keys = new Set();
 
 function notify(message) {
@@ -103,6 +105,8 @@ function selectPad(id) {
   renderGrid(); renderControls(); renderSteps();
 }
 
+function padIsAudible(id){return isPadAudible(project.pads.slice(0,PAD_COUNT[project.layout]),id);}
+
 function renderControls() {
   const config = project.pads[selected];
   $('selected-number').textContent = `PAD ${String(selected+1).padStart(2,'0')}`;
@@ -133,10 +137,28 @@ function renderSteps() {
     button.setAttribute('aria-pressed',String(enabled));
     button.addEventListener('click', () => {
       project.pads[selected].steps[i] = !project.pads[selected].steps[i];
-      renderSteps(); queueSave();
+      button.classList.toggle('on',project.pads[selected].steps[i]);button.setAttribute('aria-pressed',String(project.pads[selected].steps[i]));button.setAttribute('aria-label',`Step ${i+1} ${project.pads[selected].steps[i]?'on':'off'}`);
+      renderTrackGrid();queueSave();
     });
     holder.append(button);
   });
+  renderTrackGrid();
+}
+
+function renderTrackGrid(){
+  const holder=$('track-grid'),focused=holder.contains(document.activeElement)?{pad:document.activeElement.closest('.track-row')?.dataset.pad,step:document.activeElement.dataset.step,control:document.activeElement.dataset.control}:null;holder.replaceChildren();
+  const count=PAD_COUNT[project.layout],hasSolo=project.pads.slice(0,count).some(pad=>pad.solo);
+  for(let id=0;id<count;id++){
+    const pad=project.pads[id],row=document.createElement('div');row.className=`track-row${pad.muted?' muted':''}${pad.solo?' solo':''}`;row.dataset.pad=id;
+    const head=document.createElement('div');head.className='track-head';
+    const name=document.createElement('button');name.type='button';name.className='track-name';name.textContent=`${String(id+1).padStart(2,'0')} · ${mediaFiles.has(id)?pad.name:'Empty pad'}`;name.setAttribute('aria-label',`Select pad ${id+1}, ${pad.name}`);name.addEventListener('click',()=>selectPad(id));head.append(name);
+    for(const [key,label] of [['muted','M'],['solo','S']]){const button=document.createElement('button');button.type='button';button.dataset.control=key;button.className=`track-toggle${pad[key]?' active':''}`;button.textContent=label;button.setAttribute('aria-label',`${pad[key]?'Disable':'Enable'} ${key} for pad ${id+1}`);button.setAttribute('aria-pressed',String(pad[key]));button.addEventListener('click',()=>{pad[key]=!pad[key];renderTrackGrid();queueSave();});head.append(button);}
+    const gain=document.createElement('input');gain.type='range';gain.min='0';gain.max='150';gain.value=String(Math.round(pad.volume*100));gain.className='track-gain';gain.setAttribute('aria-label',`Volume for pad ${id+1}`);gain.addEventListener('input',()=>{pad.volume=Number(gain.value)/100;if(selected===id){$('volume').value=gain.value;$('volume-out').textContent=`${gain.value}%`;}queueSave();});head.append(gain);row.append(head);
+    const cells=document.createElement('div');cells.className='track-steps';
+    pad.steps.forEach((enabled,index)=>{const button=document.createElement('button');button.type='button';button.dataset.step=String(index);button.className=`step${enabled?' on':''}`;button.textContent=String(index+1).padStart(2,'0');button.setAttribute('aria-label',`Pad ${id+1}, step ${index+1}, ${enabled?'on':'off'}`);button.setAttribute('aria-pressed',String(enabled));button.addEventListener('click',()=>{pad.steps[index]=!pad.steps[index];renderSteps();queueSave();});cells.append(button);});row.append(cells);
+    if(hasSolo&&!pad.solo)row.classList.add('solo-muted');holder.append(row);
+  }
+  if(focused?.pad!==undefined){const target=holder.querySelector(`.track-row[data-pad="${focused.pad}"] [${focused.control?`data-control="${focused.control}"`:`data-step="${focused.step}"`}]`);target?.focus();}
 }
 
 function renderSession() {
@@ -149,6 +171,7 @@ function renderSession() {
 }
 
 async function playPad(id, scheduledAt) {
+  if(!padIsAudible(id))return;
   await audio.unlock();
   audio.setTransport(project.bpm,project.quantize);
   if (!audio.trigger(id,project.pads[id],flashPad,scheduledAt)) {
@@ -158,6 +181,7 @@ async function playPad(id, scheduledAt) {
 
 function flashPad(id) {
   activeUntil.set(id,performance.now()+180);
+  const config=project.pads[id];visualUntil.set(id,performance.now()+Math.max(180,(config.end-config.start)*1000));
   pads[id].card.classList.add('playing');
   setTimeout(() => { if ((activeUntil.get(id)||0) <= performance.now()) pads[id].card.classList.remove('playing'); },210);
 }
@@ -178,6 +202,7 @@ async function addMedia(id,file,persist=true) {
   config.end=Math.max(.05,Math.min(2,durations.get(id)||2));
   if (persist) await putValue(`media:${id}`,file);
   renderPad(id);
+  renderTrackGrid();
   queueSave();
   if (selected===id) renderControls();
 }
@@ -210,7 +235,7 @@ function startSequencer() {
         const time=nextStepTime;
         const step=nextStep%16;
         project.pads.slice(0,PAD_COUNT[project.layout]).forEach(pad => {
-          if (pad.steps[step]) audio.trigger(pad.id,pad,flashPad,time);
+          if (pad.steps[step]&&padIsAudible(pad.id)) audio.trigger(pad.id,pad,flashPad,time);
         });
         setTimeout(()=>updateBeatIndicator(step),Math.max(0,(time-audio.context.currentTime)*1000));
         nextStep++;
@@ -226,12 +251,14 @@ function startSequencer() {
 function updateBeatIndicator(step) {
   if (!transportTimer) return;
   [...$('steps').children].forEach((el,i)=>el.classList.toggle('current',i===step));
+  $('track-grid').querySelectorAll('.track-steps').forEach(lane=>[...lane.children].forEach((el,i)=>el.classList.toggle('current',i===step)));
 }
 
 function stopSequencer() {
   clearInterval(transportTimer); transportTimer=null;
   $('play-seq').textContent='▶ PLAY'; $('play-seq').classList.remove('active');
   [...$('steps').children].forEach(el=>el.classList.remove('current'));
+  $('track-grid').querySelectorAll('.current').forEach(el=>el.classList.remove('current'));
 }
 
 function surpriseBeat() {
@@ -252,13 +279,16 @@ function drawPerformanceFrame() {
   if (!drawing) return;
   const canvas=$('capture-canvas');
   const context=canvas.getContext('2d');
-  const total=PAD_COUNT[project.layout],cols=project.layout==='2x2'?2:4;
+  context.fillStyle='#0c100e';context.fillRect(0,0,canvas.width,canvas.height);
+  const adaptive=$('record-layout').value==='follow-active';
+  const active=adaptive?[...visualUntil].filter(([,until])=>until>performance.now()).map(([id])=>id):Array.from({length:PAD_COUNT[project.layout]},(_,id)=>id);
+  if(adaptive&&!active.length){context.fillStyle='#d7fc5a';context.font='bold 28px sans-serif';context.textAlign='center';context.fillText('PLAY A PAD TO BEGIN',canvas.width/2,canvas.height/2);context.textAlign='left';requestAnimationFrame(drawPerformanceFrame);return;}
+  const total=active.length,cols=adaptive?(total===1?1:total<=4?2:4):(project.layout==='2x2'?2:4);
   const rows=Math.ceil(total/cols),gap=12,margin=28;
   const width=(canvas.width-margin*2-(cols-1)*gap)/cols;
   const height=(canvas.height-margin*2-(rows-1)*gap)/rows;
-  context.fillStyle='#0c100e';context.fillRect(0,0,canvas.width,canvas.height);
-  for(let id=0;id<total;id++) {
-    const col=id%cols,row=Math.floor(id/cols),x=margin+col*(width+gap),y=margin+row*(height+gap);
+  for(let index=0;index<total;index++) {
+    const id=active[index],col=index%cols,row=Math.floor(index/cols),x=margin+col*(width+gap),y=margin+row*(height+gap);
     const source=pads[id],config=project.pads[id];
     context.fillStyle=(activeUntil.get(id)||0)>performance.now()?'#d7fc5a':'#26372c';
     context.fillRect(x-3,y-3,width+6,height+6);
@@ -405,7 +435,7 @@ function bindControls() {
   });
   $('quantize-select').addEventListener('change',event=>{project.quantize=event.target.value;audio.setTransport(project.bpm,project.quantize);queueSave();});
   $('project-title').addEventListener('input',event=>{project.title=event.target.value;queueSave();});
-  $('pad-name').addEventListener('input',event=>{project.pads[selected].name=event.target.value;renderPad(selected);queueSave();});
+  $('pad-name').addEventListener('input',event=>{project.pads[selected].name=event.target.value;renderPad(selected);renderTrackGrid();queueSave();});
   for(const [id,key,convert] of [['volume','volume',v=>v/100],['pitch','pitch',Number],['trim-start','start',Number],['trim-end','end',Number]]) {
     $(id).addEventListener('input',event=>{
       const pad=project.pads[selected];pad[key]=convert(Number(event.target.value));
@@ -427,9 +457,9 @@ function bindControls() {
     if(!mediaFiles.has(selected))return;
     if(!confirm('Remove this sample from local storage?'))return;
     audio.unload(selected);mediaFiles.delete(selected);durations.delete(selected);
-    const original=makeProject().pads[selected];
-    project.pads[selected]={...original,steps:project.pads[selected].steps};
-    await deleteValue(`media:${selected}`);renderPad(selected);renderControls();queueSave();
+    const previous=project.pads[selected],original=makeProject().pads[selected];
+    project.pads[selected]={...original,steps:previous.steps,muted:previous.muted,solo:previous.solo};
+    await deleteValue(`media:${selected}`);renderPad(selected);renderTrackGrid();renderControls();queueSave();
   });
   $('demo-button').addEventListener('click',()=>{
     audio.demoEnabled=!audio.demoEnabled;
@@ -440,12 +470,13 @@ function bindControls() {
   $('play-seq').addEventListener('click',()=>transportTimer?stopSequencer():startSequencer());
   $('auto-beat').addEventListener('click',surpriseBeat);
   $('clear-steps').addEventListener('click',()=>{project.pads[selected].steps.fill(false);renderSteps();queueSave();});
+  $('track-view').addEventListener('click',()=>{trackGridVisible=!trackGridVisible;$('steps').hidden=trackGridVisible;$('track-grid').hidden=!trackGridVisible;$('track-view').textContent=trackGridVisible?'SELECTED PAD':'ALL TRACKS';$('track-view').setAttribute('aria-pressed',String(trackGridVisible));if(trackGridVisible)renderTrackGrid();});
   $('start-record').addEventListener('click',toggleSetRecording);
   $('google-drive').addEventListener('click',()=>pickFromDrive(files=>placeFiles(files)).catch(error=>notify(error.message)));
   $('google-photos').addEventListener('click',()=>pickFromPhotos(files=>placeFiles(files),notify).catch(error=>notify(error.message)));
   window.addEventListener('madladpad-error',event=>notify(event.detail));
   document.addEventListener('keydown',event=>{
-    if(event.repeat || event.metaKey || event.ctrlKey || event.altKey || ['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName)) return;
+    if(event.repeat || event.metaKey || event.ctrlKey || event.altKey || ['INPUT','SELECT','TEXTAREA','BUTTON'].includes(document.activeElement?.tagName)) return;
     const key=event.key.toUpperCase();
     if(key===' '){event.preventDefault();transportTimer?stopSequencer():startSequencer();return;}
     const id=HOTKEYS.indexOf(key);
