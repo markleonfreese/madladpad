@@ -2,3 +2,5 @@ node_modules/
 .wrangler/
 .dev.vars*
 site/google-config.local.js
+site/voice-inference-worker.bundle.js
+site/ort-wasm-simd-threaded.wasm

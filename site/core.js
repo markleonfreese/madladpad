@@ -3,6 +3,53 @@ export const PAD_COUNT = { '2x2': 4, '3x4': 12, '4x4': 16 };
 export const STEP_COUNT = 16;
 export const MAX_SCENES = 8;
 export const MAX_MEDIA_BYTES = 80 * 1024 * 1024;
+export const MAX_TRANSCRIPT_WORDS = 1000;
+export const MAX_VOICE_PHRASES = 8;
+export const MAX_MELODY_NOTES = 128;
+export const RAP_BAR_COUNT = 16;
+
+export const makeVoiceData = () => ({
+  transcripts: [], phrases: [], melody: { tuning: 440, notes: [] },
+  rap: { scheme: 'AABB', bars: Array(RAP_BAR_COUNT).fill('') }
+});
+
+function normaliseVoice(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  const transcripts = Array.isArray(source.transcripts) ? source.transcripts.slice(0, 16).map(item => ({
+    id: String(item?.id || crypto.randomUUID?.() || Math.random().toString(36).slice(2)).slice(0, 80),
+    sourcePad: clamp(item?.sourcePad ?? 0, 0, 15),
+    words: (Array.isArray(item?.words) ? item.words : []).slice(0, MAX_TRANSCRIPT_WORDS).map((word, index) => ({
+      id: String(word?.id || `${item?.id || 'word'}-${index}`).slice(0, 100),
+      text: String(word?.text || '').slice(0, 120),
+      start: clamp(word?.start ?? 0, 0, 3600), end: clamp(word?.end ?? 0, 0, 3600),
+      selected: Boolean(word?.selected), score: Number.isFinite(word?.score) ? clamp(word.score, 0, 1) : null
+    })).filter(word => word.text)
+  })) : [];
+  const phrases = Array.isArray(source.phrases) ? source.phrases.slice(0, MAX_VOICE_PHRASES).map(phrase => ({
+    id: String(phrase?.id || Math.random().toString(36).slice(2)).slice(0, 80),
+    name: String(phrase?.name || 'Phrase').slice(0, 48),
+    words: (Array.isArray(phrase?.words) ? phrase.words : []).slice(0, MAX_TRANSCRIPT_WORDS).map(word => ({
+      text: String(word?.text || '').slice(0, 120), sourcePad: clamp(word?.sourcePad ?? 0, 0, 15),
+      start: clamp(word?.start ?? 0, 0, 3600), end: clamp(word?.end ?? 0, 0, 3600)
+    })).filter(word => word.text && word.end > word.start)
+  })) : [];
+  const melodySource = source.melody && typeof source.melody === 'object' ? source.melody : {};
+  const notes = Array.isArray(melodySource.notes) ? melodySource.notes.slice(0, MAX_MELODY_NOTES).map(note => ({
+    midi: clamp(Math.round(note?.midi ?? 60), 24, 108),
+    step: clamp(Math.round(note?.step ?? 0), 0, 255),
+    duration: clamp(note?.duration ?? 1, .125, 16),
+    word: String(note?.word || '').slice(0, 120)
+  })) : [];
+  const rapSource = source.rap && typeof source.rap === 'object' ? source.rap : {};
+  return {
+    transcripts, phrases,
+    melody: { tuning: clamp(melodySource.tuning ?? 440, 400, 480), notes },
+    rap: {
+      scheme: ['AABB', 'ABAB', 'AAAA', 'FREE'].includes(rapSource.scheme) ? rapSource.scheme : 'AABB',
+      bars: Array.from({ length: RAP_BAR_COUNT }, (_, index) => String(rapSource.bars?.[index] || '').slice(0, 500))
+    }
+  };
+}
 
 export const clamp = (value, min, max) => Math.min(max, Math.max(min, Number(value) || 0));
 export function normaliseRegion(start, end, duration, changed = 'start') {
@@ -42,7 +89,7 @@ export const makePad = id => ({
 });
 export const makeProject = () => ({
   version: 1, title: 'Untitled mixtape', layout: '3x4', bpm: 120,
-  quantize: 'off', pads: Array.from({ length: 16 }, (_, i) => makePad(i)), scenes: []
+  quantize: 'off', pads: Array.from({ length: 16 }, (_, i) => makePad(i)), scenes: [], voice: makeVoiceData()
 });
 export function normaliseProject(value) {
   const base = makeProject();
@@ -72,7 +119,39 @@ export function normaliseProject(value) {
   })):[];
   return { version: 1, title: String(value?.title || base.title).slice(0, 80), layout,
     bpm: clamp(value?.bpm ?? 120, 40, 240),
-    quantize: ['off','1/4','1/8','1/16'].includes(value?.quantize) ? value.quantize : 'off', pads, scenes };
+    quantize: ['off','1/4','1/8','1/16'].includes(value?.quantize) ? value.quantize : 'off', pads, scenes,
+    voice: normaliseVoice(value?.voice) };
+}
+
+export const midiFrequency = (note, tuning = 440) => clamp(tuning, 400, 480) * 2 ** ((clamp(note, 24, 108) - 69) / 12);
+
+export function estimateSyllables(text) {
+  const words = String(text || '').toLowerCase().match(/[a-z]+/g) || [];
+  return words.reduce((total, word) => {
+    if (word.length <= 3) return total + 1;
+    const normalized = /[^aeiouy]le$/.test(word) ? word : word.replace(/(?:e|ed|es)$/, '');
+    const groups = normalized.match(/[aeiouy]+/g);
+    return total + Math.max(1, groups?.length || 1);
+  }, 0);
+}
+
+export function midiFile(notes, bpm = 120, tuning = 440) {
+  const u16 = n => [n >> 8 & 255, n & 255], u32 = n => [n >>> 24 & 255, n >>> 16 & 255, n >>> 8 & 255, n & 255];
+  const vlq = value => { let n = Math.max(0, Math.round(value)), out = [n & 127]; while ((n >>= 7)) out.unshift((n & 127) | 128); return out; };
+  const tempo = Math.round(60000000 / clamp(bpm, 40, 240));
+  const events = [[0, [255, 81, 3, tempo >> 16 & 255, tempo >> 8 & 255, tempo & 255]]];
+  for (const note of notes.slice(0, MAX_MELODY_NOTES)) {
+    const start = Math.round(clamp(note.step, 0, 255) * 120), end = start + Math.max(1, Math.round(clamp(note.duration, .125, 16) * 120));
+    const pitch = clamp(Math.round(note.midi), 24, 108);
+    events.push([start, [0x90, pitch, 96]], [end, [0x80, pitch, 0]]);
+  }
+  events.sort((a, b) => a[0] - b[0]);
+  let previous = 0; const track = [];
+  for (const [tick, bytes] of events) { track.push(...vlq(tick - previous), ...bytes); previous = tick; }
+  track.push(0, 255, 47, 0);
+  const header = [...[77, 84, 104, 100], ...u32(6), ...u16(0), ...u16(1), ...u16(480)];
+  const body = [...[77, 84, 114, 107], ...u32(track.length), ...track];
+  return new Blob([new Uint8Array([...header, ...body])], { type: 'audio/midi' });
 }
 export function nextQuantizedTime(now, epoch, bpm, division) {
   if (division === 'off') return now;

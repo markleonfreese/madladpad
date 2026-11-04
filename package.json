@@ -4,6 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:voice": "node scripts/build-voice-worker.mjs",
+    "pretest": "npm run build:voice",
+    "pretest:browser": "npm run build:voice",
+    "pretest:workers-runtime": "npm run build:voice",
+    "predev": "npm run build:voice",
+    "predeploy": "npm run build:voice",
     "test": "node --test tests/*.test.mjs",
     "test:browser": "node tests/browser-smoke.mjs",
     "test:workers-runtime": "node tests/workers-runtime-smoke.mjs",
@@ -11,7 +17,9 @@
     "deploy": "wrangler deploy"
   },
   "devDependencies": {
+    "@huggingface/transformers": "^4.3.2",
     "axe-core": "^4.12.1",
+    "esbuild": "^0.28.2",
     "playwright": "^1.64.1",
     "wrangler": "^4.0.0"
   }

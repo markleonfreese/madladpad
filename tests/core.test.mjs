@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeProject, normaliseProject, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime } from '../site/core.js';
+import { makeProject, normaliseProject, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, midiFrequency, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT } from '../site/core.js';
 
 test('initial layout has 12 visible pads and 16 backing slots', () => {
   const project = makeProject();
@@ -69,4 +69,29 @@ test('track mute and solo state defaults for old packs and gates lanes correctly
   assert.equal(isPadAudible(pads,0),true);assert.equal(isPadAudible(pads,1),false);assert.equal(isPadAudible(pads,2),false);
   const withoutSolo=normaliseProject({}).pads;withoutSolo[1].muted=true;
   assert.equal(isPadAudible(withoutSolo,0),true);assert.equal(isPadAudible(withoutSolo,1),false);
+});
+test('voice projects add bounded transcript, phrase, melody, tuning and rap data while old packs still load',()=>{
+  const legacy=normaliseProject({});
+  assert.equal(legacy.voice.melody.tuning,440);
+  assert.equal(legacy.voice.rap.bars.length,RAP_BAR_COUNT);
+  const voice=normaliseProject({voice:{transcripts:[{sourcePad:90,words:Array.from({length:MAX_TRANSCRIPT_WORDS+2},(_,i)=>({text:`w${i}`,start:i,end:i+.2,score:9}))}],phrases:[{words:[{text:'Hi',sourcePad:-2,start:0,end:1}]}],melody:{tuning:900,notes:[{midi:200,step:-1,duration:99}]},rap:{scheme:'NOPE',bars:['A'.repeat(600)]}}}).voice;
+  assert.equal(voice.transcripts[0].sourcePad,15);
+  assert.equal(voice.transcripts[0].words.length,MAX_TRANSCRIPT_WORDS);
+  assert.equal(voice.transcripts[0].words[0].score,1);
+  assert.equal(voice.phrases[0].words[0].sourcePad,0);
+  assert.equal(voice.melody.tuning,480);
+  assert.deepEqual(voice.melody.notes[0],{midi:108,step:0,duration:16,word:''});
+  assert.equal(voice.rap.scheme,'AABB');
+  assert.equal(voice.rap.bars[0].length,500);
+});
+test('melody uses A4 tuning and exports a MIDI track; rap syllable counts remain a rough local heuristic',async()=>{
+  assert.equal(midiFrequency(69),440);
+  assert.equal(midiFrequency(69,432),432);
+  assert.equal(estimateSyllables('Hello little music maker'),8);
+  const file=midiFile([{midi:69,step:0,duration:4}],120,440);
+  assert.equal(file.type,'audio/midi');
+  const bytes=new Uint8Array(await file.arrayBuffer());
+  assert.equal(new TextDecoder().decode(bytes.slice(0,4)),'MThd');
+  assert.ok(new TextDecoder().decode(bytes).includes('MTrk'));
+  assert.ok(bytes.includes(0x90)&&bytes.includes(0x80));
 });
