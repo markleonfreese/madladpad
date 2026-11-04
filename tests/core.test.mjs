@@ -70,7 +70,7 @@ test('track mute and solo state defaults for old packs and gates lanes correctly
   const withoutSolo=normaliseProject({}).pads;withoutSolo[1].muted=true;
   assert.equal(isPadAudible(withoutSolo,0),true);assert.equal(isPadAudible(withoutSolo,1),false);
 });
-test('voice projects add bounded transcript, phrase, melody, tuning and rap data while old packs still load',()=>{
+test('voice projects add bounded transcripts, phrases, vocal layers, melody, tuning and rap data while old packs still load',()=>{
   const legacy=normaliseProject({});
   assert.equal(legacy.voice.melody.tuning,440);
   assert.equal(legacy.voice.rap.bars.length,RAP_BAR_COUNT);
@@ -89,6 +89,8 @@ test('voice projects add bounded transcript, phrase, melody, tuning and rap data
   const harmony=normaliseProject({voice:{melody:{harmonyInterval:7,notes:[{midi:67,layer:'harmony'}]}}}).voice.melody;
   assert.equal(harmony.harmonyInterval,7);
   assert.equal(harmony.notes[0].layer,'harmony');
+  const vocal=normaliseProject({voice:{layers:[{id:'vocal/one',name:'Lead',startStep:-2,gain:2,muted:true}]}}).voice.layers[0];
+  assert.deepEqual(vocal,{id:'vocalone',name:'Lead',startStep:0,gain:1.5,muted:true,solo:false});
   assert.equal(voice.rap.scheme,'AABB');
   assert.equal(voice.rap.bars[0].length,500);
 });

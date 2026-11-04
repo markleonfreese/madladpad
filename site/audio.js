@@ -5,10 +5,19 @@ export class SamplerAudio {
   constructor() {
     this.context = new (window.AudioContext || window.webkitAudioContext)();
     this.master = this.context.createGain();
+    this.limiter = this.context.createDynamicsCompressor();
+    this.limiter.threshold.value = -1.5;
+    this.limiter.knee.value = 0;
+    this.limiter.ratio.value = 20;
+    this.limiter.attack.value = .003;
+    this.limiter.release.value = .08;
     this.recordOut = this.context.createMediaStreamDestination();
-    this.master.connect(this.context.destination);
-    this.master.connect(this.recordOut);
+    this.master.connect(this.limiter);
+    this.limiter.connect(this.context.destination);
+    this.limiter.connect(this.recordOut);
     this.sources = new Map();
+    this.vocalSources = new Map();
+    this.vocalPlayback = new Map();
     this.transportEpoch = this.context.currentTime;
     this.bpm = 120;
     this.quantize = 'off';
@@ -118,6 +127,84 @@ export class SamplerAudio {
     source.element?.load();
   }
 
+  async loadVocalLayer(id, file) {
+    try {
+      const buffer = await this.context.decodeAudioData(await file.arrayBuffer());
+      this.vocalSources.set(id, {file, buffer});
+      return true;
+    } catch (error) {
+      this.vocalSources.set(id, {file, buffer:null, error});
+      return false;
+    }
+  }
+
+  playVocalLayers(layers, epoch, bpm) {
+    this.stopVocalLayers();
+    const secondsPerStep = 60 / clamp(bpm, 40, 240) / 4;
+    const hasSolo = layers.some(layer => layer.solo && !layer.muted);
+    for (const layer of layers) {
+      const source = this.vocalSources.get(layer.id);
+      if (!source?.buffer || layer.muted || (hasSolo && !layer.solo)) continue;
+      const intended = epoch + clamp(layer.startStep, 0, 4096) * secondsPerStep;
+      const now = this.context.currentTime, offset = Math.max(0, now - intended);
+      if (offset >= source.buffer.duration) continue;
+      const node = this.context.createBufferSource(), gain = this.context.createGain();
+      node.buffer = source.buffer;
+      gain.gain.setValueAtTime(clamp(layer.gain, 0, 1.5), Math.max(now, intended));
+      node.connect(gain).connect(this.master);
+      const playback = {node, gain, layerId:layer.id};
+      this.vocalPlayback.set(layer.id, playback);
+      node.onended = () => {
+        node.disconnect(); gain.disconnect();
+        if (this.vocalPlayback.get(layer.id) === playback) this.vocalPlayback.delete(layer.id);
+      };
+      node.start(Math.max(now + .005, intended), offset);
+    }
+  }
+
+  previewVocalLayer(id, gainValue = 1) {
+    const source = this.vocalSources.get(id);
+    if (!source?.buffer) return false;
+    this.stopVocalLayer(id);
+    const node = this.context.createBufferSource(), gain = this.context.createGain();
+    node.buffer = source.buffer;
+    gain.gain.setValueAtTime(clamp(gainValue, 0, 1.5), this.context.currentTime);
+    node.connect(gain).connect(this.master);
+    const playback = {node, gain, layerId:id};
+    this.vocalPlayback.set(id, playback);
+    node.onended = () => {
+      node.disconnect(); gain.disconnect();
+      if (this.vocalPlayback.get(id) === playback) this.vocalPlayback.delete(id);
+    };
+    node.start(this.context.currentTime + .005);
+    return true;
+  }
+
+  updateVocalLayerStates(layers) {
+    const hasSolo = layers.some(layer => layer.solo && !layer.muted);
+    const byId = new Map(layers.map(layer => [layer.id, layer]));
+    for (const [id, playback] of this.vocalPlayback) {
+      const layer = byId.get(id);
+      if (!layer) continue;
+      const audible = !layer.muted && (!hasSolo || layer.solo);
+      const gain = audible ? clamp(layer.gain, 0, 1.5) : 0;
+      playback.gain.gain.cancelScheduledValues(this.context.currentTime);
+      playback.gain.gain.setTargetAtTime(gain, this.context.currentTime, .008);
+    }
+  }
+
+  stopVocalLayer(id) {
+    const playback = this.vocalPlayback.get(id);
+    if (!playback) return;
+    this.vocalPlayback.delete(id);
+    try { playback.node.stop(); } catch {}
+    playback.node.disconnect(); playback.gain.disconnect();
+  }
+
+  stopVocalLayers() {
+    for (const id of [...this.vocalPlayback.keys()]) this.stopVocalLayer(id);
+  }
+
   trigger(id, pad, onVisual, scheduledAt) {
     const source = this.sources.get(id);
     const now = this.context.currentTime;
@@ -205,6 +292,7 @@ export class SamplerAudio {
 
   destroy() {
     for (const [id] of this.sources) this.unload(id);
+    this.stopVocalLayers();
     return this.context.close();
   }
 }

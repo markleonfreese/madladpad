@@ -107,7 +107,7 @@
     <section class="voice-lab" aria-labelledby="voice-lab-title">
       <div class="section-label"><span>04 / VOICE LAB</span><span>WORDS · MELODY · BARS</span></div>
       <h2 id="voice-lab-title">Turn a voice into a track.</h2>
-      <p class="voice-intro">Transcribe local clips, shape word samples into phrases, write a melody, and draft rap bars. Your audio and writing stay on this device.</p>
+      <p class="voice-intro">Transcribe local clips, shape word samples into phrases, write melodies and rap bars, then record and mix vocal layers over your beat. Your audio and writing stay on this device.</p>
       <div class="voice-columns">
         <section class="voice-card" aria-labelledby="transcript-title">
           <h3 id="transcript-title">Speech transcription</h3>
@@ -136,6 +136,14 @@
           <label class="voice-label">RHYME SHAPE<select id="rap-scheme"><option>AABB</option><option>ABAB</option><option>AAAA</option><option>FREE</option></select></label>
           <div id="rap-bars" class="rap-bars"></div>
           <div class="voice-actions"><button class="pill-button" id="rap-export">EXPORT LYRICS</button></div>
+        </section>
+
+        <section class="voice-card" aria-labelledby="vocal-layers-title">
+          <h3 id="vocal-layers-title">Vocal overdubs</h3>
+          <p class="voice-note">Start the beat, then record a microphone take over it. Each raw take is saved as its own local layer and aligned to the nearest sixteenth note. Adjust gain, mute or solo layers, and record the full mix to export. Microphone audio is not uploaded.</p>
+          <div class="voice-actions"><button class="pill-button" id="voice-overdub-record" disabled>● RECORD VOCAL OVERDUB</button><button class="pill-button" id="voice-overdub-stop" hidden>■ STOP AND SAVE TAKE</button></div>
+          <p id="voice-overdub-status" class="voice-status" role="status" aria-live="polite">Start the sequencer to record a vocal layer.</p>
+          <div id="voice-overdub-layers" class="vocal-layers" role="group" aria-label="Vocal take layers"></div>
         </section>
       </div>
     </section>
