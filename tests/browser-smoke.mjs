@@ -190,7 +190,7 @@ try {
   const phraseBytes=await readFile(await phraseFile.path());
   assert.equal(phraseBytes.toString('ascii',0,4),'RIFF','phrase export should produce a local WAV file');
   await page.locator('#voice-phrases button[aria-label="Map Phrase 1 words to pads and steps"]').click();
-  await page.waitForFunction(()=>document.querySelectorAll('.pad.editable').length>=3);
+  await page.waitForFunction(()=>[...document.querySelectorAll('.pad-title')].filter(node=>/Phrase 1 · (?:MadLadPad|Hello)/.test(node.textContent)).length===2);
   const mappedPadIds=await page.locator('.pad-title').evaluateAll(nodes=>nodes.flatMap((node,index)=>node.textContent.includes('Phrase 1 ·')?[index]:[]));
   assert.equal(mappedPadIds.length,2,'the reordered phrase should allocate one pad per selected word');
   assert.match(await page.locator('.pad').nth(1).locator('.pad-title').textContent(),/synthetic-set/,'mapping should preserve already occupied pads');
@@ -216,6 +216,7 @@ try {
   await page.waitForTimeout(500);
   await page.reload();
   await page.getByText(/synthetic\.wav.*stored on this device/).waitFor();
+  await page.waitForFunction(()=>document.querySelectorAll('#voice-word-list .voice-word input[type=text]').length===3);
   assert.deepEqual(await page.locator('#voice-word-list .voice-word input[type=text]').evaluateAll(inputs=>inputs.map(input=>input.value)),['Hello','from','MadLadPad'],'transcribed words should persist locally');
   assert.match(await page.locator('#voice-phrases').textContent(),/MadLadPad.*Hello/,'ordered phrases should persist locally');
   assert.match(await page.locator('.pad').nth(1).locator('.pad-title').textContent(),/synthetic-set/,'pre-existing sample should remain unchanged after reload');
