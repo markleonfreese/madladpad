@@ -1,6 +1,6 @@
 import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, makeProject, normaliseProject, clamp, supportedMediaFile, findRecorderMime, extensionForMime } from './core.js';
 import { SamplerAudio } from './audio.js';
-import { getValue, putValue, deleteValue, collectProjectMedia, blobAsDataUrl, dataUrlAsBlob } from './storage.js';
+import { getValue, putValue, deleteValue, collectProjectMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia } from './storage.js';
 import { pickFromDrive, pickFromPhotos } from './google.js';
 
 const $ = id => document.getElementById(id);
@@ -373,23 +373,25 @@ async function importPack(file) {
     const incoming=normaliseProject(raw.project);
     const blobs=raw.media.map(data=>data ? dataUrlAsBlob(data):null);
     if(blobs.some(blob=>blob && blob.size>MAX_MEDIA_BYTES)) throw new Error('A sample is larger than the 80 MB limit');
+    const files=blobs.map((blob,i)=>blob ? new File([blob],incoming.pads[i].fileName||`sample-${i+1}`,{type:blob.type}) : null);
     if(!confirm('Replace your current local project? Export it first if you want a backup.')) return;
+    // A single IndexedDB transaction prevents a partial replacement on quota or write failure.
+    clearTimeout(saveTimer);
+    try { await replaceProjectMedia(incoming,files); }
+    catch(error) { queueSave(); throw error; }
     stopSequencer();
+    project=incoming;selected=0;
+    let unavailable=0;
     for(let i=0;i<16;i++) {
       audio.unload(i);mediaFiles.delete(i);durations.delete(i);
-      if(blobs[i]) {
-        const blob=blobs[i];
-        const name=incoming.pads[i].fileName||`sample-${i+1}`;
-        const restored=new File([blob],name,{type:blob.type});
-        await putValue(`media:${i}`,restored);
-        const source=await audio.load(i,restored,blob.type.startsWith('image/')?null:pads[i].video);
-        mediaFiles.set(i,restored);
+      if(files[i]) try {
+        const source=await audio.load(i,files[i],files[i].type.startsWith('image/')?null:pads[i].video);
+        mediaFiles.set(i,files[i]);
         if(source.buffer)durations.set(i,source.buffer.duration);
-      } else await deleteValue(`media:${i}`);
+      } catch(error) { unavailable++; console.warn(`Failed to load restored pad ${i+1}`,error); }
     }
-    project=incoming;selected=0;
-    renderSession();await putValue('project',project);
-    notify('Project restored with its media.');
+    renderSession();
+    notify(unavailable ? `Project saved, but ${unavailable} sample(s) could not load. Try reloading; your pack remains unchanged.` : 'Project restored with its media.');
   } catch(error){notify(`Import failed: ${error.message}`);}
 }
 
