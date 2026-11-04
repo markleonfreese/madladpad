@@ -219,6 +219,13 @@ try {
   await page.locator('#melody-play').click();
   await page.locator('#rap-bars textarea').nth(0).fill('Hello from the other side');
   assert.match(await page.locator('#rap-bars .rap-bar small').first().textContent(),/estimated syllables/);
+  await page.locator('#rap-scheme').selectOption('ABAB');
+  await page.locator('#rap-bars textarea').nth(0).fill('I caught the light');
+  await page.locator('#rap-bars textarea').nth(2).fill('We take the flight');
+  assert.match(await page.locator('#rap-bars .rap-bar').nth(2).locator('small').textContent(),/A rhyme.*match bar 1 “light”/,'ABAB should link bars 1 and 3 by their ending words');
+  await page.locator('#rap-scheme').selectOption('AABB');
+  assert.match(await page.locator('#rap-bars .rap-bar').nth(2).locator('small').textContent(),/B rhyme/,'AABB should regroup bars 3 and 4');
+  await page.locator('#rap-bars textarea').nth(0).fill('Hello from the other side');
   const midiDownload=page.waitForEvent('download');
   await page.locator('#melody-export').click();
   assert.match((await midiDownload).suggestedFilename(),/\.mid$/);
@@ -240,6 +247,7 @@ try {
   assert.equal(await page.locator(`.track-row[data-pad="${mappedPadIds[1]}"] [data-step="2"]`).getAttribute('aria-pressed'),'true','mapped crossfade timing should persist locally');
   assert.equal(await page.locator('#melody-notes .melody-note').count(),1,'melody note data should persist locally');
   assert.equal(await page.locator('#rap-bars textarea').nth(0).inputValue(),'Hello from the other side','rap bars should persist locally');
+  assert.equal(await page.locator('#rap-scheme').inputValue(),'AABB','rap rhyme shape should persist locally');
   checkpoint('local speech transcription mock, phrase selection/order, melody and rap persistence/exports');
   checkpoint('local audio import and reload');
   await page.locator('.pad').nth(11).hover();

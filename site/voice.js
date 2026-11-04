@@ -14,6 +14,13 @@ function rhymeHints(line) {
   for (const [key, values] of Object.entries(rhymes)) if (word === key || values.includes(word)) return [key, ...values].filter(value => value !== word).slice(0, 3);
   return Object.entries(rhymes).flatMap(([key, values]) => [key, ...values].filter(value => value.endsWith(word.slice(-2)) && value !== word)).slice(0, 3);
 }
+function rhymeGroup(index, scheme) {
+  const position = index % 4;
+  if (scheme === 'AABB') return position < 2 ? 'A' : 'B';
+  if (scheme === 'ABAB') return position % 2 ? 'B' : 'A';
+  if (scheme === 'AAAA') return 'A';
+  return null;
+}
 
 async function renderPhraseBuffer(phrase, audio) {
   if (!phrase.words.length) throw new Error('Add words to the phrase before exporting.');
@@ -233,8 +240,20 @@ function renderRap(project, save) {
     const row = document.createElement('label'); row.className = 'rap-bar';
     const number = document.createElement('span'); number.textContent = String(index + 1).padStart(2, '0');
     const text = document.createElement('textarea'); text.maxLength = 500; text.rows = 2; text.value = line; text.placeholder = `Bar ${index + 1}`; text.setAttribute('aria-label', `Rap bar ${index + 1}`);
-    const meta = document.createElement('small'); const renderMeta = () => { const hints = rhymeHints(text.value); meta.textContent = `${estimateSyllables(text.value)} estimated syllables${hints.length ? ` · rhyme ideas: ${hints.join(', ')}` : ''}`; };
-    text.addEventListener('input', () => { project.voice.rap.bars[index] = text.value; renderMeta(); save(); }); renderMeta(); row.append(number, text, meta); host.append(row);
+    const meta = document.createElement('small'); const renderMeta = () => {
+      const line = project.voice.rap.bars[index], scheme = project.voice.rap.scheme, group = rhymeGroup(index, scheme);
+      let anchor = null;
+      if (group) for (let earlier = index - 1; earlier >= 0; earlier--) {
+        if (rhymeGroup(earlier, scheme) !== group) continue;
+        const candidate = project.voice.rap.bars[earlier].trim().split(/\s+/).at(-1) || '';
+        if (wordKey(candidate)) { anchor = { word: candidate, index: earlier }; break; }
+      }
+      const target = anchor?.word || line.trim().split(/\s+/).at(-1) || '';
+      const hints = rhymeHints(target);
+      meta.textContent = `${group ? `${group} rhyme` : 'Free rhyme'} · ${estimateSyllables(line)} estimated syllables${anchor ? ` · match bar ${anchor.index + 1} “${anchor.word}”` : hints.length ? ` · rhyme ideas: ${hints.join(', ')}` : ''}`;
+    };
+    row.updateMeta = renderMeta;
+    text.addEventListener('input', () => { project.voice.rap.bars[index] = text.value; host.querySelectorAll('.rap-bar').forEach(item => item.updateMeta?.()); save(); }); renderMeta(); row.append(number, text, meta); host.append(row);
   });
 }
 
@@ -309,7 +328,7 @@ export function initVoiceLab({ getProject, getMediaFiles, getAudio, notify, save
     }
   });
   $('melody-export').addEventListener('click', () => { const blob = midiFile(project.voice.melody.notes, project.bpm, project.voice.melody.tuning); download(blob, `${project.title || 'madladpad'}-melody.mid`); });
-  $('rap-scheme').addEventListener('change', () => { project.voice.rap.scheme = $('rap-scheme').value; save(); });
+  $('rap-scheme').addEventListener('change', () => { project.voice.rap.scheme = $('rap-scheme').value; save(); renderRap(project, save); });
   $('rap-export').addEventListener('click', () => { const lines = project.voice.rap.bars.map((line, index) => `${String(index + 1).padStart(2, '0')}  ${line}`); const blob = new Blob([`# ${project.title} · ${project.bpm} BPM · ${project.voice.rap.scheme}\n\n${lines.join('\n')}\n`], { type: 'text/plain;charset=utf-8' }); download(blob, `${project.title || 'madladpad'}-lyrics.txt`); });
   render();
 }
