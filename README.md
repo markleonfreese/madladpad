@@ -1,42 +1,50 @@
 # MadLadPad
 
-An installable audiovisual sampler inspired by Smule's MadPad and the looper / pitch-play ideas in [Mr Not So Brightside](https://github.com/markleonfreese/mr-not-so-brightside).
+An installable, local-first audiovisual sampler inspired by Smule's MadPad and the looper/pitch-play ideas in [Mr Not So Brightside](https://github.com/markleonfreese/mr-not-so-brightside).
 
-## First playable release (MVP)
+## MVP features
 
-- 12 video/audio/photo pads (or 2×2 / 4×4), touch, keyboard and optional Web MIDI input.
-- Record short clips with the camera and microphone, or import multiple files from the device / Files app.
-- Set pad trim, speed, volume and trigger quantisation. Audio and video use media-element playback; this can increase trigger latency. Independent pitch shifting is temporarily unavailable: old pitch values are retained but not applied. Browsers that lack pitch preservation can change pitch when speed changes.
-- 16-step beat sequencer, tempo, random beat starter, real-time audiovisual performance capture.
-- Offline install, local IndexedDB project storage, and portable `.madladpad` export / import with media.
-- Optional Google Drive and Google Photos pickers using explicit OAuth. No third-party account connection is necessary for local use.
+- Play 4, 12 or 16 audio, video and photo pads with touch, keyboard or optional Web MIDI.
+- Record 3–30 second clips with the camera and microphone directly onto a pad. Review the suggested sound region, adjust its start and end, preview, retake, or keep it. When pads already contain media, choose a new empty pad or explicitly replace one.
+- Import supported audio, video and image files from the device or Files app. Trim clips and optionally find candidate sound regions with local processing.
+- Adjust per-pad volume and Speed. Independent Pitch shifting is available when the browser can start the local AudioWorklet processor; it supports semitone adjustment separately from Speed and adds a short processing delay. Pitch quality and performance vary by device.
+- Compose per-pad patterns in a 16-step sequencer or multi-track grid. Record pattern taps, quantise them, save named scenes and load a scene on the next bar.
+- Record an audiovisual performance with a fixed or active-pad-following video layout, or export an audio-only mix using a format supported by the browser.
+- Install the PWA, work offline after the app shell is cached, and save projects in IndexedDB. Export and import portable `.madladpad` project packs with their media.
+- Optionally import items the user explicitly picks from Google Drive or Google Photos. Local use does not require connecting an account.
 
-**Privacy:** Media and projects remain in the browser's device storage unless the user exports a file. Importing from Google downloads only items the user explicitly picks, then stores local copies. No backend/database, analytics or public media sharing in the MVP. Clearing browser site data may erase local projects, so export backups.
+**Privacy:** Media and projects stay in the browser's device storage unless the user exports a file. Google imports download only items the user selects and store local copies. The MVP has no backend database, analytics, or public media sharing. Clearing browser site data may erase local projects; export packs as backups.
 
-## Local development / Cloudflare
+## Local development and checks
 
 ```bash
+npm install
 npm test
+npx playwright install chromium
+npm run test:browser
 npx wrangler dev
 ```
 
-Cloudflare Workers Static Assets serves `site/` as a PWA; `wrangler.jsonc` configures the project. `npx wrangler deploy` publishes to the Cloudflare account selected by the authenticated CLI. Do not deploy without checking the account and target hostname.
+The browser smoke uses synthetic media and Chromium's fake camera/microphone. It checks the UI, persistence, exports and offline shell; it does not replace real Android/iOS camera, codec, touch, listening or accessibility acceptance.
+
+Cloudflare Workers Static Assets serves `site/`; `wrangler.jsonc` configures the project. `npx wrangler deploy` publishes to the Cloudflare account selected by the authenticated CLI. Verify the account and target hostname before deployment.
 
 ## Google Picker setup (optional)
 
-1. In Google Cloud Console, enable **Google Picker API**, **Google Drive API** and **Google Photos Picker API**. Set up the OAuth consent screen, add test users while in testing, and create a **Web application OAuth client**.
-2. Add your exact Cloudflare production/preview origin to **Authorised JavaScript origins**. Create a restricted browser API key and add the site origin plus `https://docs.google.com/*` for the Picker iframe. Restrict that key to the Google Picker and Drive APIs.
-3. Copy `site/google-config.example.js` to `site/google-config.js` and enter the *public* OAuth client ID, restricted browser key and numeric Cloud project ID. Do not put an OAuth client **secret** here.
-4. The checked-in `google-config.js` has empty values, so the Google buttons explain setup rather than misleading users. After configuring, test the Google consent screen, one Drive video, and one Photos video from a real deployed HTTPS origin.
+1. In Google Cloud Console, enable **Google Picker API**, **Google Drive API** and **Google Photos Picker API**. Configure OAuth consent and create a **Web application OAuth client**.
+2. Add the exact production or preview origin to **Authorised JavaScript origins**. Create a restricted browser API key and restrict it to the required Picker and Drive APIs.
+3. Copy `site/google-config.example.js` to `site/google-config.js` and enter the public OAuth client ID, restricted browser key and numeric Cloud project ID. Never put an OAuth client secret in the site.
+4. The checked-in `google-config.js` has empty values. Configure and test Google imports on a real deployed HTTPS origin only if you want those optional providers.
 
-Google Photos uses a Picker session and reads only approved selections; its video downloads can take time. The `drive.file` scope is used for Drive; Photos uses `photospicker.mediaitems.readonly`. iCloud Drive is available through the system **Files** picker on compatible Apple devices; Apple does not provide an equivalent generic iCloud Drive web Picker SDK.
+Google Photos uses a Picker session and reads only approved selections; video downloads can take time. Drive uses the `drive.file` scope; Photos uses `photospicker.mediaitems.readonly`. iCloud Drive is available through the system Files picker on compatible Apple devices; Apple does not provide an equivalent generic iCloud Drive web picker.
 
-## Browser and format boundaries
+## Browser and media boundaries
 
-- Web MIDI availability and install prompts vary by browser. iOS Safari does not provide Web MIDI; touch works everywhere.
-- Browsers cannot promise zero-latency video rendering. For low-latency audio-only samples the app uses decoded Web Audio buffers; video clips play through a media element routed to the mix bus.
-- Performance recording exports the format the browser actually supports (`.webm` or `.mp4`); changing a file extension does **not** transcode it. Some browsers cannot record video; that feature will show an error.
-- Loop recording/overdub tracks, collaborative cloud packs, durable account sync, WebCodecs-based video optimisation and richer effects are later phases. The MVP sequencer is the first layer of repeatable rhythm creation.
+- Web MIDI availability and install prompts vary by browser. iOS Safari does not provide Web MIDI; touch input remains available.
+- Video triggers use browser media elements and can have more latency than decoded audio. The app cannot promise zero-latency video playback.
+- Pitch processing depends on browser AudioWorklet support and device capacity. The app disables Pitch when it cannot create a working route; Speed remains available.
+- Recording uses the audio/video MIME types supported by the current browser (`.webm`, `.mp4`, `.m4a` or another reported type). Changing a file extension does **not** transcode media. Some browsers cannot record video.
+- Physical Android/iOS camera, codec, performance, listening and accessibility acceptance must be checked separately from synthetic desktop tests.
 
 ## Original-source note
 

@@ -207,7 +207,7 @@ function renderControls() {
   const pitchAvailable=audio.canPitch(selected);
   $('pitch').disabled=!pitchAvailable;
   $('pitch-out').textContent=pitchAvailable?`${config.pitch>0?'+':''}${config.pitch} st`:'Unavailable';
-  $('pitch-note').textContent=pitchAvailable?'Pitch is processed separately from Speed. Pitch shifting adds a short processing delay; sound quality varies by device.':audio.pitchReady?'Pitch is unavailable for this media source in this browser. Speed remains available.':'This browser does not support the local pitch processor. Pitch is disabled; Speed remains available.';
+  $('pitch-note').textContent=pitchAvailable?'Pitch is processed separately from Speed. Pitch shifting adds a short processing delay; sound quality varies by device.':!mediaFiles.has(selected)?'Load an audio or video sample to use independent Pitch.':audio.pitchReady?'Pitch is unavailable for this media source in this browser. Speed remains available.':'The local Pitch processor could not start in this browser. Speed remains available.';
   $('speed').value = config.speed;
   const max = Math.max(2,durations.get(selected)||15);
   $('trim-start').max = max;
