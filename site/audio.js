@@ -67,13 +67,13 @@ export class SamplerAudio {
     const source = this.sources.get(id);
     const now = this.context.currentTime;
     const when = scheduledAt ?? nextQuantizedTime(now, this.transportEpoch, this.bpm, this.quantize);
+    const delay = Math.max(0, (when - now) * 1000);
     if (!source?.file && !this.demoEnabled) return false;
     if (!source?.file && this.demoEnabled) {
       this.playDemo(id, when, pad.volume);
       setTimeout(() => onVisual?.(id), delay);
       return true;
     }
-    const delay = Math.max(0, (when - now) * 1000);
     const start = Math.max(0, pad.start);
     const end = Math.max(start + 0.02, pad.end);
     const rate = Math.pow(2, pad.pitch / 12);
