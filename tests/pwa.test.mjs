@@ -24,4 +24,6 @@ test('offline shell and all locally referenced ES modules exist', () => {
   assert.ok(shell[1].includes("'/onsets-worker.js'"));
   assert.ok(shell[1].includes("'/pitch-dsp.js'")&&shell[1].includes("'/pitch-shifter.js'"),
     'offline shell must include both pitch processor modules');
+  assert.ok(sw.includes("caches.match('/')"),
+    'offline navigation must fall back to the canonical root route used by Workers Static Assets');
 });
