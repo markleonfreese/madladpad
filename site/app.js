@@ -1,6 +1,6 @@
 import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, makeProject, normaliseProject, normaliseRegion, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, CaptureSession, suggestActiveRegion, isPadAudible, captureStepPosition, stepTriggerTime, nextBarTime } from './core.js';
 import { SamplerAudio } from './audio.js';
-import { getValue, putValue, deleteValue, collectProjectMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
+import { getValue, putValue, deleteValue, collectProjectMedia, collectVoiceMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
 import { pickFromDrive, pickFromPhotos } from './google.js';
 import { initVoiceLab } from './voice.js';
 
@@ -9,6 +9,7 @@ let project = makeProject();
 let selected = 0;
 let trackGridVisible = false;
 let audio;
+let voiceLab = null;
 let transportTimer = null;
 let nextStep = 0;
 let nextStepTime = 0;
@@ -54,6 +55,8 @@ function notify(message) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toast.classList.remove('show'), 5000);
 }
+
+function replaceProjectState(next) { Object.assign(project, next); }
 
 function queueSave() {
   clearTimeout(saveTimer);
@@ -464,7 +467,7 @@ async function assignVoiceWordsToPads(phrase,clips) {
     return true;
   }catch(error){
     for(const id of loaded){audio.unload(id);mediaFiles.delete(id);durations.delete(id);}
-    project=normaliseProject(previousProject);
+    replaceProjectState(normaliseProject(previousProject));
     renderGrid();renderTrackGrid();selectPad(selected);
     window.dispatchEvent(new Event('madladpad-media-change'));
     queueSave();
@@ -510,6 +513,7 @@ function startSequencer() {
       }
     };
     transportTimer=setInterval(tick,25);
+    voiceLab?.transportStarted(audio.transportEpoch,project.bpm);
     tick();
     $('play-seq').textContent='■ STOP'; $('play-seq').classList.add('active');
     renderScenes();
@@ -524,6 +528,7 @@ function updateBeatIndicator(step) {
 
 function stopSequencer() {
   clearInterval(transportTimer); transportTimer=null;
+  voiceLab?.transportStopped();
   if(pendingScene){pendingScene=null;renderScenes();notify('Queued scene canceled because the sequencer stopped.');}
   else renderScenes();
   $('play-seq').textContent='▶ PLAY'; $('play-seq').classList.remove('active');
@@ -781,11 +786,12 @@ async function keepCameraTake() {
     pad.kind='video';pad.fileName=take.name;pad.name=take.name.replace(/\.[^/.]+$/,'').slice(0,45)||`Pad ${target+1}`;pad.start=cameraRegion.start;pad.end=cameraRegion.end;
     clearTimeout(saveTimer);
     try {await saveCapturedPad(target,take,next);} catch(error){queueSave();throw error;}
-    project=next;
+    replaceProjectState(next);
     let loadError=null;
     try {pads[target].video.controls=false;await audio.load(target,take,pads[target].video);mediaFiles.set(target,take);durations.delete(target);}
     catch(error){loadError=error;}
     cameraSession.keep(token);closeCamera();selectPad(target);
+    window.dispatchEvent(new Event('madladpad-media-change'));
     notify(loadError?'Take saved locally, but could not load. Reload to retry.':'Take saved on this device.');
   } catch(error){notify(`Could not save take: ${error.message}`);}
   finally {cameraSaving=false;$('camera-keep').disabled=false;$('camera-retake').disabled=false;$('camera-close').disabled=false;}
@@ -793,13 +799,18 @@ async function keepCameraTake() {
 
 async function exportPack() {
   try {
+    if (voiceLab?.isRecording()) throw new Error('Stop and save the active vocal take before exporting the project pack.');
     const media=await collectProjectMedia();
-    const bytes=media.reduce((sum,blob)=>sum+(blob?.size||0),0);
+    const voiceMedia=await collectVoiceMedia(project.voice.layers);
+    if(voiceMedia.some(item=>!item.file))throw new Error('A vocal layer raw take is missing. Export the take or remove that layer before making a pack.');
+    const bytes=[...media,...voiceMedia.map(item=>item.file)].reduce((sum,blob)=>sum+(blob?.size||0),0);
     if(bytes>MAX_MEDIA_BYTES) throw new Error('This pack exceeds 80 MB. Save smaller clips before exporting.');
     notify('Preparing a portable project with its media…');
     const contents=[];
     for(const blob of media) contents.push(blob?await blobAsDataUrl(blob):null);
-    const pack={format:'madladpad',version:1,project,media:contents};
+    const voiceContents=[];
+    for(const item of voiceMedia)voiceContents.push(await blobAsDataUrl(item.file));
+    const pack={format:'madladpad',version:1,project,media:contents,voiceMedia:voiceContents};
     download(new Blob([JSON.stringify(pack)],{type:'application/json'}),`${project.title.replace(/[^a-z0-9-]+/gi,'-').toLowerCase()||'session'}.madladpad`);
     notify('Project pack downloaded. It contains your media, so share it thoughtfully.');
   } catch(error) {notify(`Export failed: ${error.message}`);}
@@ -811,17 +822,25 @@ async function importPack(file) {
     const raw=JSON.parse(await file.text());
     if(raw.format!=='madladpad' || raw.version!==1 || !Array.isArray(raw.media)||raw.media.length!==16) throw new Error('Unsupported project format');
     const incoming=normaliseProject(raw.project);
+    const rawVoice=Array.isArray(raw.voiceMedia)?raw.voiceMedia:[];
+    if(rawVoice.length!==incoming.voice.layers.length)throw new Error('This pack is missing one or more vocal raw takes.');
+    const voiceBlobs=rawVoice.map(data=>data?dataUrlAsBlob(data):null);
+    if(voiceBlobs.some(blob=>!blob||!blob.type.startsWith('audio/')))throw new Error('Vocal layers must include local audio takes.');
     const blobs=raw.media.map(data=>data ? dataUrlAsBlob(data):null);
     if(blobs.some(blob=>blob && blob.size>MAX_MEDIA_BYTES)) throw new Error('A sample is larger than the 80 MB limit');
     const files=blobs.map((blob,i)=>blob ? new File([blob],incoming.pads[i].fileName||`sample-${i+1}`,{type:blob.type}) : null);
+    const voiceFiles=voiceBlobs.map((blob,index)=>new File([blob],`vocal-take-${index+1}`,{type:blob.type}));
+    if([...files,...voiceFiles].reduce((sum,file)=>sum+(file?.size||0),0)>MAX_MEDIA_BYTES)throw new Error('This pack exceeds the 80 MB local media limit.');
+    if(voiceLab?.isRecording())throw new Error('Stop and save the active vocal take before importing a project pack.');
     if(!confirm('Replace your current local project? Export it first if you want a backup.')) return;
     patternRecording=null;patternUndoSnapshot=null;renderPatternRecordingState();
     // A single IndexedDB transaction prevents a partial replacement on quota or write failure.
     clearTimeout(saveTimer);
-    try { await replaceProjectMedia(incoming,files); }
+    try { await replaceProjectMedia(incoming,files,incoming.voice.layers.map((layer,index)=>({id:layer.id,file:voiceFiles[index]}))); }
     catch(error) { queueSave(); throw error; }
     stopSequencer();
-    project=incoming;selected=0;
+    replaceProjectState(incoming);selected=0;
+    audio.vocalSources.clear();await voiceLab?.reloadLayers();
     let unavailable=0;
     for(let i=0;i<16;i++) {
       audio.unload(i);mediaFiles.delete(i);durations.delete(i);
@@ -975,7 +994,7 @@ async function initialise() {
     await audio.initPitchProcessor();
     buildGrid();bindControls();
     const saved=await getValue('project');
-    if(saved)project=normaliseProject(saved);
+    if(saved)replaceProjectState(normaliseProject(saved));
     renderSession();
     renderPatternRecordingState();
     let restored=0;
@@ -990,7 +1009,7 @@ async function initialise() {
       } catch(error){console.warn(`Failed to restore pad ${id+1}`,error);}
     }
     renderSession();
-    initVoiceLab({ getProject: () => project, getMediaFiles: () => mediaFiles, getAudio: () => audio, notify, save: queueSave, assignWordsToPads: assignVoiceWordsToPads });
+    voiceLab=await initVoiceLab({ getProject: () => project, getMediaFiles: () => mediaFiles, getAudio: () => audio, getTransport: () => ({running:Boolean(transportTimer),epoch:audio.transportEpoch,bpm:project.bpm}), notify, save: queueSave, assignWordsToPads: assignVoiceWordsToPads });
     if(restored)notify(`Restored ${restored} locally saved samples.`);
     if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost'))navigator.serviceWorker.register('/sw.js').catch(()=>{});
     $('connection-indicator').textContent=navigator.onLine?'LOCAL STUDIO':'OFFLINE READY';

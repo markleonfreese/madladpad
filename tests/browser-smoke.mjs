@@ -238,6 +238,34 @@ try {
   const lyricDownload=page.waitForEvent('download');
   await page.locator('#rap-export').click();
   assert.match((await lyricDownload).suggestedFilename(),/\.txt$/);
+  const vocalOverdubSupported=await page.evaluate(()=>Boolean(window.MediaRecorder&&navigator.mediaDevices?.getUserMedia));
+  if(vocalOverdubSupported){
+    await page.locator('#play-seq').click();
+    await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
+    await page.waitForFunction(()=>!document.querySelector('#voice-overdub-record').disabled);
+    await page.locator('#voice-overdub-record').click();
+    await page.waitForFunction(()=>document.querySelector('#voice-overdub-status').textContent.includes('Recording microphone audio'));
+    await page.waitForTimeout(650);
+    await page.locator('#voice-overdub-stop').click();
+    await page.waitForFunction(()=>document.querySelectorAll('#voice-overdub-layers .vocal-layer').length===1,null,{timeout:8000});
+    const vocalRow=page.locator('#voice-overdub-layers .vocal-layer').first();
+    assert.match(await vocalRow.locator('.vocal-layer-meta').textContent(),/Raw take saved locally.*bar/,'a microphone overdub should save its raw local recording and sequencer position');
+    await vocalRow.locator('.vocal-layer-name').fill('Lead take');
+    await vocalRow.locator('.vocal-layer-name').press('Tab');
+    await vocalRow.locator('.vocal-layer-start input').fill('18');
+    await vocalRow.locator('.vocal-layer-start input').press('Tab');
+    await vocalRow.locator('.vocal-layer-gain input').evaluate(input=>{input.value='.73';input.dispatchEvent(new Event('input',{bubbles:true}));});
+    assert.equal(await vocalRow.locator('.vocal-layer-gain output').textContent(),'73%');
+    await vocalRow.locator('button').nth(0).click();
+    assert.equal(await vocalRow.locator('button').nth(0).getAttribute('aria-pressed'),'true','vocal mute should apply to an independent layer');
+    await page.locator('#voice-overdub-layers .vocal-layer button').nth(0).click();
+    await page.locator('#voice-overdub-layers .vocal-layer button').nth(1).click();
+    assert.equal(await page.locator('#voice-overdub-layers .vocal-layer button').nth(1).getAttribute('aria-pressed'),'true','vocal solo should apply to an independent layer');
+    await page.locator('#voice-overdub-layers .vocal-layer button').nth(1).click();
+    assert.equal(await page.locator('#voice-overdub-layers .vocal-layer button').nth(2).isEnabled(),true,'a decodable raw take should be previewable');
+    await page.locator('#voice-overdub-layers .vocal-layer button').nth(2).click();
+    await page.locator('#play-seq').click();
+  }
   await page.waitForTimeout(500);
   await page.reload();
   await page.getByText(/synthetic\.wav.*stored on this device/).waitFor();
@@ -256,6 +284,11 @@ try {
   assert.equal(await page.locator('#melody-harmony-interval').inputValue(),'3','harmony interval should persist locally');
   assert.equal(await page.locator('#rap-bars textarea').nth(0).inputValue(),'Hello from the other side','rap bars should persist locally');
   assert.equal(await page.locator('#rap-scheme').inputValue(),'AABB','rap rhyme shape should persist locally');
+  if(vocalOverdubSupported){
+    assert.equal(await page.locator('#voice-overdub-layers .vocal-layer-name').inputValue(),'Lead take','vocal layer names should persist');
+    assert.equal(await page.locator('#voice-overdub-layers .vocal-layer-start input').inputValue(),'18','vocal overdub timing should remain editable and persist');
+    assert.equal(Number(await page.locator('#voice-overdub-layers .vocal-layer-gain input').inputValue()),.73,'vocal gain should persist');
+  }
   checkpoint('local speech transcription mock, phrase selection/order, melody and rap persistence/exports');
   checkpoint('local audio import and reload');
   await page.locator('.pad').nth(11).hover();
@@ -392,12 +425,15 @@ try {
   assert.ok(pack.media[0].startsWith('data:audio/'));
   assert.equal(pack.project.pads[1].steps[4],true,'project pack should preserve the second lane pattern');
   assert.equal(pack.project.pads[2].steps[8],true,'project pack should preserve the third lane pattern');
+  if(vocalOverdubSupported){assert.equal(pack.voiceMedia.length,1);assert.ok(pack.voiceMedia[0].startsWith('data:audio/'),'portable packs should preserve each vocal layer raw take');}
   if(recordingSupported)assert.ok(pack.media[1].startsWith('data:video/'),'portable pack should retain the synthetic video sample');
   await page.locator('#project-title').fill('Before restore');
   page.once('dialog', dialog => dialog.accept());
   await page.locator('#project-input').setInputFiles({name:'smoke.madladpad',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(pack))});
-  await page.getByText('Project restored with its media.').waitFor();
+  await page.waitForFunction(()=>document.querySelector('#toast').textContent.includes('Project restored')||document.querySelector('#toast').textContent.includes('Project saved')||document.querySelector('#toast').textContent.includes('Import failed'),null,{timeout:10000});
+  assert.match(await page.locator('#toast').textContent(),/Project restored with its media\./,'the exported pack should restore without errors');
   assert.equal(await page.locator('#project-title').inputValue(), 'Smoke pack');
+  if(vocalOverdubSupported){assert.equal(await page.locator('#voice-overdub-layers .vocal-layer-name').inputValue(),'Lead take','restoring a project pack should restore its vocal layer metadata');assert.match(await page.locator('#voice-overdub-layers .vocal-layer-meta').textContent(),/Raw take saved locally/,'restoring a project pack should restore its raw take');}
   await page.reload();
   await page.getByText(/synthetic.wav.*stored on this device/).waitFor();
   assert.equal(await page.locator('#project-title').inputValue(), 'Smoke pack');

@@ -5,12 +5,13 @@ export const MAX_SCENES = 8;
 export const MAX_MEDIA_BYTES = 80 * 1024 * 1024;
 export const MAX_TRANSCRIPT_WORDS = 1000;
 export const MAX_VOICE_PHRASES = 8;
+export const MAX_VOCAL_LAYERS = 16;
 export const MAX_MELODY_NOTES = 128;
 export const HARMONY_INTERVALS = [-12, -7, -5, -4, -3, 3, 4, 5, 7, 12];
 export const RAP_BAR_COUNT = 16;
 
 export const makeVoiceData = () => ({
-  transcripts: [], phrases: [], melody: { tuning: 440, notes: [] },
+  transcripts: [], phrases: [], layers: [], melody: { tuning: 440, notes: [] },
   rap: { scheme: 'AABB', bars: Array(RAP_BAR_COUNT).fill('') }
 });
 
@@ -39,6 +40,13 @@ function normaliseVoice(value) {
       })).filter(word => word.text && word.end > word.start)
     };
   }) : [];
+  const layers = Array.isArray(source.layers) ? source.layers.slice(0, MAX_VOCAL_LAYERS).map((layer, index) => ({
+    id: String(layer?.id || `vocal-${index + 1}`).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || `vocal-${index + 1}`,
+    name: String(layer?.name || `Vocal take ${index + 1}`).slice(0, 48),
+    startStep: clamp(layer?.startStep ?? 0, 0, 4096),
+    gain: clamp(layer?.gain ?? 1, 0, 1.5),
+    muted: Boolean(layer?.muted), solo: Boolean(layer?.solo)
+  })) : [];
   const melodySource = source.melody && typeof source.melody === 'object' ? source.melody : {};
   const notes = Array.isArray(melodySource.notes) ? melodySource.notes.slice(0, MAX_MELODY_NOTES).map(note => ({
     midi: clamp(Math.round(note?.midi ?? 60), 24, 108),
@@ -49,7 +57,7 @@ function normaliseVoice(value) {
   })) : [];
   const rapSource = source.rap && typeof source.rap === 'object' ? source.rap : {};
   return {
-    transcripts, phrases,
+    transcripts, phrases, layers,
     melody: {
       tuning: clamp(melodySource.tuning ?? 440, 400, 480),
       harmonyInterval: HARMONY_INTERVALS.includes(Number(melodySource.harmonyInterval)) ? Number(melodySource.harmonyInterval) : 3,

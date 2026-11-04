@@ -12,6 +12,13 @@ test('demo pad triggers without a temporal-dead-zone exception', () => {
   assert.equal(sampler.trigger(0, {volume: 1}, () => {}, 0), true);
 });
 
+test('project packs import recorded audio MIME parameters safely', async () => {
+  const blob = storage.dataUrlAsBlob('data:audio/webm;codecs=opus;base64,YQ==');
+  assert.equal(blob.type, 'audio/webm');
+  assert.equal(await blob.text(), 'a');
+  assert.throws(() => storage.dataUrlAsBlob('data:application/json;base64,e30='), /Invalid imported media data/);
+});
+
 test('pack replacement aborts every saved change if a media write fails', async () => {
   assert.equal(typeof storage.replaceProjectMedia, 'function');
   const saved = new Map([['project', 'old project'], ['media:0', 'old media']]);
