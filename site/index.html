@@ -84,7 +84,8 @@
   <input hidden id="media-input" type="file" accept="video/*,audio/*,image/*" multiple>
   <input hidden id="project-input" type="file" accept=".madladpad,application/json">
   <canvas hidden id="capture-canvas" width="960" height="720" aria-hidden="true"></canvas>
-  <dialog id="camera-dialog" class="camera-dialog"><h3>Capture a moment</h3><video id="camera-preview" muted autoplay playsinline></video><p id="camera-status">Ready to record a two-second clip.</p><div><button class="accent-button" id="camera-capture">CAPTURE 2 SECONDS</button><button class="quiet-button" id="camera-close">CANCEL</button></div></dialog>
+  <dialog id="pad-source-dialog" class="camera-dialog"><h3 id="pad-source-title">Add a sample</h3><p>Choose a source for this empty pad.</p><div><button class="accent-button" id="pad-record">RECORD ON PAD</button><button class="quiet-button" id="pad-files">DEVICE / FILES</button><button class="quiet-button" id="pad-source-cancel">CANCEL</button></div></dialog>
+  <dialog id="camera-dialog" class="camera-dialog"><h3 id="camera-title">Capture a moment</h3><video id="camera-preview" muted autoplay playsinline></video><p id="camera-status" role="status">Requesting camera and microphone access…</p><div><button class="accent-button" id="camera-capture" disabled>CAPTURE 2 SECONDS</button><button class="quiet-button" id="camera-retake" hidden>RETAKE</button><button class="accent-button" id="camera-keep" hidden>KEEP ON PAD</button><button class="quiet-button" id="camera-close">CANCEL</button></div></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
