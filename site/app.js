@@ -1,6 +1,6 @@
-import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, makeProject, normaliseProject, normaliseRegion, clamp, supportedMediaFile, findRecorderMime, extensionForMime } from './core.js';
+import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, makeProject, normaliseProject, normaliseRegion, clamp, supportedMediaFile, findRecorderMime, extensionForMime, CaptureSession, suggestActiveRegion } from './core.js';
 import { SamplerAudio } from './audio.js';
-import { getValue, putValue, deleteValue, collectProjectMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia } from './storage.js';
+import { getValue, putValue, deleteValue, collectProjectMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
 import { pickFromDrive, pickFromPhotos } from './google.js';
 
 const $ = id => document.getElementById(id);
@@ -12,6 +12,18 @@ let nextStep = 0;
 let nextStepTime = 0;
 let recording = null;
 let cameraStream = null;
+const cameraSession = new CaptureSession();
+let cameraRecorder = null;
+let cameraTimer = null;
+let cameraUrl = null;
+let sourcePad = null;
+let captureTargetResolve = null;
+let captureTargetOrigin = null;
+let fileTarget = null;
+let cameraSaving = false;
+let cameraRegion = {start:0,end:0};
+let cameraMeterTimer = null;
+let cameraMeterSource = null;
 let saveTimer;
 let toastTimer;
 let drawing = false;
@@ -61,7 +73,7 @@ function buildGrid() {
     card.prepend(video,image);
     card.querySelector('.pad-hit').addEventListener('click', () => {
       selectPad(id);
-      if (!mediaFiles.has(id) && !audio.demoEnabled) $('media-input').click();
+      if (!mediaFiles.has(id) && !audio.demoEnabled) { sourcePad=id; $('pad-source-title').textContent=`Add a sample to pad ${id+1}`; $('pad-source-dialog').showModal(); }
       else playPad(id);
     });
     card.querySelector('.edit-pad').addEventListener('click', () => selectPad(id));
@@ -384,45 +396,153 @@ async function toggleSetRecording() {
   } catch(error) { drawing=false;recording=null;notify(error.message); }
 }
 
-async function openCamera() {
+function cameraReady() {
+  const video=$('camera-preview');
+  if(cameraUrl){URL.revokeObjectURL(cameraUrl);cameraUrl=null;}
+  video.removeAttribute('src');video.srcObject=cameraStream;video.muted=true;video.controls=false;video.autoplay=true;
+  video.play().catch(()=>{});
+  $('camera-capture').hidden=false;$('camera-capture').disabled=!cameraStream;
+  $('camera-retake').hidden=true;$('camera-keep').hidden=true;
+  $('camera-status').textContent='Camera and microphone active. Start when ready.';
+  $('camera-length-label').hidden=false;$('camera-review').hidden=true;
+  $('camera-capture').textContent='● START RECORDING';
+}
+
+function finishCaptureTarget(target){
+  if(!captureTargetResolve)return;
+  const resolve=captureTargetResolve;
+  captureTargetResolve=null;captureTargetOrigin=null;
+  if($('capture-target-dialog').open)$('capture-target-dialog').close();
+  resolve(target);
+}
+
+function chooseCaptureTarget(target){
+  if(!mediaFiles.has(target))return Promise.resolve(target);
+  const select=$('capture-target-select'),empty=project.pads.slice(0,PAD_COUNT[project.layout]).filter(pad=>pad.id!==target&&!mediaFiles.has(pad.id));
+  select.replaceChildren(...empty.map(pad=>{const option=document.createElement('option');option.value=String(pad.id);option.textContent=`Pad ${String(pad.id+1).padStart(2,'0')} · ${pad.name}`;return option;}));
+  $('capture-target-status').textContent=empty.length?'The old sample stays safe until you keep the new take.':'All visible pads are occupied. Change to a layout with an empty pad or cancel.';
+  $('capture-target-new').disabled=!empty.length;
+  captureTargetOrigin=target;
+  $('capture-target-dialog').showModal();
+  return new Promise(resolve=>{captureTargetResolve=resolve;});
+}
+
+async function openCamera(target=selected) {
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return notify('Camera capture needs HTTPS and a supported browser.');
+  const destination=await chooseCaptureTarget(target);
+  if(destination===null)return;
+  const token=cameraSession.begin(destination);
+  if(token===null)return;
+  $('camera-title').textContent=`Record on pad ${destination+1}`;
+  $('camera-status').textContent='Requesting camera and microphone access…';
+  $('camera-capture').disabled=true;$('camera-capture').hidden=false;
+  $('camera-retake').hidden=true;$('camera-keep').hidden=true;
+  $('camera-dialog').showModal();
   try {
-    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) throw new Error('Camera capture needs HTTPS and a supported browser.');
-    cameraStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:true});
-    $('camera-preview').srcObject=cameraStream;
-    $('camera-status').textContent='Ready to record a two-second clip.';
-    $('camera-dialog').showModal();
-  } catch(error){ notify(`Camera unavailable: ${error.message}`); }
+    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:true});
+    if(!cameraSession.current(token)){stream.getTracks().forEach(track=>track.stop());return;}
+    if(!stream.getVideoTracks().length || !stream.getAudioTracks().length){stream.getTracks().forEach(track=>track.stop());throw new Error('Both camera and microphone are required.');}
+    cameraStream=stream;cameraReady();
+  } catch(error) {if(cameraSession.current(token)){closeCamera();notify(`Camera unavailable: ${error.message}`);}}
 }
 
 function closeCamera() {
+  cameraSession.cancel();
+  clearTimeout(cameraTimer);cameraTimer=null;
+  clearInterval(cameraMeterTimer);cameraMeterTimer=null;cameraMeterSource?.disconnect();cameraMeterSource=null;
+  if(cameraRecorder && cameraRecorder.state!=='inactive')cameraRecorder.stop();
+  cameraRecorder=null;
   cameraStream?.getTracks().forEach(track=>track.stop());cameraStream=null;
-  $('camera-preview').srcObject=null;
-  $('camera-dialog').close();
+  const video=$('camera-preview');video.pause();video.srcObject=null;video.removeAttribute('src');video.load();
+  if(cameraUrl){URL.revokeObjectURL(cameraUrl);cameraUrl=null;}
+  cameraRegion={start:0,end:0};
+  if($('camera-dialog').open)$('camera-dialog').close();
 }
 
 async function captureCamera() {
-  if(!cameraStream) return;
-  const target=selected;
+  if(cameraRecorder){if(cameraRecorder.state!=='inactive')cameraRecorder.stop();return;}
+  const token=cameraSession.version;
+  if(!cameraStream || !cameraSession.start(token))return;
   $('camera-capture').disabled=true;
-  const types=['video/mp4','video/webm;codecs=vp8,opus','video/webm'];
-  const mime=types.find(type=>MediaRecorder.isTypeSupported(type));
   try {
+    await audio.unlock();
+    const mime=findRecorderMime();
     const recorder=new MediaRecorder(cameraStream,mime?{mimeType:mime}:undefined);
-    const chunks=[];
+    cameraRecorder=recorder;
+    const chunks=[],levels=[];
     recorder.ondataavailable=event=>{if(event.data.size)chunks.push(event.data);};
-    const complete=new Promise((resolve,reject)=>{
-      recorder.onstop=resolve;
-      recorder.onerror=event=>reject(event.error||new Error('Camera recorder failed'));
-    });
-    recorder.start(200);$('camera-status').textContent='Recording…';
-    await new Promise(resolve=>setTimeout(resolve,2000));
-    if(recorder.state!=='inactive')recorder.stop();
-    await complete;
-    const type=recorder.mimeType||mime||'video/webm';
-    const file=new File(chunks,`capture-${Date.now()}.${extensionForMime(type)}`,{type});
-    closeCamera();await placeFiles([file],target);
-  } catch(error) {notify(error.message);closeCamera();}
-  finally { $('camera-capture').disabled=false; }
+    recorder.onerror=event=>{if(cameraSession.current(token)){closeCamera();notify(`Recording failed: ${event.error?.message||'unknown error'}`);}};
+    try {const analyser=audio.context.createAnalyser();analyser.fftSize=1024;cameraMeterSource=audio.context.createMediaStreamSource(cameraStream);cameraMeterSource.connect(analyser);const samples=new Float32Array(analyser.fftSize);cameraMeterTimer=setInterval(()=>{analyser.getFloatTimeDomainData(samples);let sum=0;for(const sample of samples)sum+=sample*sample;levels.push(Math.sqrt(sum/samples.length));},50);} catch { /* The full clip remains available when live metering is unsupported. */ }
+    recorder.onstop=()=>{
+      if(!cameraSession.current(token))return;
+      if(cameraRecorder===recorder)cameraRecorder=null;clearInterval(cameraMeterTimer);cameraMeterTimer=null;cameraMeterSource?.disconnect();cameraMeterSource=null;clearTimeout(cameraTimer);cameraTimer=null;
+      const type=recorder.mimeType||mime||'';
+      if(!chunks.length || !/^video\/(mp4|webm)(;|$)/i.test(type)){closeCamera();notify('This browser did not provide a supported recording format.');return;}
+      try {
+        const file=new File(chunks,`capture-${Date.now()}.${extensionForMime(type)}`,{type});
+        if(file.size>MAX_MEDIA_BYTES)throw new Error('Recording exceeds the 80 MB per-clip limit. Choose a shorter recording length.');
+        if(!file.size || !cameraSession.review(token,file))throw new Error('No recording was captured.');
+        cameraStream?.getTracks().forEach(track=>track.stop());cameraStream=null;
+        const video=$('camera-preview');video.pause();video.srcObject=null;video.autoplay=false;cameraUrl=URL.createObjectURL(file);video.src=cameraUrl;video.muted=false;video.controls=true;video.load();
+        const setReviewRegion=()=>{if(!cameraSession.current(token)||cameraSession.phase!=='review'||cameraRegion.end>0)return;const duration=Number.isFinite(video.duration)&&video.duration>0?video.duration:Number($('camera-length').value);cameraRegion=suggestActiveRegion(levels,duration);$('camera-start').max=Math.max(0,duration-.05);$('camera-start').value=Math.min(cameraRegion.start,Number($('camera-start').max));$('camera-end').max=duration;$('camera-end').value=cameraRegion.end;updateCameraRegion();$('camera-keep').disabled=false;};
+        $('camera-keep').disabled=true;video.addEventListener('loadedmetadata',setReviewRegion,{once:true});setTimeout(setReviewRegion,1200);
+        $('camera-capture').hidden=true;$('camera-retake').hidden=false;$('camera-keep').hidden=false;
+        $('camera-length-label').hidden=true;$('camera-review').hidden=false;$('camera-status').textContent='Camera and microphone stopped. Suggested trim surrounds the detected sound; adjust, preview or keep.';
+      } catch(error){closeCamera();notify(`Could not review take: ${error.message}`);}
+    };
+    recorder.start(200);$('camera-length-label').hidden=true;$('camera-capture').disabled=false;$('camera-capture').textContent='■ STOP RECORDING';$('camera-status').textContent='Recording… tap Stop when ready.';
+    cameraTimer=setTimeout(()=>{if(recorder.state!=='inactive')recorder.stop();},(Number($('camera-length').value)||5)*1000);
+  } catch(error){cameraRecorder=null;closeCamera();notify(`Recording failed: ${error.message}`);}
+}
+
+function updateCameraRegion(){
+  cameraRegion.start=Number($('camera-start').value);cameraRegion.end=Number($('camera-end').value);
+  if(cameraRegion.start>=cameraRegion.end)cameraRegion.end=Math.min(Number($('camera-end').max),cameraRegion.start+.05);
+  $('camera-end').value=cameraRegion.end;$('camera-start-out').textContent=`${cameraRegion.start.toFixed(2)} s`;$('camera-end-out').textContent=`${cameraRegion.end.toFixed(2)} s`;
+}
+
+async function previewCameraRegion(){
+  const video=$('camera-preview');updateCameraRegion();video.currentTime=cameraRegion.start;await video.play().catch(()=>{});
+  const stopAtEnd=()=>{if(video.currentTime>=cameraRegion.end){video.pause();video.removeEventListener('timeupdate',stopAtEnd);}};video.addEventListener('timeupdate',stopAtEnd);
+}
+
+async function retakeCamera(){
+  const token=cameraSession.version;
+  if(!cameraSession.retake(token))return;
+  cameraRegion={start:0,end:0};
+  if(cameraUrl){URL.revokeObjectURL(cameraUrl);cameraUrl=null;}
+  $('camera-review').hidden=true;$('camera-length-label').hidden=false;$('camera-capture').textContent='● START RECORDING';
+  $('camera-retake').disabled=true;$('camera-keep').disabled=true;$('camera-status').textContent='Requesting camera and microphone access for a new take…';
+  try {
+    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:true});
+    if(!cameraSession.current(token)){stream.getTracks().forEach(track=>track.stop());return;}
+    if(!stream.getVideoTracks().length||!stream.getAudioTracks().length){stream.getTracks().forEach(track=>track.stop());throw new Error('Both camera and microphone are required.');}
+    cameraStream=stream;cameraReady();
+  } catch(error){if(cameraSession.current(token)){closeCamera();notify(`Retake unavailable: ${error.message}`);}}
+  finally {$('camera-retake').disabled=false;$('camera-keep').disabled=false;}
+}
+
+async function keepCameraTake() {
+  const token=cameraSession.version;
+  if(cameraSession.phase!=='review')return;
+  const target=cameraSession.target,take=cameraSession.take;
+  cameraSaving=true;
+  $('camera-keep').disabled=true;$('camera-retake').disabled=true;$('camera-close').disabled=true;
+  try {
+    const next=JSON.parse(JSON.stringify(project));
+    const pad=next.pads[target];
+    if(cameraRegion.end-cameraRegion.start<.05)throw new Error('Choose a sample at least 0.05 seconds long.');
+    pad.kind='video';pad.fileName=take.name;pad.name=take.name.replace(/\.[^/.]+$/,'').slice(0,45)||`Pad ${target+1}`;pad.start=cameraRegion.start;pad.end=cameraRegion.end;
+    clearTimeout(saveTimer);
+    try {await saveCapturedPad(target,take,next);} catch(error){queueSave();throw error;}
+    project=next;
+    let loadError=null;
+    try {pads[target].video.controls=false;await audio.load(target,take,pads[target].video);mediaFiles.set(target,take);durations.delete(target);}
+    catch(error){loadError=error;}
+    cameraSession.keep(token);closeCamera();selectPad(target);
+    notify(loadError?'Take saved locally, but could not load. Reload to retry.':'Take saved on this device.');
+  } catch(error){notify(`Could not save take: ${error.message}`);}
+  finally {cameraSaving=false;$('camera-keep').disabled=false;$('camera-retake').disabled=false;$('camera-close').disabled=false;}
 }
 
 async function exportPack() {
@@ -526,15 +646,26 @@ function bindControls() {
       renderControls();queueSave();
     });
   }
-  $('media-input').addEventListener('change',async event=>{await placeFiles([...event.target.files]);event.target.value='';});
+  $('media-input').addEventListener('change',async event=>{const target=fileTarget??selected;fileTarget=null;await placeFiles([...event.target.files],target);event.target.value='';});
   $('project-input').addEventListener('change',async event=>{if(event.target.files?.[0])await importPack(event.target.files[0]);event.target.value='';});
-  $('add-file').addEventListener('click',()=>$('media-input').click());
+  $('add-file').addEventListener('click',()=>{fileTarget=selected;$('media-input').click();});
   $('import-project-button').addEventListener('click',()=>$('project-input').click());
   $('export-button').addEventListener('click',exportPack);
-  $('camera-button').addEventListener('click',openCamera);
+  $('camera-button').addEventListener('click',()=>openCamera(selected));
+  $('pad-record').addEventListener('click',()=>{const target=sourcePad;$('pad-source-dialog').close();if(target!==null)openCamera(target);});
+  $('pad-files').addEventListener('click',()=>{fileTarget=sourcePad;$('pad-source-dialog').close();$('media-input').click();});
+  $('pad-source-cancel').addEventListener('click',()=>$('pad-source-dialog').close());
+  $('capture-target-replace').addEventListener('click',()=>finishCaptureTarget(captureTargetOrigin));
+  $('capture-target-new').addEventListener('click',()=>finishCaptureTarget(Number($('capture-target-select').value)));
+  $('capture-target-cancel').addEventListener('click',()=>finishCaptureTarget(null));
+  $('capture-target-dialog').addEventListener('cancel',event=>{event.preventDefault();finishCaptureTarget(null);});
   $('camera-capture').addEventListener('click',captureCamera);
+  $('camera-start').addEventListener('input',updateCameraRegion);$('camera-end').addEventListener('input',updateCameraRegion);
+  $('camera-preview-region').addEventListener('click',previewCameraRegion);
+  $('camera-retake').addEventListener('click',retakeCamera);
+  $('camera-keep').addEventListener('click',keepCameraTake);
   $('camera-close').addEventListener('click',closeCamera);
-  $('camera-dialog').addEventListener('cancel',event=>{event.preventDefault();closeCamera();});
+  $('camera-dialog').addEventListener('cancel',event=>{event.preventDefault();if(!cameraSaving)closeCamera();});
   $('clear-pad').addEventListener('click',async()=>{
     if(!mediaFiles.has(selected))return;
     if(!confirm('Remove this sample from local storage?'))return;
@@ -557,7 +688,7 @@ function bindControls() {
   $('google-photos').addEventListener('click',()=>pickFromPhotos(files=>placeFiles(files),notify).catch(error=>notify(error.message)));
   window.addEventListener('madladpad-error',event=>notify(event.detail));
   document.addEventListener('keydown',event=>{
-    if(event.repeat || event.metaKey || event.ctrlKey || event.altKey || ['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName)) return;
+    if(event.repeat || event.metaKey || event.ctrlKey || event.altKey || $('camera-dialog').open || $('pad-source-dialog').open || $('capture-target-dialog').open || ['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName)) return;
     const key=event.key.toUpperCase();
     if(key===' '){event.preventDefault();transportTimer?stopSequencer():startSequencer();return;}
     const id=HOTKEYS.indexOf(key);

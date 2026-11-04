@@ -46,6 +46,22 @@ export async function replaceProjectMedia(project, media) {
   } finally { db.close(); }
 }
 
+// Persist a capture and its project metadata together, or not at all.
+export async function saveCapturedPad(id, file, project) {
+  if(!Number.isInteger(id) || id<0 || id>=16)throw new RangeError('Invalid pad');
+  const db=await openDb();
+  try {
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction(STORE,'readwrite');
+      tx.oncomplete=()=>resolve();
+      tx.onerror=()=>reject(tx.error||new Error('Capture save failed'));
+      tx.onabort=()=>reject(tx.error||new Error('Capture save aborted'));
+      try {const store=tx.objectStore(STORE);store.put(file,`media:${id}`);store.put(project,'project');}
+      catch(error){tx.abort();reject(error);}
+    });
+  } finally {db.close();}
+}
+
 export async function collectProjectMedia() {
   return Promise.all(Array.from({length: 16}, (_, id) => getValue(`media:${id}`)));
 }

@@ -15,6 +15,20 @@ export function normaliseRegion(start, end, duration, changed = 'start') {
   }
   return {start:a,end:b};
 }
+
+export class CaptureSession {
+  constructor() { this.version=0; this.phase='idle'; this.target=null; this.take=null; }
+  begin(target) {
+    if (!Number.isInteger(target) || target<0 || target>=16 || this.phase!=='idle') return null;
+    this.version++; this.target=target; this.take=null; this.phase='ready'; return this.version;
+  }
+  current(token) { return token===this.version && this.phase!=='idle'; }
+  start(token) { if(!this.current(token) || this.phase!=='ready')return false; this.phase='recording'; return true; }
+  review(token,take) { if(!this.current(token) || this.phase!=='recording' || !take)return false; this.take=take;this.phase='review';return true; }
+  retake(token) { if(!this.current(token) || this.phase!=='review')return false;this.take=null;this.phase='ready';return true; }
+  keep(token) { if(!this.current(token) || this.phase!=='review')return null;const result={target:this.target,take:this.take};this.cancel();return result; }
+  cancel() { this.version++;this.phase='idle';this.target=null;this.take=null; }
+}
 export const makePad = id => ({
   id, name: `Pad ${String(id + 1).padStart(2, '0')}`, fileName: '', kind: '',
   volume: 0.9, pitch: 0, start: 0, end: 2, steps: Array(STEP_COUNT).fill(false)
@@ -54,3 +68,14 @@ export function findRecorderMime(isSupported = type => MediaRecorder.isTypeSuppo
 }
 export const extensionForMime = mime => mime.startsWith('video/mp4') ? 'mp4' : 'webm';
 export const supportedMediaFile = file => file && /^(video|audio|image)\//.test(file.type);
+
+export function suggestActiveRegion(levels, duration) {
+  if (!Array.isArray(levels) || !levels.length || !Number.isFinite(duration) || duration <= 0) return {start:0,end:Math.max(.05,duration||.05)};
+  const sorted=[...levels].sort((a,b)=>a-b);
+  const floor=sorted[Math.floor((sorted.length-1)*.2)]||0;
+  const gate=Math.max(.018,floor*2.5);
+  const active=levels.map((level,index)=>level>=gate?index:-1).filter(index=>index>=0);
+  if(!active.length)return {start:0,end:duration};
+  const frame=duration/levels.length;
+  return {start:Math.max(0,active[0]*frame-.08),end:Math.min(duration,(active.at(-1)+1)*frame+.12)};
+}
