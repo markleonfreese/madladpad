@@ -1,4 +1,4 @@
-import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, makeProject, normaliseProject, normaliseRegion, clamp, supportedMediaFile, findRecorderMime, extensionForMime, CaptureSession, suggestActiveRegion, isPadAudible, captureStepPosition, stepTriggerTime, nextBarTime } from './core.js';
+import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, makeProject, normaliseProject, normaliseRegion, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, CaptureSession, suggestActiveRegion, isPadAudible, captureStepPosition, stepTriggerTime, nextBarTime } from './core.js';
 import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
 import { pickFromDrive, pickFromPhotos } from './google.js';
@@ -16,6 +16,7 @@ let patternRecording = null;
 let patternUndoSnapshot = null;
 let pendingScene = null;
 let selectedSceneIndex = -1;
+let audioRecording = null;
 let cameraStream = null;
 const cameraSession = new CaptureSession();
 let cameraRecorder = null;
@@ -520,6 +521,7 @@ function download(blob,name) {
 
 async function toggleSetRecording() {
   if (recording) { if(recording.state!=='inactive')recording.stop(); return; }
+  if(audioRecording)return notify('Stop the audio-only take before recording an audiovisual set.');
   if (!window.MediaRecorder || !$('capture-canvas').captureStream) return notify('Video recording is unavailable in this browser.');
   try {
     await audio.unlock();
@@ -544,8 +546,38 @@ async function toggleSetRecording() {
     recording=recorder;drawing=true;drawPerformanceFrame();recorder.start(200);
     $('start-record').classList.add('recording');$('start-record').textContent='■ STOP RECORDING';
     $('start-record').setAttribute('aria-pressed','true');
+    $('start-record').blur();
     notify('Recording your audiovisual performance. Tap pads or start the beat maker.');
   } catch(error) { drawing=false;recording=null;notify(error.message); }
+}
+
+async function toggleAudioRecording() {
+  if(audioRecording){if(audioRecording.state!=='inactive')audioRecording.stop();return;}
+  if(recording)return notify('Stop the audiovisual set before recording an audio-only mix.');
+  if(!window.MediaRecorder)return notify('Audio recording is unavailable in this browser.');
+  try{
+    await audio.unlock();
+    const stream=audio.recordOut.stream;
+    if(!stream.getAudioTracks().length)throw new Error('The audio mix stream is unavailable.');
+    const mime=findAudioRecorderMime();
+    const recorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined),chunks=[];
+    recorder.ondataavailable=event=>{if(event.data.size)chunks.push(event.data);};
+    recorder.onerror=event=>notify(`Audio recording failed: ${event.error?.message||'unknown error'}`);
+    recorder.onstop=()=>{
+      const type=recorder.mimeType||mime||'audio/webm';
+      const blob=new Blob(chunks,{type});
+      if(blob.size)download(blob,`madladpad-audio-${Date.now()}.${extensionForAudioMime(type)}`);
+      else notify('The browser did not capture audio.');
+      audioRecording=null;
+      $('record-audio').classList.remove('recording');$('record-audio').textContent='♪ RECORD AUDIO MIX';
+      $('record-audio').setAttribute('aria-pressed','false');
+    };
+    audioRecording=recorder;recorder.start(200);
+    $('record-audio').classList.add('recording');$('record-audio').textContent='■ STOP AUDIO TAKE';
+    $('record-audio').setAttribute('aria-pressed','true');
+    $('record-audio').blur();
+    notify('Recording the master audio mix. Stop to download the supported audio format.');
+  }catch(error){audioRecording=null;notify(error.message);}
 }
 
 function cameraReady() {
@@ -846,6 +878,7 @@ function bindControls() {
   $('delete-scene').addEventListener('click',deleteScene);
   $('track-view').addEventListener('click',()=>{trackGridVisible=!trackGridVisible;$('steps').hidden=trackGridVisible;$('track-grid').hidden=!trackGridVisible;$('track-view').textContent=trackGridVisible?'SELECTED PAD':'ALL TRACKS';$('track-view').setAttribute('aria-pressed',String(trackGridVisible));if(trackGridVisible)renderTrackGrid();});
   $('start-record').addEventListener('click',toggleSetRecording);
+  $('record-audio').addEventListener('click',toggleAudioRecording);
   $('google-drive').addEventListener('click',()=>pickFromDrive(files=>placeFiles(files)).catch(error=>notify(error.message)));
   $('google-photos').addEventListener('click',()=>pickFromPhotos(files=>placeFiles(files),notify).catch(error=>notify(error.message)));
   window.addEventListener('madladpad-error',event=>notify(event.detail));

@@ -96,7 +96,11 @@ export function nextBarTime(now,epoch,bpm){
 export function findRecorderMime(isSupported = type => MediaRecorder.isTypeSupported(type)) {
   return ['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm','video/mp4'].find(isSupported) || '';
 }
+export function findAudioRecorderMime(isSupported = type => MediaRecorder.isTypeSupported(type)) {
+  return ['audio/mp4;codecs=mp4a.40.2','audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus'].find(isSupported) || '';
+}
 export const extensionForMime = mime => mime.startsWith('video/mp4') ? 'mp4' : 'webm';
+export const extensionForAudioMime = mime => mime.startsWith('audio/mp4') ? 'm4a' : mime.startsWith('audio/ogg') ? 'ogg' : 'webm';
 export const supportedMediaFile = file => file && /^(video|audio|image)\//.test(file.type);
 
 export function suggestActiveRegion(levels, duration) {
