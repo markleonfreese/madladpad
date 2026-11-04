@@ -1,4 +1,4 @@
-import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, makeProject, normaliseProject, clamp, supportedMediaFile, findRecorderMime, extensionForMime } from './core.js';
+import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, makeProject, normaliseProject, normaliseRegion, clamp, supportedMediaFile, findRecorderMime, extensionForMime } from './core.js';
 import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, blobAsDataUrl, dataUrlAsBlob } from './storage.js';
 import { pickFromDrive, pickFromPhotos } from './google.js';
@@ -15,6 +15,10 @@ let cameraStream = null;
 let saveTimer;
 let toastTimer;
 let drawing = false;
+let previewUrl = null;
+let previewDuration = 0;
+let regionDraft = null;
+let previewingRegion = false;
 const durations = new Map();
 const mediaFiles = new Map();
 const pads = [];
@@ -101,6 +105,30 @@ function selectPad(id) {
   if (id >= PAD_COUNT[project.layout]) return;
   selected=id;
   renderGrid(); renderControls(); renderSteps();
+  syncRegionPreview();
+}
+
+function renderRegion() {
+  const enabled = Boolean(regionDraft && previewDuration > 0);
+  for (const id of ['region-start','region-end','region-start-range','region-end-range','region-play','region-apply','region-reset']) $(id).disabled = !enabled;
+  if (!enabled) return;
+  for (const id of ['region-start','region-end','region-start-range','region-end-range']) $(id).max = previewDuration;
+  $('region-start').value = $('region-start-range').value = regionDraft.start;
+  $('region-end').value = $('region-end-range').value = regionDraft.end;
+  $('region-status').textContent = `Draft: ${regionDraft.start.toFixed(2)}–${regionDraft.end.toFixed(2)} s of ${previewDuration.toFixed(2)} s. Apply to save.`;
+}
+
+function syncRegionPreview() {
+  const video = $('region-preview');
+  video.pause(); previewingRegion=false;
+  video.removeAttribute('src'); video.load();
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl=null; previewDuration=0; regionDraft=null;
+  const file=mediaFiles.get(selected);
+  video.hidden = !file || !/^(audio|video)\//.test(file.type);
+  $('region-status').textContent=video.hidden?'Load an audio or video clip to select a region.':'Loading media duration…';
+  renderRegion();
+  if (!video.hidden) { previewUrl=URL.createObjectURL(file); video.src=previewUrl; video.load(); }
 }
 
 function renderControls() {
@@ -146,6 +174,7 @@ function renderSession() {
   $('quantize-select').value = project.quantize;
   renderGrid(); renderControls(); renderSteps();
   audio.setTransport(project.bpm,project.quantize);
+  syncRegionPreview();
 }
 
 async function playPad(id, scheduledAt) {
@@ -180,6 +209,7 @@ async function addMedia(id,file,persist=true) {
   renderPad(id);
   queueSave();
   if (selected===id) renderControls();
+  if (selected===id) syncRegionPreview();
 }
 
 async function placeFiles(files,start=selected) {
@@ -394,10 +424,43 @@ async function importPack(file) {
 }
 
 function bindControls() {
+  const preview=$('region-preview');
+  preview.addEventListener('loadedmetadata',()=>{
+    if (!Number.isFinite(preview.duration) || preview.duration<=0) { $('region-status').textContent='Duration unavailable; this clip cannot be previewed here.'; return; }
+    previewDuration=preview.duration;
+    regionDraft=normaliseRegion(project.pads[selected].start,project.pads[selected].end,previewDuration);
+    renderRegion();
+  });
+  preview.addEventListener('error',()=>{previewDuration=0;regionDraft=null;renderRegion();$('region-status').textContent='Preview unavailable for this file in this browser.';});
+  preview.addEventListener('timeupdate',()=>{if(previewingRegion && regionDraft && preview.currentTime>=regionDraft.end){preview.pause();previewingRegion=false;}});
+  for(const [id,key] of [['region-start','start'],['region-end','end'],['region-start-range','start'],['region-end-range','end']]) {
+    $(id).addEventListener('input',event=>{
+      if(!regionDraft || event.target.value==='')return;
+      regionDraft=normaliseRegion(key==='start'?Number(event.target.value):regionDraft.start,key==='end'?Number(event.target.value):regionDraft.end,previewDuration,key);
+      previewingRegion=false;preview.pause();preview.currentTime=key==='start'?regionDraft.start:regionDraft.end;
+      renderRegion();
+    });
+  }
+  $('region-play').addEventListener('click',async()=>{
+    if(!regionDraft)return;
+    try {preview.pause();preview.currentTime=regionDraft.start;previewingRegion=true;await preview.play();}
+    catch(error){previewingRegion=false;notify(`Preview unavailable: ${error.message}`);}
+  });
+  $('region-apply').addEventListener('click',()=>{
+    if(!regionDraft)return;
+    project.pads[selected].start=regionDraft.start;project.pads[selected].end=regionDraft.end;
+    renderControls();queueSave();notify('Selection applied to this pad.');
+  });
+  $('region-reset').addEventListener('click',()=>{
+    if(!previewDuration)return;
+    preview.pause();previewingRegion=false;
+    regionDraft=normaliseRegion(project.pads[selected].start,project.pads[selected].end,previewDuration);
+    preview.currentTime=regionDraft.start;renderRegion();
+  });
   $('layout-select').addEventListener('change',event=>{
     project.layout=event.target.value;
     if(selected>=PAD_COUNT[project.layout])selected=0;
-    renderGrid();renderControls();renderSteps();queueSave();
+    renderGrid();renderControls();renderSteps();syncRegionPreview();queueSave();
   });
   $('bpm-input').addEventListener('change',event=>{
     project.bpm=clamp(event.target.value,40,240);event.target.value=project.bpm;
@@ -409,7 +472,7 @@ function bindControls() {
   for(const [id,key,convert] of [['volume','volume',v=>v/100],['pitch','pitch',Number],['trim-start','start',Number],['trim-end','end',Number]]) {
     $(id).addEventListener('input',event=>{
       const pad=project.pads[selected];pad[key]=convert(Number(event.target.value));
-      if(key==='start' && pad.start>=pad.end)pad.end=Math.min(3600,pad.start+.05);
+      if(key==='start' && pad.start>=pad.end)pad.end=pad.start+.05;
       if(key==='end' && pad.end<=pad.start)pad.start=Math.max(0,pad.end-.05);
       renderControls();queueSave();
     });
@@ -429,7 +492,7 @@ function bindControls() {
     audio.unload(selected);mediaFiles.delete(selected);durations.delete(selected);
     const original=makeProject().pads[selected];
     project.pads[selected]={...original,steps:project.pads[selected].steps};
-    await deleteValue(`media:${selected}`);renderPad(selected);renderControls();queueSave();
+    await deleteValue(`media:${selected}`);renderPad(selected);renderControls();syncRegionPreview();queueSave();
   });
   $('demo-button').addEventListener('click',()=>{
     audio.demoEnabled=!audio.demoEnabled;
