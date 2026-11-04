@@ -111,13 +111,15 @@ function renderControls() {
   $('sample-info').textContent = mediaFiles.has(selected) ? `${config.fileName} · ${config.kind.toUpperCase()} · stored on this device` : 'No media loaded. Add a clip to get started.';
   $('volume').value = config.volume*100;
   $('pitch').value = config.pitch;
+  $('speed').value = config.speed;
   const max = Math.max(2,durations.get(selected)||15);
   $('trim-start').max = max;
   $('trim-end').max = max;
   $('trim-start').value = config.start;
   $('trim-end').value = config.end;
   $('volume-out').textContent = `${Math.round(config.volume*100)}%`;
-  $('pitch-out').textContent = `${config.pitch>0?'+':''}${config.pitch} st`;
+  $('pitch-out').textContent = 'Unavailable';
+  $('speed-out').textContent = `${config.speed.toFixed(2)}×`;
   $('start-out').textContent = `${config.start.toFixed(2)} s`;
   $('end-out').textContent = `${config.end.toFixed(2)} s`;
 }
@@ -406,7 +408,7 @@ function bindControls() {
   $('quantize-select').addEventListener('change',event=>{project.quantize=event.target.value;audio.setTransport(project.bpm,project.quantize);queueSave();});
   $('project-title').addEventListener('input',event=>{project.title=event.target.value;queueSave();});
   $('pad-name').addEventListener('input',event=>{project.pads[selected].name=event.target.value;renderPad(selected);queueSave();});
-  for(const [id,key,convert] of [['volume','volume',v=>v/100],['pitch','pitch',Number],['trim-start','start',Number],['trim-end','end',Number]]) {
+  for(const [id,key,convert] of [['volume','volume',v=>v/100],['speed','speed',Number],['trim-start','start',Number],['trim-end','end',Number]]) {
     $(id).addEventListener('input',event=>{
       const pad=project.pads[selected];pad[key]=convert(Number(event.target.value));
       if(key==='start' && pad.start>=pad.end)pad.end=Math.min(3600,pad.start+.05);
