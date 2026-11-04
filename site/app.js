@@ -19,6 +19,8 @@ let previewUrl = null;
 let previewDuration = 0;
 let regionDraft = null;
 let previewingRegion = false;
+let onsetWorker = null;
+let onsetRun = 0;
 const durations = new Map();
 const mediaFiles = new Map();
 const pads = [];
@@ -119,6 +121,7 @@ function renderRegion() {
 }
 
 function syncRegionPreview() {
+  cancelOnsetAnalysis(false);
   const video = $('region-preview');
   video.pause(); previewingRegion=false;
   video.removeAttribute('src'); video.load();
@@ -127,8 +130,49 @@ function syncRegionPreview() {
   const file=mediaFiles.get(selected);
   video.hidden = !file || !/^(audio|video)\//.test(file.type);
   $('region-status').textContent=video.hidden?'Load an audio or video clip to select a region.':'Loading media duration…';
+  $('find-samples').disabled=video.hidden;$('analysis-status').textContent='Suggestions are opt-in and processed locally.';$('sample-suggestions').replaceChildren();
   renderRegion();
   if (!video.hidden) { previewUrl=URL.createObjectURL(file); video.src=previewUrl; video.load(); }
+}
+
+function cancelOnsetAnalysis(updateStatus=true){
+  onsetRun++;onsetWorker?.terminate();onsetWorker=null;
+  if($('cancel-analysis'))$('cancel-analysis').hidden=true;
+  if($('find-samples'))$('find-samples').disabled=!mediaFiles.has(selected);
+  if(updateStatus&&$('analysis-status'))$('analysis-status').textContent='Analysis canceled. Manual region selection is still available.';
+}
+
+function showOnsetSuggestions(suggestions,token){
+  if(token!==onsetRun)return;
+  onsetWorker?.terminate();onsetWorker=null;$('cancel-analysis').hidden=true;
+  const list=$('sample-suggestions');list.replaceChildren();
+  if(!suggestions.length){$('analysis-status').textContent='No clear transients found. Keep choosing a region manually.';return;}
+  suggestions.forEach((candidate,index)=>{
+    const button=document.createElement('button');button.type='button';button.className='suggestion';button.textContent=`Candidate ${index+1} · ${candidate.start.toFixed(2)}–${candidate.end.toFixed(2)} s · onset score ${candidate.score.toFixed(2)}`;
+    button.addEventListener('click',()=>{regionDraft=normaliseRegion(candidate.start,candidate.end,previewDuration);$('region-preview').pause();previewingRegion=false;$('region-preview').currentTime=regionDraft.start;renderRegion();$('analysis-status').textContent='Heuristic suggestion selected. Preview, adjust, apply or ignore it.';});list.append(button);
+  });
+  $('analysis-status').textContent='Local heuristic candidates. Scores rank transients; they do not judge musical quality.';
+}
+
+async function findGoodSounds(){
+  const token=++onsetRun,file=mediaFiles.get(selected);
+  onsetWorker?.terminate();onsetWorker=null;$('sample-suggestions').replaceChildren();
+  if(!file||!file.type.match(/^(audio|video)\//))return $('analysis-status').textContent='Choose a local audio or video sample first.';
+  if(!previewDuration)return $('analysis-status').textContent='Wait for the media duration to load before starting analysis.';
+  if(file.size>32*1024*1024)return $('analysis-status').textContent='This file exceeds the 32 MB phone-analysis budget. Manual selection still works.';
+  if(previewDuration>120)return $('analysis-status').textContent='Analysis is limited to 120 seconds. Manual selection still works.';
+  $('cancel-analysis').hidden=false;$('find-samples').disabled=true;$('analysis-status').textContent='Decoding this local file. Cancel ignores the result, but cannot interrupt the browser decoder. Video containers vary; manual selection always remains available.';
+  try{
+    const decoded=await audio.context.decodeAudioData(await file.arrayBuffer());
+    if(token!==onsetRun)return;
+    if(decoded.duration>120||decoded.length*decoded.numberOfChannels>8_000_000)throw new Error('Decoded audio exceeds the 120-second or 8-million-sample budget.');
+    const mono=new Float32Array(decoded.length),channels=decoded.numberOfChannels;
+    for(let channel=0;channel<channels;channel++){const samples=decoded.getChannelData(channel);for(let i=0;i<mono.length;i++)mono[i]+=samples[i]/channels;}
+    const worker=new Worker(new URL('./onsets-worker.js',import.meta.url),{type:'module'});onsetWorker=worker;
+    worker.onmessage=event=>{if(token!==onsetRun)return;if(event.data.error){$('cancel-analysis').hidden=true;$('find-samples').disabled=false;$('analysis-status').textContent=`Analysis unavailable: ${event.data.error}. Manual selection still works.`;worker.terminate();onsetWorker=null;return;}showOnsetSuggestions(event.data.suggestions,token);$('find-samples').disabled=false;};
+    worker.onerror=()=>{if(token!==onsetRun)return;$('cancel-analysis').hidden=true;$('find-samples').disabled=false;$('analysis-status').textContent='Local analysis failed in this browser. Manual selection still works.';worker.terminate();onsetWorker=null;};
+    worker.postMessage({buffer:mono.buffer,sampleRate:decoded.sampleRate},[mono.buffer]);$('analysis-status').textContent='Finding transient regions locally…';
+  }catch(error){if(token===onsetRun){$('cancel-analysis').hidden=true;$('find-samples').disabled=false;$('analysis-status').textContent=`Suggestions unavailable for this media codec: ${error.message}. Manual selection still works.`;}}
 }
 
 function renderControls() {
@@ -428,10 +472,13 @@ function bindControls() {
   preview.addEventListener('loadedmetadata',()=>{
     if (!Number.isFinite(preview.duration) || preview.duration<=0) { $('region-status').textContent='Duration unavailable; this clip cannot be previewed here.'; return; }
     previewDuration=preview.duration;
+    $('find-samples').disabled=false;
     regionDraft=normaliseRegion(project.pads[selected].start,project.pads[selected].end,previewDuration);
     renderRegion();
   });
-  preview.addEventListener('error',()=>{previewDuration=0;regionDraft=null;renderRegion();$('region-status').textContent='Preview unavailable for this file in this browser.';});
+  preview.addEventListener('error',()=>{previewDuration=0;regionDraft=null;renderRegion();$('find-samples').disabled=true;$('region-status').textContent='Preview unavailable for this file in this browser.';});
+  $('find-samples').addEventListener('click',findGoodSounds);
+  $('cancel-analysis').addEventListener('click',()=>cancelOnsetAnalysis(true));
   preview.addEventListener('timeupdate',()=>{if(previewingRegion && regionDraft && preview.currentTime>=regionDraft.end){preview.pause();previewingRegion=false;}});
   for(const [id,key] of [['region-start','start'],['region-end','end'],['region-start-range','start'],['region-end-range','end']]) {
     $(id).addEventListener('input',event=>{

@@ -21,4 +21,5 @@ test('offline shell and all locally referenced ES modules exist', () => {
     if(path==='/') continue;
     assert.ok(existsSync(join(site,path.slice(1))),`${path} missing`);
   }
+  assert.ok(shell[1].includes("'/onsets-worker.js'"));
 });

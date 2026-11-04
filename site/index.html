@@ -76,6 +76,8 @@
             <button id="region-apply" type="button" disabled>Apply to pad</button>
             <button id="region-reset" type="button" disabled>Reset</button>
           </div>
+          <div class="region-actions"><button id="find-samples" type="button" disabled>Find good sounds on this device</button><button id="cancel-analysis" type="button" hidden>Cancel analysis</button></div>
+          <p id="analysis-status" role="status">Suggestions are opt-in and processed locally.</p><div id="sample-suggestions" class="sample-suggestions" aria-label="Suggested sample regions"></div>
         </section>
         <div class="sliders">
           <label>VOLUME <output id="volume-out">90%</output><input id="volume" type="range" min="0" max="150" value="90"></label>
