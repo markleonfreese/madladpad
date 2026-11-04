@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0c100e">
+  <meta name="description" content="MadLadPad — a pocket-sized audiovisual sampler. Remix your world.">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/styles.css">
+  <title>MadLadPad · Remix your world</title>
+  <script src="/google-config.js"></script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="identity">
+        <span class="logomark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+        <div><span class="eyebrow">MAKE NOISE. MAKE SOMETHING.</span><h1>MAD<span>LAD</span>PAD<sup>01</sup></h1></div>
+      </div>
+      <div class="top-actions">
+        <span class="offline-pill" id="connection-indicator">LOCAL STUDIO</span>
+        <button class="quiet-button" id="export-button" title="Download a portable project, including media">Export pack</button>
+        <button class="quiet-button" id="import-project-button" title="Restore a .madladpad project">Import pack</button>
+      </div>
+    </header>
+
+    <div class="intro">
+      <div><p class="overline"><span class="live-dot"></span> THE WORLD IS YOUR INSTRUMENT</p><h2>Collect the moment.<br><em>Play the unexpected.</em></h2></div>
+      <p>Record a door slam. Sample a laugh. Chop up a holiday video. Turn ordinary moments into extraordinary noise.</p>
+    </div>
+
+    <section class="transport-panel" aria-label="Performance controls">
+      <div class="project-name"><label for="project-title">YOUR SESSION</label><input id="project-title" maxlength="80" value="Untitled mixtape" aria-label="Project name"></div>
+      <div class="transport-controls">
+        <label class="field">LAYOUT<select id="layout-select"><option value="3x4">12 PADS</option><option value="2x2">4 PADS</option><option value="4x4">16 PADS</option></select></label>
+        <label class="field">BPM<input id="bpm-input" type="number" min="40" max="240" value="120"></label>
+        <label class="field">QUANTISE<select id="quantize-select"><option value="off">FREE</option><option value="1/4">1/4</option><option value="1/8">1/8</option><option value="1/16">1/16</option></select></label>
+        <button class="accent-button" id="start-record" aria-pressed="false"><span class="record-dot"></span> RECORD SET</button>
+      </div>
+    </section>
+
+    <main class="workspace">
+      <section class="performance-area" aria-label="Sampler grid">
+        <div class="section-label"><span>01 / PLAYGROUND</span><span>TOUCH · KEYS · MIDI</span></div>
+        <div id="pad-grid" class="pad-grid layout-3x4" aria-label="Playable sample pads"></div>
+        <div class="pad-bottom">
+          <p>Tap a loaded pad to play. Tap an empty pad to add a sound. Use Q W E R / A S D F / Z X C V on a keyboard.</p>
+          <button id="demo-button" class="pill-button" aria-pressed="false">TRY DEMO SOUNDS</button>
+        </div>
+      </section>
+
+      <aside class="inspector" aria-label="Sample editing panel">
+        <div class="section-label"><span>02 / SAMPLE LAB</span><span id="selected-number">PAD 01</span></div>
+        <div class="inspector-head"><div class="selected-circle" id="selected-circle">01</div><div><label for="pad-name">EDITING SAMPLE</label><input id="pad-name" maxlength="45" value="Pad 01" aria-label="Pad name"></div></div>
+        <p class="sample-info" id="sample-info">No media loaded. Add a clip to get started.</p>
+        <div class="source-buttons">
+          <button id="add-file" class="source-button main-source"><span class="source-icon">+</span> DEVICE / FILES <small>incl. iCloud Drive</small></button>
+          <button id="camera-button" class="source-button"><span class="source-icon">◎</span> CAMERA <small>Record 2 seconds</small></button>
+          <button id="google-drive" class="source-button"><span class="source-icon">△</span> GOOGLE DRIVE <small>Choose files</small></button>
+          <button id="google-photos" class="source-button"><span class="source-icon">▧</span> GOOGLE PHOTOS <small>Choose clips</small></button>
+        </div>
+        <div class="sliders">
+          <label>VOLUME <output id="volume-out">90%</output><input id="volume" type="range" min="0" max="150" value="90"></label>
+          <label>PITCH <output id="pitch-out">0 st</output><input id="pitch" type="range" min="-12" max="12" value="0"></label>
+          <label>START <output id="start-out">0.00 s</output><input id="trim-start" type="range" min="0" max="10" step="0.05" value="0"></label>
+          <label>END <output id="end-out">2.00 s</output><input id="trim-end" type="range" min="0.05" max="10" step="0.05" value="2"></label>
+        </div>
+        <div class="inspector-actions"><button id="clear-pad" class="text-button">Clear sample</button><button id="connect-midi" class="text-button">Connect MIDI</button></div>
+        <div class="info-note"><strong>PRIVATE BY DEFAULT</strong><p>Your clips are saved locally on this device. Export a pack to back them up or share them.</p></div>
+      </aside>
+    </main>
+
+    <section class="sequencer" aria-label="16-step sequencer">
+      <div class="section-label"><span>03 / BEAT MAKER</span><span>ONE BAR · 16 STEPS</span></div>
+      <div class="sequencer-head"><div><h3>Make it a loop.</h3><p>Choose a pad above, then place it on the beat.</p></div><div class="seq-buttons"><button class="pill-button" id="auto-beat">SURPRISE ME</button><button class="pill-button" id="clear-steps">CLEAR STEPS</button><button class="play-button" id="play-seq">▶ PLAY</button></div></div>
+      <div class="steps" id="steps" role="group" aria-label="Pattern steps for selected pad"></div>
+      <div class="timeline"><span>1</span><span>2</span><span>3</span><span>4</span></div>
+    </section>
+    <footer><span>DESIGNED FOR PEOPLE WHO HEAR MUSIC EVERYWHERE.</span><span>V0.1 · LOCAL-FIRST PWA · <a href="https://github.com/markleonfreese/madladpad" target="_blank" rel="noopener">SOURCE</a></span></footer>
+  </div>
+
+  <input hidden id="media-input" type="file" accept="video/*,audio/*,image/*" multiple>
+  <input hidden id="project-input" type="file" accept=".madladpad,application/json">
+  <canvas hidden id="capture-canvas" width="960" height="720" aria-hidden="true"></canvas>
+  <dialog id="camera-dialog" class="camera-dialog"><h3>Capture a moment</h3><video id="camera-preview" muted autoplay playsinline></video><p id="camera-status">Ready to record a two-second clip.</p><div><button class="accent-button" id="camera-capture">CAPTURE 2 SECONDS</button><button class="quiet-button" id="camera-close">CANCEL</button></div></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
