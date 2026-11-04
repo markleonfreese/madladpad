@@ -74,11 +74,15 @@ test('voice projects add bounded transcript, phrase, melody, tuning and rap data
   const legacy=normaliseProject({});
   assert.equal(legacy.voice.melody.tuning,440);
   assert.equal(legacy.voice.rap.bars.length,RAP_BAR_COUNT);
-  const voice=normaliseProject({voice:{transcripts:[{sourcePad:90,words:Array.from({length:MAX_TRANSCRIPT_WORDS+2},(_,i)=>({text:`w${i}`,start:i,end:i+.2,score:9}))}],phrases:[{words:[{text:'Hi',sourcePad:-2,start:0,end:1}]}],melody:{tuning:900,notes:[{midi:200,step:-1,duration:99}]},rap:{scheme:'NOPE',bars:['A'.repeat(600)]}}}).voice;
+  const voice=normaliseProject({voice:{transcripts:[{sourcePad:90,words:Array.from({length:MAX_TRANSCRIPT_WORDS+2},(_,i)=>({text:`w${i}`,start:i,end:i+.2,score:9}))}],phrases:[{gapMs:-5,crossfadeMs:999,words:[{text:'Hi',sourcePad:-2,start:0,end:1}]}],melody:{tuning:900,notes:[{midi:200,step:-1,duration:99}]},rap:{scheme:'NOPE',bars:['A'.repeat(600)]}}}).voice;
   assert.equal(voice.transcripts[0].sourcePad,15);
   assert.equal(voice.transcripts[0].words.length,MAX_TRANSCRIPT_WORDS);
   assert.equal(voice.transcripts[0].words[0].score,1);
   assert.equal(voice.phrases[0].words[0].sourcePad,0);
+  assert.equal(voice.phrases[0].gapMs,0);
+  assert.equal(voice.phrases[0].crossfadeMs,250);
+  const defaultPhrase=normaliseProject({voice:{phrases:[{words:[{text:'Hi',start:0,end:1}]}]}}).voice.phrases[0];
+  assert.deepEqual([defaultPhrase.gapMs,defaultPhrase.crossfadeMs],[35,0]);
   assert.equal(voice.melody.tuning,480);
   assert.deepEqual(voice.melody.notes[0],{midi:108,step:0,duration:16,word:''});
   assert.equal(voice.rap.scheme,'AABB');

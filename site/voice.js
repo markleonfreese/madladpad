@@ -15,10 +15,13 @@ function rhymeHints(line) {
   return Object.entries(rhymes).flatMap(([key, values]) => [key, ...values].filter(value => value.endsWith(word.slice(-2)) && value !== word)).slice(0, 3);
 }
 
-async function renderPhraseWav(phrase, project, audio) {
+async function renderPhraseBuffer(phrase, audio) {
   if (!phrase.words.length) throw new Error('Add words to the phrase before exporting.');
-  const sampleRate = Math.min(48000, audio.context.sampleRate), gap = .035;
-  const clips = []; let seconds = 0;
+  const sampleRate = Math.min(48000, audio.context.sampleRate);
+  const gap = clamp(phrase.gapMs ?? 35, 0, 500) / 1000;
+  const requestedCrossfade = clamp(phrase.crossfadeMs ?? 0, 0, 250) / 1000;
+  const clips = [];
+  let cursor = 0, previousDuration = 0;
   for (const word of phrase.words) {
     const source = audio.sources.get(word.sourcePad);
     if (!source?.file) throw new Error(`The source sample for “${word.text}” is not loaded.`);
@@ -26,19 +29,37 @@ async function renderPhraseWav(phrase, project, audio) {
     const start = clamp(word.start, 0, Math.max(0, buffer.duration - .01));
     const duration = Math.min(Math.max(.04, word.end - word.start), buffer.duration - start);
     if (duration < .03) continue;
-    clips.push({ buffer, start, duration, at: seconds }); seconds += duration + gap;
-    if (seconds > 60) throw new Error('Phrase audio export is limited to 60 seconds. Split this phrase into shorter parts.');
+    const overlap = clips.length ? Math.min(requestedCrossfade, previousDuration / 2, duration / 2) : 0;
+    if (clips.length) cursor += previousDuration + gap - overlap;
+    const clip = { buffer, start, duration, at: cursor, fadeIn: overlap, fadeOut: 0 };
+    if (clips.length) clips.at(-1).fadeOut = overlap;
+    clips.push(clip); previousDuration = duration;
+    if (cursor + duration > 60) throw new Error('Phrase audio export is limited to 60 seconds. Split this phrase into shorter parts.');
   }
   if (!clips.length) throw new Error('No source audio could be decoded for this phrase.');
-  const frameCount = Math.ceil(seconds * sampleRate), offline = new OfflineAudioContext(2, frameCount, sampleRate);
+  const seconds = clips.at(-1).at + clips.at(-1).duration;
+  const frameCount = Math.max(1, Math.ceil(seconds * sampleRate)), offline = new OfflineAudioContext(2, frameCount, sampleRate);
+  const curve = (rising, gain = .9) => Float32Array.from({ length: 33 }, (_, index) => {
+    const phase = index / 32 * Math.PI / 2;
+    return gain * (rising ? Math.sin(phase) : Math.cos(phase));
+  });
   for (const clip of clips) {
     const node = offline.createBufferSource(), gain = offline.createGain(); node.buffer = clip.buffer;
-    const stop = clip.at + clip.duration, fade = Math.min(.008, clip.duration / 4);
-    gain.gain.setValueAtTime(0, clip.at); gain.gain.linearRampToValueAtTime(.9, clip.at + fade);
-    gain.gain.setValueAtTime(.9, Math.max(clip.at + fade, stop - fade)); gain.gain.linearRampToValueAtTime(0, stop);
+    const stop = clip.at + clip.duration;
+    const fadeIn = clip.fadeIn || Math.min(.008, clip.duration / 4);
+    const fadeOut = clip.fadeOut || Math.min(.008, clip.duration / 4);
+    gain.gain.setValueAtTime(0, clip.at);
+    gain.gain.setValueCurveAtTime(curve(true), clip.at, fadeIn);
+    const sustainStart = clip.at + fadeIn, sustainEnd = stop - fadeOut;
+    if (sustainEnd > sustainStart + .00001) gain.gain.setValueAtTime(.9, sustainEnd);
+    gain.gain.setValueCurveAtTime(curve(false), sustainEnd, fadeOut);
     node.connect(gain).connect(offline.destination); node.start(clip.at, clip.start, clip.duration); node.stop(stop + .002);
   }
-  const rendered = await offline.startRendering(), channels = 2, dataBytes = rendered.length * channels * 2;
+  return offline.startRendering();
+}
+
+function audioBufferToWav(rendered) {
+  const sampleRate = rendered.sampleRate, channels = 2, dataBytes = rendered.length * channels * 2;
   const bytes = new ArrayBuffer(44 + dataBytes), view = new DataView(bytes);
   const ascii = (offset, text) => [...text].forEach((character, index) => view.setUint8(offset + index, character.charCodeAt(0)));
   ascii(0, 'RIFF'); view.setUint32(4, 36 + dataBytes, true); ascii(8, 'WAVE'); ascii(12, 'fmt ');
@@ -51,6 +72,10 @@ async function renderPhraseWav(phrase, project, audio) {
     view.setInt16(46 + frame * 4, Math.round(clamp(right[frame], -1, 1) * 32767), true);
   }
   return new Blob([bytes], { type: 'audio/wav' });
+}
+
+async function renderPhraseWav(phrase, audio) {
+  return audioBufferToWav(await renderPhraseBuffer(phrase, audio));
 }
 
 function download(blob, fileName) {
@@ -99,17 +124,27 @@ function renderPhrases(project, audio, notify, save, assignWordsToPads) {
   project.voice.phrases.forEach((phrase, index) => {
     const card = document.createElement('div'); card.className = 'voice-phrase';
     const title = document.createElement('strong'); title.textContent = `${phrase.name} · ${phrase.words.length} words`;
+    const timing = document.createElement('div'); timing.className = 'phrase-timing';
+    const timingControl = (key, label, max, help) => {
+      const field = document.createElement('label'); field.textContent = label;
+      const input = document.createElement('input'); input.type = 'number'; input.min = '0'; input.max = String(max); input.step = '5'; input.value = String(phrase[key] ?? 0);
+      input.setAttribute('aria-label', `${phrase.name} ${label.toLowerCase()}`);
+      input.addEventListener('change', () => { phrase[key] = clamp(input.value, 0, max); save(); renderPhrases(project, audio, notify, save, assignWordsToPads); });
+      const note = document.createElement('small'); note.textContent = help; field.append(input, note); timing.append(field);
+    };
+    timingControl('gapMs', 'GAP', 500, 'between words · ms');
+    timingControl('crossfadeMs', 'CROSSFADE', 250, 'overlap · ms');
     const controls = document.createElement('div'); controls.className = 'voice-actions';
     const play = document.createElement('button'); play.type = 'button'; play.className = 'pill-button'; play.textContent = '▶ PREVIEW'; play.setAttribute('aria-label', `Preview ${phrase.name}`);
     play.addEventListener('click', async () => {
-      await audio.unlock(); let at = audio.context.currentTime + .04;
-      for (const word of phrase.words) {
-        const pad = project.pads[word.sourcePad];
-        if (!audio.sources.get(word.sourcePad)?.file) { notify(`Load the source sample for ${word.text} to preview this phrase.`); return; }
-        const start = Math.max(0, word.start), end = Math.max(start + .05, word.end);
-        audio.trigger(word.sourcePad, { ...pad, start, end }, undefined, at);
-        at += Math.max(.08, end - start);
-      }
+      play.disabled = true;
+      try {
+        await audio.unlock();
+        const rendered = await renderPhraseBuffer(phrase, audio);
+        const source = audio.context.createBufferSource(); source.buffer = rendered; source.connect(audio.master);
+        source.onended = () => { source.disconnect(); play.disabled = false; };
+        source.start(audio.context.currentTime + .04);
+      } catch (error) { notify(`Phrase preview failed: ${error.message}`); play.disabled = false; }
     }); controls.append(play);
     const assign = document.createElement('button'); assign.type = 'button'; assign.className = 'pill-button'; assign.textContent = 'MAP WORDS TO PADS + STEPS';
     assign.setAttribute('aria-label', `Map ${phrase.name} words to pads and steps`);
@@ -120,7 +155,7 @@ function renderPhrases(project, audio, notify, save, assignWordsToPads) {
       try {
         const clips = [];
         for (const word of phrase.words) {
-          const blob = await renderPhraseWav({ words: [word] }, project, audio);
+          const blob = await renderPhraseWav({ words: [word], gapMs: 0, crossfadeMs: 0 }, audio);
           const sampleRate = new DataView(await blob.slice(24, 28).arrayBuffer()).getUint32(0, true);
           const duration = (blob.size - 44) / (sampleRate * 4);
           const safeWord = word.text.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 24) || 'word';
@@ -135,7 +170,7 @@ function renderPhrases(project, audio, notify, save, assignWordsToPads) {
     exportAudio.addEventListener('click', async () => {
       exportAudio.disabled = true;
       try {
-        const blob = await renderPhraseWav(phrase, project, audio);
+        const blob = await renderPhraseWav(phrase, audio);
         const safeTitle = (project.title || 'madladpad').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
         download(blob, `${safeTitle}-${phrase.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.wav`);
       } catch (error) { notify(`Phrase export failed: ${error.message}`); }
@@ -150,7 +185,7 @@ function renderPhrases(project, audio, notify, save, assignWordsToPads) {
       for (const [delta, label] of [[-1, '‹'], [1, '›']]) { const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.setAttribute('aria-label', `${delta < 0 ? 'Move earlier' : 'Move later'} ${word.text}`); button.disabled = wordIndex + delta < 0 || wordIndex + delta >= phrase.words.length; button.addEventListener('click', () => { const [entry] = phrase.words.splice(wordIndex, 1); phrase.words.splice(wordIndex + delta, 0, entry); save(); renderPhrases(project, audio, notify, save, assignWordsToPads); }); item.append(button); }
       words.append(item);
     });
-    card.append(title, controls, words); host.append(card);
+    card.append(title, timing, controls, words); host.append(card);
   });
 }
 
@@ -234,7 +269,7 @@ export function initVoiceLab({ getProject, getMediaFiles, getAudio, notify, save
     const transcript = project.voice.transcripts.at(-1), chosen = transcript?.words.filter(word => word.selected) || [];
     if (!chosen.length) return;
     const words = chosen.map(word => ({ text: word.text, sourcePad: transcript.sourcePad, start: word.start, end: word.end }));
-    project.voice.phrases.push({ id: `${Date.now()}`, name: `Phrase ${project.voice.phrases.length + 1}`, words });
+    project.voice.phrases.push({ id: `${Date.now()}`, name: `Phrase ${project.voice.phrases.length + 1}`, gapMs: 35, crossfadeMs: 0, words });
     transcript.words.forEach(word => { word.selected = false; }); save(); render();
   });
   $('melody-tuning').addEventListener('change', () => { project.voice.melody.tuning = clamp($('melody-tuning').value, 400, 480); save(); renderMelody(project, save); });
