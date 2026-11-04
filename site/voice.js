@@ -267,6 +267,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   let vocalRecording = null;
   const vocalFiles = new Map();
   const updateConsentState = () => { $('voice-transcribe').disabled = !$('voice-source-pad').value || !$('voice-consent').checked; };
+  const updateManualEntryState = () => { $('voice-manual-add').disabled = !$('voice-source-pad').value || !getMediaFiles().has(Number($('voice-source-pad').value)) || !$('voice-manual-text').value.trim(); };
   const transportState = () => getTransport?.() || {running:false, epoch:audio.transportEpoch, bpm:project.bpm};
   const updateOverdubControls = () => {
     const state = transportState();
@@ -317,7 +318,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     const select = $('voice-source-pad'); select.replaceChildren();
     for (const [id, file] of getMediaFiles()) if (/^(audio|video)\//.test(file.type)) { const option = document.createElement('option'); option.value = id; option.textContent = `${project.pads[id].name} · ${file.name || file.type}`; select.append(option); }
     if ([...select.options].some(option => option.value === selected)) select.value = selected;
-    updateConsentState();
+    updateConsentState(); updateManualEntryState();
     renderWords(project, getMediaFiles, save); renderPhrases(project, audio, notify, save, assignWordsToPads); renderMelody(project, save); renderRap(project, save); renderVocalLayers();
   }
   const stopOverdub = () => {
@@ -396,6 +397,27 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   window.addEventListener('madladpad-media-change', render);
   $('voice-source-pad').addEventListener('change', render);
   $('voice-consent').addEventListener('change', render);
+  $('voice-manual-text').addEventListener('input', updateManualEntryState);
+  $('voice-manual-add').addEventListener('click', () => {
+    const padId = Number($('voice-source-pad').value), text = $('voice-manual-text').value.trim();
+    const start = clamp($('voice-manual-start').value, 0, 3600), end = clamp($('voice-manual-end').value, 0, 3600);
+    if (!getMediaFiles().has(padId) || !text) { updateManualEntryState(); return; }
+    if (end <= start) { $('voice-status').textContent = 'The manual word end time must be after its start time.'; $('voice-manual-end').focus(); return; }
+    let transcript = project.voice.transcripts.slice().reverse().find(item => item.sourcePad === padId);
+    if (transcript?.words.length >= MAX_TRANSCRIPT_WORDS) { $('voice-status').textContent = `This transcript already has the ${MAX_TRANSCRIPT_WORDS}-word limit.`; return; }
+    if (transcript) {
+      project.voice.transcripts.splice(project.voice.transcripts.indexOf(transcript), 1);
+    } else {
+      transcript = {id:`manual-${Date.now()}`, sourcePad:padId, words:[]};
+      if (project.voice.transcripts.length >= 16) project.voice.transcripts.shift();
+    }
+    transcript.words.push({id:`manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, text, start, end, selected:true, score:null});
+    project.voice.transcripts.push(transcript);
+    save(); renderWords(project, getMediaFiles, save);
+    $('voice-status').textContent = `Added “${text}” at ${start.toFixed(2)}–${end.toFixed(2)} seconds. This manual alignment used no speech model.`;
+    $('voice-manual-text').value = ''; $('voice-manual-start').value = end.toFixed(2); $('voice-manual-end').value = (end + .3).toFixed(2);
+    updateManualEntryState();
+  });
   $('voice-transcribe').addEventListener('click', async () => {
     const padId = Number($('voice-source-pad').value), file = getMediaFiles().get(padId);
     if (!$('voice-consent').checked || !file) return;
