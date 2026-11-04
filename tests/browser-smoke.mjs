@@ -332,6 +332,7 @@ try {
   await context.setOffline(true);
   await page.reload({waitUntil:'domcontentloaded',timeout:8000});
   await page.locator('#pad-grid').waitFor();
+  await page.waitForFunction(()=>document.querySelector('#project-title').value==='Smoke pack',null,{timeout:8000});
   assert.equal(await page.locator('#project-title').inputValue(),'Smoke pack','offline reopen should load the saved local project');
   checkpoint('offline reopen');
   await context.setOffline(false);
