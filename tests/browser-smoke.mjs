@@ -64,6 +64,18 @@ try {
   await page.locator('#play-seq').click();
   await page.keyboard.press('q');
   assert.deepEqual(errors, [], 'keyboard-triggered demo pad should not produce a page error');
+  await page.locator('#record-pattern').click();
+  await page.locator('.pad-hit').first().click();
+  await page.locator('#record-pattern').click();
+  assert.ok(await page.locator('#steps .step.on').count()>0,'a live pad tap should be captured into the pattern');
+  await page.locator('#scene-name').fill('Smoke Intro');
+  await page.locator('#save-scene').click();
+  await page.locator('#clear-steps').click();
+  assert.equal(await page.locator('#steps .step.on').count(),0,'clear should remove the selected pattern');
+  await page.locator('#launch-scene').click();
+  assert.ok(await page.locator('#steps .step.on').count()>0,'loading a saved scene should restore its pattern');
+  assert.equal(await page.locator('#scene-select option').count(),1);
+  checkpoint('live pattern capture and named scene round-trip');
   const recordingSupported=await page.evaluate(()=>Boolean(window.MediaRecorder&&HTMLCanvasElement.prototype.captureStream));
   if(recordingSupported){
     const setDownload=page.waitForEvent('download',{timeout:5000});
@@ -88,6 +100,21 @@ try {
   }else{
     console.log('Skipped audiovisual set recording: MediaRecorder or canvas captureStream is unavailable.');
   }
+  const audioRecordingSupported=await page.evaluate(()=>Boolean(window.MediaRecorder&&window.AudioContext));
+  if(audioRecordingSupported){
+    const audioDownload=page.waitForEvent('download',{timeout:5000});
+    await page.locator('#record-audio').click();
+    await page.locator('.pad-hit').first().click();
+    await page.waitForTimeout(450);
+    await page.locator('#record-audio').click();
+    const mix=await audioDownload;
+    assert.match(mix.suggestedFilename(),/\.(m4a|webm|mp4|ogg|wav)$/i,'audio export should use a supported audio extension');
+    const mixPath=await mix.path();
+    assert.ok(mixPath&& (await readFile(mixPath)).length>100,'audio-only export should contain encoded media');
+    checkpoint('audio-only mix export');
+  }else{
+    console.log('Skipped audio-only mix export: MediaRecorder or AudioContext is unavailable.');
+  }
   await page.locator('#media-input').setInputFiles({name:'synthetic.wav',mimeType:'audio/wav',buffer:wav});
   await page.getByText(/synthetic.wav.*stored on this device/).waitFor();
   await page.locator('#project-title').fill('Smoke pack');
@@ -95,6 +122,8 @@ try {
   await page.reload();
   await page.getByText(/synthetic.wav.*stored on this device/).waitFor();
   assert.equal(await page.locator('#project-title').inputValue(), 'Smoke pack');
+  assert.equal(await page.locator('#scene-select option').count(),1,'named scenes should persist across reload');
+  assert.ok(await page.locator('#steps .step.on').count()>0,'scene pattern should persist across reload');
   checkpoint('local audio import and reload');
   const downloadPromise = page.waitForEvent('download');
   await page.locator('#export-button').click();
@@ -131,7 +160,7 @@ try {
   await page.setViewportSize({width:390,height:844});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'mobile layout should not overflow horizontally');
   assert.deepEqual(errors, []);
-  console.log('Browser smoke passed: layouts, demo/keyboard playback, sequencer, recording, local WAV, IndexedDB, pack round-trip, offline reopen and mobile overflow.');
+  console.log('Browser smoke passed: layouts, demo/keyboard, live pattern capture, named scenes, audio/video recording, local media, pack round-trip, offline reopen and mobile overflow.');
 } finally {
   if (browser) await browser.close();
   await new Promise(resolve => server.close(resolve));
