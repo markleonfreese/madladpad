@@ -37,6 +37,7 @@
         <label class="field">LAYOUT<select id="layout-select"><option value="3x4">12 PADS</option><option value="2x2">4 PADS</option><option value="4x4">16 PADS</option></select></label>
         <label class="field">BPM<input id="bpm-input" type="number" min="40" max="240" value="120"></label>
         <label class="field">QUANTISE<select id="quantize-select"><option value="off">FREE</option><option value="1/4">1/4</option><option value="1/8">1/8</option><option value="1/16">1/16</option></select></label>
+        <label class="field">VIDEO FRAME<select id="record-layout"><option value="fixed">Fixed grid</option><option value="follow-active">Follow active pads</option></select></label>
         <button class="accent-button" id="start-record" aria-pressed="false"><span class="record-dot"></span> RECORD SET</button>
       </div>
     </section>
@@ -91,9 +92,12 @@
     </main>
 
     <section class="sequencer" aria-label="16-step sequencer">
-      <div class="section-label"><span>03 / BEAT MAKER</span><span>ONE BAR · 16 STEPS</span></div>
-      <div class="sequencer-head"><div><h3>Make it a loop.</h3><p>Choose a pad above, then place it on the beat.</p></div><div class="seq-buttons"><button class="pill-button" id="auto-beat">SURPRISE ME</button><button class="pill-button" id="clear-steps">CLEAR STEPS</button><button class="play-button" id="play-seq">▶ PLAY</button></div></div>
+      <div class="section-label"><span>03 / BEAT MAKER</span><span>16 STEPS · ALL PADS CAN PLAY TOGETHER</span></div>
+      <div class="sequencer-head"><div><h3>Make it a loop.</h3><p>Edit one pad or arrange the whole kit in a multi-track grid.</p></div><div class="seq-buttons"><button class="pill-button" id="track-view" aria-pressed="false">ALL TRACKS</button><button class="pill-button" id="auto-beat">SURPRISE ME</button><button class="pill-button" id="clear-steps">CLEAR SELECTED</button><label class="pattern-setting">TAKE<select id="pattern-take-mode"><option value="overdub">OVERDUB</option><option value="replace">REPLACE</option></select></label><label class="pattern-setting">QUANTISE<select id="pattern-quantize"><option value="nearest">NEAREST 16TH</option><option value="off">FREE</option></select></label><button class="pill-button record-pattern-button" id="record-pattern" aria-pressed="false">● RECORD PATTERN</button><button class="pill-button" id="undo-pattern" disabled>UNDO TAKE</button><label class="pattern-setting">SCENE<select id="scene-select" aria-label="Select scene"><option value="" disabled selected>No saved scenes</option></select></label><input id="scene-name" class="scene-name-input" maxlength="32" placeholder="Scene name" aria-label="Scene name"><button class="pill-button" id="save-scene" disabled>SAVE NEW</button><button class="pill-button" id="update-scene" disabled>UPDATE</button><button class="pill-button" id="launch-scene" disabled>LOAD SCENE</button><button class="pill-button" id="delete-scene" disabled>DELETE</button><button class="play-button" id="play-seq">▶ PLAY</button></div></div>
+      <p id="scene-status" class="pattern-record-status" role="status" aria-live="polite">Save the current pattern as a named scene.</p>
+      <p id="pattern-record-status" class="pattern-record-status" role="status" aria-live="polite">Ready to record pad taps into the 16-step loop.</p>
       <div class="steps" id="steps" role="group" aria-label="Pattern steps for selected pad"></div>
+      <div class="track-grid" id="track-grid" hidden role="group" aria-label="Patterns for all pads"></div>
       <div class="timeline"><span>1</span><span>2</span><span>3</span><span>4</span></div>
     </section>
     <footer><span>DESIGNED FOR PEOPLE WHO HEAR MUSIC EVERYWHERE.</span><span>V0.1 · LOCAL-FIRST PWA · <a href="https://github.com/markleonfreese/madladpad" target="_blank" rel="noopener">SOURCE</a></span></footer>

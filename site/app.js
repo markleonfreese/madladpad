@@ -1,4 +1,4 @@
-import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, makeProject, normaliseProject, normaliseRegion, clamp, supportedMediaFile, findRecorderMime, extensionForMime, CaptureSession, suggestActiveRegion } from './core.js';
+import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, makeProject, normaliseProject, normaliseRegion, clamp, supportedMediaFile, findRecorderMime, extensionForMime, CaptureSession, suggestActiveRegion, isPadAudible, captureStepPosition, stepTriggerTime, nextBarTime } from './core.js';
 import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
 import { pickFromDrive, pickFromPhotos } from './google.js';
@@ -6,11 +6,16 @@ import { pickFromDrive, pickFromPhotos } from './google.js';
 const $ = id => document.getElementById(id);
 let project = makeProject();
 let selected = 0;
+let trackGridVisible = false;
 let audio;
 let transportTimer = null;
 let nextStep = 0;
 let nextStepTime = 0;
 let recording = null;
+let patternRecording = null;
+let patternUndoSnapshot = null;
+let pendingScene = null;
+let selectedSceneIndex = -1;
 let cameraStream = null;
 const cameraSession = new CaptureSession();
 let cameraRecorder = null;
@@ -37,6 +42,7 @@ const durations = new Map();
 const mediaFiles = new Map();
 const pads = [];
 const activeUntil = new Map();
+const visualUntil = new Map();
 const keys = new Set();
 
 function notify(message) {
@@ -187,6 +193,8 @@ async function findGoodSounds(){
   }catch(error){if(token===onsetRun){$('cancel-analysis').hidden=true;$('find-samples').disabled=false;$('analysis-status').textContent=`Suggestions unavailable for this media codec: ${error.message}. Manual selection still works.`;}}
 }
 
+function padIsAudible(id){return isPadAudible(project.pads.slice(0,PAD_COUNT[project.layout]),id);}
+
 function renderControls() {
   const config = project.pads[selected];
   $('selected-number').textContent = `PAD ${String(selected+1).padStart(2,'0')}`;
@@ -215,12 +223,34 @@ function renderSteps() {
     button.textContent = String(i+1).padStart(2,'0');
     button.setAttribute('aria-label',`Step ${i+1} ${enabled?'on':'off'}`);
     button.setAttribute('aria-pressed',String(enabled));
+    button.disabled=Boolean(patternRecording);
     button.addEventListener('click', () => {
+      if(patternRecording)return;
+      patternUndoSnapshot=null;renderPatternRecordingState();
       project.pads[selected].steps[i] = !project.pads[selected].steps[i];
-      renderSteps(); queueSave();
+      project.pads[selected].stepOffsets[i]=0;
+      button.classList.toggle('on',project.pads[selected].steps[i]);button.setAttribute('aria-pressed',String(project.pads[selected].steps[i]));button.setAttribute('aria-label',`Step ${i+1} ${project.pads[selected].steps[i]?'on':'off'}`);
+      renderTrackGrid();queueSave();
     });
     holder.append(button);
   });
+  renderTrackGrid();
+}
+
+function renderTrackGrid(){
+  const holder=$('track-grid'),focused=holder.contains(document.activeElement)?{pad:document.activeElement.closest('.track-row')?.dataset.pad,step:document.activeElement.dataset.step,control:document.activeElement.dataset.control}:null;holder.replaceChildren();
+  const count=PAD_COUNT[project.layout],hasSolo=project.pads.slice(0,count).some(pad=>pad.solo);
+  for(let id=0;id<count;id++){
+    const pad=project.pads[id],row=document.createElement('div');row.className=`track-row${pad.muted?' muted':''}${pad.solo?' solo':''}`;row.dataset.pad=id;
+    const head=document.createElement('div');head.className='track-head';
+    const name=document.createElement('button');name.type='button';name.className='track-name';name.textContent=`${String(id+1).padStart(2,'0')} · ${mediaFiles.has(id)?pad.name:'Empty pad'}`;name.setAttribute('aria-label',`Select pad ${id+1}, ${pad.name}`);name.addEventListener('click',()=>selectPad(id));head.append(name);
+    for(const [key,label] of [['muted','M'],['solo','S']]){const button=document.createElement('button');button.type='button';button.dataset.control=key;button.className=`track-toggle${pad[key]?' active':''}`;button.textContent=label;button.setAttribute('aria-label',`${pad[key]?'Disable':'Enable'} ${key} for pad ${id+1}`);button.setAttribute('aria-pressed',String(pad[key]));button.addEventListener('click',()=>{pad[key]=!pad[key];renderTrackGrid();queueSave();});head.append(button);}
+    const gain=document.createElement('input');gain.type='range';gain.min='0';gain.max='150';gain.value=String(Math.round(pad.volume*100));gain.className='track-gain';gain.setAttribute('aria-label',`Volume for pad ${id+1}`);gain.addEventListener('input',()=>{pad.volume=Number(gain.value)/100;if(selected===id){$('volume').value=gain.value;$('volume-out').textContent=`${gain.value}%`;}queueSave();});head.append(gain);row.append(head);
+    const cells=document.createElement('div');cells.className='track-steps';
+    pad.steps.forEach((enabled,index)=>{const button=document.createElement('button');button.type='button';button.dataset.step=String(index);button.className=`step${enabled?' on':''}`;button.textContent=String(index+1).padStart(2,'0');button.setAttribute('aria-label',`Pad ${id+1}, step ${index+1}, ${enabled?'on':'off'}`);button.setAttribute('aria-pressed',String(enabled));button.disabled=Boolean(patternRecording);button.addEventListener('click',()=>{if(patternRecording)return;patternUndoSnapshot=null;renderPatternRecordingState();pad.steps[index]=!pad.steps[index];pad.stepOffsets[index]=0;renderSteps();queueSave();});cells.append(button);});row.append(cells);
+    if(hasSolo&&!pad.solo)row.classList.add('solo-muted');holder.append(row);
+  }
+  if(focused?.pad!==undefined){const target=holder.querySelector(`.track-row[data-pad="${focused.pad}"] [${focused.control?`data-control="${focused.control}"`:`data-step="${focused.step}"`}]`);target?.focus();}
 }
 
 function renderSession() {
@@ -228,21 +258,132 @@ function renderSession() {
   $('layout-select').value = project.layout;
   $('bpm-input').value = project.bpm;
   $('quantize-select').value = project.quantize;
-  renderGrid(); renderControls(); renderSteps();
+  renderGrid(); renderControls(); renderSteps(); renderScenes();
   audio.setTransport(project.bpm,project.quantize);
   syncRegionPreview();
 }
 
+function sceneSnapshot(name){
+  return {name,pads:project.pads.map(pad=>({steps:[...pad.steps],stepOffsets:[...pad.stepOffsets]}))};
+}
+
+function renderScenes(){
+  const select=$('scene-select');select.replaceChildren();
+  if(!project.scenes.length){const option=document.createElement('option');option.value='';option.textContent='No saved scenes';option.disabled=true;select.append(option);selectedSceneIndex=-1;$('scene-status').textContent=pendingScene?`Queued: ${pendingScene.scene.name} · next bar`:'Save the current pattern as a named scene.';}
+  else {
+    selectedSceneIndex=clamp(selectedSceneIndex<0?0:selectedSceneIndex,0,project.scenes.length-1);
+    project.scenes.forEach((scene,index)=>{const option=document.createElement('option');option.value=String(index);option.textContent=scene.name;select.append(option);});
+    select.value=String(selectedSceneIndex);$('scene-name').value=project.scenes[selectedSceneIndex].name;
+    $('scene-status').textContent=pendingScene?`Queued: ${pendingScene.scene.name} · next bar`:`${project.scenes.length} of ${MAX_SCENES} scenes saved.`;
+  }
+  $('save-scene').disabled=project.scenes.length>=MAX_SCENES||!$('scene-name').value.trim();
+  $('update-scene').disabled=selectedSceneIndex<0;
+  $('launch-scene').disabled=selectedSceneIndex<0;
+  $('launch-scene').textContent=transportTimer?'QUEUE NEXT BAR':'LOAD SCENE';
+  $('delete-scene').disabled=selectedSceneIndex<0;
+}
+
+function applyScene(scene){
+  project.pads.forEach((pad,id)=>{
+    const lane=scene.pads[id]||{};
+    pad.steps=Array.from({length:16},(_,step)=>Boolean(lane.steps?.[step]));
+    pad.stepOffsets=Array.from({length:16},(_,step)=>clamp(lane.stepOffsets?.[step]??0,0,.9999));
+  });
+  renderSteps();queueSave();
+}
+
+function saveScene(){
+  const name=$('scene-name').value.trim().slice(0,32);
+  if(!name)return notify('Give this scene a name first.');
+  if(project.scenes.length>=MAX_SCENES)return notify(`You can save up to ${MAX_SCENES} scenes in a project.`);
+  project.scenes.push(sceneSnapshot(name));selectedSceneIndex=project.scenes.length-1;renderScenes();queueSave();notify(`Scene “${name}” saved.`);
+}
+
+function updateScene(){
+  if(selectedSceneIndex<0)return;
+  const name=$('scene-name').value.trim().slice(0,32)||project.scenes[selectedSceneIndex].name;
+  project.scenes[selectedSceneIndex]=sceneSnapshot(name);renderScenes();queueSave();notify(`Scene “${name}” updated.`);
+}
+
+function deleteScene(){
+  if(selectedSceneIndex<0)return;
+  const scene=project.scenes[selectedSceneIndex];
+  if(!confirm(`Delete the saved scene “${scene.name}”?`))return;
+  project.scenes.splice(selectedSceneIndex,1);
+  if(pendingScene?.scene.name===scene.name)pendingScene=null;
+  selectedSceneIndex=Math.min(selectedSceneIndex,project.scenes.length-1);renderScenes();queueSave();
+}
+
+function launchScene(){
+  if(selectedSceneIndex<0)return;
+  const scene=JSON.parse(JSON.stringify(project.scenes[selectedSceneIndex]));
+  if(transportTimer){
+    const earliest=Math.max(audio.context.currentTime+.14,nextStepTime);
+    pendingScene={scene,at:nextBarTime(earliest,audio.transportEpoch,project.bpm)};
+    renderScenes();notify(`Scene “${scene.name}” queued for the next bar.`);
+  } else {applyScene(scene);notify(`Scene “${scene.name}” loaded.`);}
+}
+
 async function playPad(id, scheduledAt) {
+  if(!padIsAudible(id))return;
   await audio.unlock();
   audio.setTransport(project.bpm,project.quantize);
+  if(!audio.demoEnabled&&!audio.sources.get(id)?.file){notify('This pad is empty. Add a clip or switch on demo sounds.');return;}
+  if(patternRecording)capturePatternTap(id);
   if (!audio.trigger(id,project.pads[id],flashPad,scheduledAt)) {
     notify('This pad is empty. Add a clip or switch on demo sounds.');
   }
 }
 
+function renderPatternRecordingState(){
+  const active=Boolean(patternRecording),button=$('record-pattern');
+  button.textContent=active?'■ STOP TAKE':'● RECORD PATTERN';
+  button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));
+  $('pattern-take-mode').disabled=active;$('pattern-quantize').disabled=active;
+  $('auto-beat').disabled=active;$('clear-steps').disabled=active;
+  $('undo-pattern').disabled=active||!patternUndoSnapshot;
+  $('pattern-record-status').textContent=active
+    ?`${patternRecording.mode==='replace'?'Replace':'Overdub'} · ${patternRecording.quantize==='nearest'?'nearest 16th':'free timing'}`
+    :patternUndoSnapshot?'Take saved locally · undo available':'Ready to record pad taps into the 16-step loop.';
+}
+
+function capturePatternTap(id){
+  const take=patternRecording,pad=project.pads[id];
+  const elapsed=audio.context.currentTime-take.startedAt;
+  if(elapsed<0)return;
+  const position=captureStepPosition(elapsed,take.bpm,take.quantize);
+  pad.steps[position.step]=true;
+  pad.stepOffsets[position.step]=position.offset;
+  renderSteps();queueSave();
+}
+
+async function togglePatternRecording(){
+  if(patternRecording){
+    patternRecording=null;renderSteps();renderPatternRecordingState();queueSave();
+    $('record-pattern').blur();notify('Pattern take saved on this device.');return;
+  }
+  try{await audio.unlock();}catch(error){notify(`Could not start pattern recording: ${error.message}`);return;}
+  const now=audio.context.currentTime,barDuration=60/project.bpm*4;
+  const startsOnBar=Boolean(transportTimer),startedAt=startsOnBar
+    ?audio.transportEpoch+Math.max(1,Math.ceil((now-audio.transportEpoch)/barDuration-1e-9))*barDuration
+    :now;
+  patternUndoSnapshot=project.pads.map(pad=>({steps:[...pad.steps],stepOffsets:[...pad.stepOffsets]}));
+  const mode=$('pattern-take-mode').value;
+  if(mode==='replace')for(const pad of project.pads){pad.steps.fill(false);pad.stepOffsets.fill(0);}
+  patternRecording={startedAt,bpm:project.bpm,mode,quantize:$('pattern-quantize').value,startsOnBar};
+  renderSteps();renderPatternRecordingState();queueSave();
+  $('record-pattern').blur();notify(`Recording ${mode==='replace'?'replacement':'overdub'} pattern${startsOnBar?' from the next bar':''}. Tap pads, then stop the take.`);
+}
+
+function undoPatternRecording(){
+  if(!patternUndoSnapshot||patternRecording)return;
+  project.pads.forEach((pad,id)=>{pad.steps=[...patternUndoSnapshot[id].steps];pad.stepOffsets=[...patternUndoSnapshot[id].stepOffsets];});
+  patternUndoSnapshot=null;renderSteps();renderPatternRecordingState();queueSave();notify('Last pattern take undone.');
+}
+
 function flashPad(id) {
   activeUntil.set(id,performance.now()+180);
+  const config=project.pads[id];visualUntil.set(id,performance.now()+Math.max(180,(config.end-config.start)*1000));
   pads[id].card.classList.add('playing');
   setTimeout(() => { if ((activeUntil.get(id)||0) <= performance.now()) pads[id].card.classList.remove('playing'); },210);
 }
@@ -263,6 +404,7 @@ async function addMedia(id,file,persist=true) {
   config.end=Math.max(.05,Math.min(2,durations.get(id)||2));
   if (persist) await putValue(`media:${id}`,file);
   renderPad(id);
+  renderTrackGrid();
   queueSave();
   if (selected===id) renderControls();
   if (selected===id) syncRegionPreview();
@@ -294,9 +436,10 @@ function startSequencer() {
     const tick=() => {
       while (nextStepTime<audio.context.currentTime+.12) {
         const time=nextStepTime;
+        if(pendingScene&&time>=pendingScene.at-1e-4){const queued=pendingScene;pendingScene=null;applyScene(queued.scene);renderScenes();notify(`Scene “${queued.scene.name}” launched.`);}
         const step=nextStep%16;
         project.pads.slice(0,PAD_COUNT[project.layout]).forEach(pad => {
-          if (pad.steps[step]) audio.trigger(pad.id,pad,flashPad,time);
+          if (pad.steps[step]&&padIsAudible(pad.id)) audio.trigger(pad.id,pad,flashPad,stepTriggerTime(time,project.bpm,pad.stepOffsets?.[step]||0));
         });
         setTimeout(()=>updateBeatIndicator(step),Math.max(0,(time-audio.context.currentTime)*1000));
         nextStep++;
@@ -306,31 +449,37 @@ function startSequencer() {
     transportTimer=setInterval(tick,25);
     tick();
     $('play-seq').textContent='■ STOP'; $('play-seq').classList.add('active');
+    renderScenes();
   }).catch(error=>notify(error.message));
 }
 
 function updateBeatIndicator(step) {
   if (!transportTimer) return;
   [...$('steps').children].forEach((el,i)=>el.classList.toggle('current',i===step));
+  $('track-grid').querySelectorAll('.track-steps').forEach(lane=>[...lane.children].forEach((el,i)=>el.classList.toggle('current',i===step)));
 }
 
 function stopSequencer() {
   clearInterval(transportTimer); transportTimer=null;
+  if(pendingScene){pendingScene=null;renderScenes();notify('Queued scene canceled because the sequencer stopped.');}
+  else renderScenes();
   $('play-seq').textContent='▶ PLAY'; $('play-seq').classList.remove('active');
   [...$('steps').children].forEach(el=>el.classList.remove('current'));
+  $('track-grid').querySelectorAll('.current').forEach(el=>el.classList.remove('current'));
 }
 
 function surpriseBeat() {
   const count=PAD_COUNT[project.layout];
   if (!count) return;
+  patternUndoSnapshot=null;
   const a=project.pads.slice(0,count);
-  for (const pad of a) pad.steps.fill(false);
+  for (const pad of a){pad.steps.fill(false);pad.stepOffsets.fill(0);}
   const kick=a[0], snare=a[1]||a[0], hat=a[2]||a[0];
   for (const step of [0,8,Math.random()>.5?6:10]) kick.steps[step]=true;
   for (const step of [4,12]) snare.steps[step]=true;
   for (let step=0;step<16;step+=2) if (Math.random()>.16) hat.steps[step]=true;
   for (const pad of a.slice(3)) if (Math.random()<.35) pad.steps[Math.floor(Math.random()*16)]=true;
-  renderSteps();queueSave();
+  renderSteps();renderPatternRecordingState();queueSave();
   notify('New beat created. Load clips into the first three pads or enable demo sounds.');
 }
 
@@ -338,13 +487,16 @@ function drawPerformanceFrame() {
   if (!drawing) return;
   const canvas=$('capture-canvas');
   const context=canvas.getContext('2d');
-  const total=PAD_COUNT[project.layout],cols=project.layout==='2x2'?2:4;
+  context.fillStyle='#0c100e';context.fillRect(0,0,canvas.width,canvas.height);
+  const adaptive=$('record-layout').value==='follow-active';
+  const active=adaptive?[...visualUntil].filter(([,until])=>until>performance.now()).map(([id])=>id):Array.from({length:PAD_COUNT[project.layout]},(_,id)=>id);
+  if(adaptive&&!active.length){context.fillStyle='#d7fc5a';context.font='bold 28px sans-serif';context.textAlign='center';context.fillText('PLAY A PAD TO BEGIN',canvas.width/2,canvas.height/2);context.textAlign='left';requestAnimationFrame(drawPerformanceFrame);return;}
+  const total=active.length,cols=adaptive?(total===1?1:total<=4?2:4):(project.layout==='2x2'?2:4);
   const rows=Math.ceil(total/cols),gap=12,margin=28;
   const width=(canvas.width-margin*2-(cols-1)*gap)/cols;
   const height=(canvas.height-margin*2-(rows-1)*gap)/rows;
-  context.fillStyle='#0c100e';context.fillRect(0,0,canvas.width,canvas.height);
-  for(let id=0;id<total;id++) {
-    const col=id%cols,row=Math.floor(id/cols),x=margin+col*(width+gap),y=margin+row*(height+gap);
+  for(let index=0;index<total;index++) {
+    const id=active[index],col=index%cols,row=Math.floor(index/cols),x=margin+col*(width+gap),y=margin+row*(height+gap);
     const source=pads[id],config=project.pads[id];
     context.fillStyle=(activeUntil.get(id)||0)>performance.now()?'#d7fc5a':'#26372c';
     context.fillRect(x-3,y-3,width+6,height+6);
@@ -569,6 +721,7 @@ async function importPack(file) {
     if(blobs.some(blob=>blob && blob.size>MAX_MEDIA_BYTES)) throw new Error('A sample is larger than the 80 MB limit');
     const files=blobs.map((blob,i)=>blob ? new File([blob],incoming.pads[i].fileName||`sample-${i+1}`,{type:blob.type}) : null);
     if(!confirm('Replace your current local project? Export it first if you want a backup.')) return;
+    patternRecording=null;patternUndoSnapshot=null;renderPatternRecordingState();
     // A single IndexedDB transaction prevents a partial replacement on quota or write failure.
     clearTimeout(saveTimer);
     try { await replaceProjectMedia(incoming,files); }
@@ -637,7 +790,7 @@ function bindControls() {
   });
   $('quantize-select').addEventListener('change',event=>{project.quantize=event.target.value;audio.setTransport(project.bpm,project.quantize);queueSave();});
   $('project-title').addEventListener('input',event=>{project.title=event.target.value;queueSave();});
-  $('pad-name').addEventListener('input',event=>{project.pads[selected].name=event.target.value;renderPad(selected);queueSave();});
+  $('pad-name').addEventListener('input',event=>{project.pads[selected].name=event.target.value;renderPad(selected);renderTrackGrid();queueSave();});
   for(const [id,key,convert] of [['volume','volume',v=>v/100],['pitch','pitch',Number],['trim-start','start',Number],['trim-end','end',Number]]) {
     $(id).addEventListener('input',event=>{
       const pad=project.pads[selected];pad[key]=convert(Number(event.target.value));
@@ -670,9 +823,9 @@ function bindControls() {
     if(!mediaFiles.has(selected))return;
     if(!confirm('Remove this sample from local storage?'))return;
     audio.unload(selected);mediaFiles.delete(selected);durations.delete(selected);
-    const original=makeProject().pads[selected];
-    project.pads[selected]={...original,steps:project.pads[selected].steps};
-    await deleteValue(`media:${selected}`);renderPad(selected);renderControls();syncRegionPreview();queueSave();
+    const previous=project.pads[selected],original=makeProject().pads[selected];
+    project.pads[selected]={...original,steps:previous.steps,stepOffsets:previous.stepOffsets,muted:previous.muted,solo:previous.solo};
+    await deleteValue(`media:${selected}`);renderPad(selected);renderTrackGrid();renderControls();syncRegionPreview();queueSave();
   });
   $('demo-button').addEventListener('click',()=>{
     audio.demoEnabled=!audio.demoEnabled;
@@ -682,13 +835,22 @@ function bindControls() {
   });
   $('play-seq').addEventListener('click',()=>transportTimer?stopSequencer():startSequencer());
   $('auto-beat').addEventListener('click',surpriseBeat);
-  $('clear-steps').addEventListener('click',()=>{project.pads[selected].steps.fill(false);renderSteps();queueSave();});
+  $('clear-steps').addEventListener('click',()=>{project.pads[selected].steps.fill(false);project.pads[selected].stepOffsets.fill(0);patternUndoSnapshot=null;renderSteps();renderPatternRecordingState();queueSave();});
+  $('record-pattern').addEventListener('click',togglePatternRecording);
+  $('undo-pattern').addEventListener('click',undoPatternRecording);
+  $('scene-select').addEventListener('change',event=>{selectedSceneIndex=Number(event.target.value);renderScenes();});
+  $('scene-name').addEventListener('input',()=>{$('save-scene').disabled=project.scenes.length>=MAX_SCENES||!$('scene-name').value.trim();});
+  $('save-scene').addEventListener('click',saveScene);
+  $('update-scene').addEventListener('click',updateScene);
+  $('launch-scene').addEventListener('click',launchScene);
+  $('delete-scene').addEventListener('click',deleteScene);
+  $('track-view').addEventListener('click',()=>{trackGridVisible=!trackGridVisible;$('steps').hidden=trackGridVisible;$('track-grid').hidden=!trackGridVisible;$('track-view').textContent=trackGridVisible?'SELECTED PAD':'ALL TRACKS';$('track-view').setAttribute('aria-pressed',String(trackGridVisible));if(trackGridVisible)renderTrackGrid();});
   $('start-record').addEventListener('click',toggleSetRecording);
   $('google-drive').addEventListener('click',()=>pickFromDrive(files=>placeFiles(files)).catch(error=>notify(error.message)));
   $('google-photos').addEventListener('click',()=>pickFromPhotos(files=>placeFiles(files),notify).catch(error=>notify(error.message)));
   window.addEventListener('madladpad-error',event=>notify(event.detail));
   document.addEventListener('keydown',event=>{
-    if(event.repeat || event.metaKey || event.ctrlKey || event.altKey || $('camera-dialog').open || $('pad-source-dialog').open || $('capture-target-dialog').open || ['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName)) return;
+    if(event.repeat || event.metaKey || event.ctrlKey || event.altKey || $('camera-dialog').open || $('pad-source-dialog').open || $('capture-target-dialog').open || ['INPUT','SELECT','TEXTAREA','BUTTON'].includes(document.activeElement?.tagName)) return;
     const key=event.key.toUpperCase();
     if(key===' '){event.preventDefault();transportTimer?stopSequencer():startSequencer();return;}
     const id=HOTKEYS.indexOf(key);
@@ -717,6 +879,7 @@ async function initialise() {
     const saved=await getValue('project');
     if(saved)project=normaliseProject(saved);
     renderSession();
+    renderPatternRecordingState();
     let restored=0;
     for(let id=0;id<16;id++) {
       const file=await getValue(`media:${id}`);
