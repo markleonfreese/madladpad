@@ -216,6 +216,12 @@ try {
   await page.locator('#melody-notes input[aria-label="Note 1 MIDI pitch"]').fill('69');
   await page.locator('#melody-notes input[aria-label="Note 1 MIDI pitch"]').press('Tab');
   await page.locator('#melody-notes select[aria-label="Assign phrase word to note 1"]').selectOption('MadLadPad');
+  await page.locator('#melody-harmony-interval').selectOption('3');
+  await page.locator('#melody-harmony-add').click();
+  assert.equal(await page.locator('#melody-notes .melody-note').count(),2,'harmony generation should add a second editable MIDI note');
+  assert.equal(await page.locator('#melody-notes input[aria-label="Harmony 2 MIDI pitch"]').inputValue(),'72','harmony interval should transpose the lead note by three semitones');
+  await page.locator('#melody-harmony-add').click();
+  assert.equal(await page.locator('#melody-notes .melody-note').count(),2,'repeating harmony generation should not duplicate existing notes');
   await page.locator('#melody-play').click();
   await page.locator('#rap-bars textarea').nth(0).fill('Hello from the other side');
   assert.match(await page.locator('#rap-bars .rap-bar small').first().textContent(),/estimated syllables/);
@@ -245,7 +251,9 @@ try {
   assert.match(await page.locator('.pad').nth(mappedPadIds[1]).locator('.pad-title').textContent(),/Hello/,'the following mapped word pad should persist locally');
   if(await page.locator('#track-grid').isHidden())await page.locator('#track-view').click();
   assert.equal(await page.locator(`.track-row[data-pad="${mappedPadIds[1]}"] [data-step="2"]`).getAttribute('aria-pressed'),'true','mapped crossfade timing should persist locally');
-  assert.equal(await page.locator('#melody-notes .melody-note').count(),1,'melody note data should persist locally');
+  assert.equal(await page.locator('#melody-notes .melody-note').count(),2,'lead and harmony note data should persist locally');
+  assert.equal(await page.locator('#melody-notes input[aria-label="Harmony 2 MIDI pitch"]').inputValue(),'72','generated harmony pitch should persist locally');
+  assert.equal(await page.locator('#melody-harmony-interval').inputValue(),'3','harmony interval should persist locally');
   assert.equal(await page.locator('#rap-bars textarea').nth(0).inputValue(),'Hello from the other side','rap bars should persist locally');
   assert.equal(await page.locator('#rap-scheme').inputValue(),'AABB','rap rhyme shape should persist locally');
   checkpoint('local speech transcription mock, phrase selection/order, melody and rap persistence/exports');

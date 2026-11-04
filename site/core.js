@@ -6,6 +6,7 @@ export const MAX_MEDIA_BYTES = 80 * 1024 * 1024;
 export const MAX_TRANSCRIPT_WORDS = 1000;
 export const MAX_VOICE_PHRASES = 8;
 export const MAX_MELODY_NOTES = 128;
+export const HARMONY_INTERVALS = [-12, -7, -5, -4, -3, 3, 4, 5, 7, 12];
 export const RAP_BAR_COUNT = 16;
 
 export const makeVoiceData = () => ({
@@ -43,12 +44,17 @@ function normaliseVoice(value) {
     midi: clamp(Math.round(note?.midi ?? 60), 24, 108),
     step: clamp(Math.round(note?.step ?? 0), 0, 255),
     duration: clamp(note?.duration ?? 1, .125, 16),
-    word: String(note?.word || '').slice(0, 120)
+    word: String(note?.word || '').slice(0, 120),
+    layer: note?.layer === 'harmony' ? 'harmony' : 'lead'
   })) : [];
   const rapSource = source.rap && typeof source.rap === 'object' ? source.rap : {};
   return {
     transcripts, phrases,
-    melody: { tuning: clamp(melodySource.tuning ?? 440, 400, 480), notes },
+    melody: {
+      tuning: clamp(melodySource.tuning ?? 440, 400, 480),
+      harmonyInterval: HARMONY_INTERVALS.includes(Number(melodySource.harmonyInterval)) ? Number(melodySource.harmonyInterval) : 3,
+      notes
+    },
     rap: {
       scheme: ['AABB', 'ABAB', 'AAAA', 'FREE'].includes(rapSource.scheme) ? rapSource.scheme : 'AABB',
       bars: Array.from({ length: RAP_BAR_COUNT }, (_, index) => String(rapSource.bars?.[index] || '').slice(0, 500))
