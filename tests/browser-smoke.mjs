@@ -498,6 +498,15 @@ try {
   checkpoint('pack round-trip');
   const captureSupported=await page.evaluate(()=>Boolean(navigator.mediaDevices?.getUserMedia&&window.MediaRecorder));
   if(captureSupported){
+    await page.evaluate(()=>{
+      window.__cameraCaptureStreams=[];
+      const getUserMedia=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,value:async(...args)=>{
+        const stream=await getUserMedia(...args);
+        window.__cameraCaptureStreams.push(stream);
+        return stream;
+      }});
+    });
     await page.locator('#camera-button').click();
     await page.locator('#capture-target-dialog').waitFor({state:'visible'});
     const captureTarget=Number(await page.locator('#capture-target-select').inputValue());
@@ -512,6 +521,9 @@ try {
     await page.waitForFunction(()=>!document.querySelector('#camera-keep').disabled);
     await page.locator('#camera-keep').click();
     await page.waitForFunction(()=>!document.querySelector('#camera-dialog').open&&document.querySelector('#sample-info').textContent.includes('stored on this device'));
+    const keptCaptureTrackStates=await page.evaluate(()=>window.__cameraCaptureStreams[0]?.getTracks().map(({kind,readyState})=>({kind,readyState})));
+    assert.ok(keptCaptureTrackStates?.length,'keeping a camera take should release its acquired media tracks');
+    assert.ok(keptCaptureTrackStates.every(track=>track.readyState==='ended'),`keeping a camera take should stop every acquired audio/video track: ${JSON.stringify(keptCaptureTrackStates)}`);
     await page.reload();
     await page.getByText(/synthetic.wav.*stored on this device/).waitFor();
     const capturePackPromise=page.waitForEvent('download');
@@ -576,6 +588,9 @@ try {
     await page.waitForFunction(()=>document.querySelector('#camera-capture').textContent.includes('STOP RECORDING'));
     await page.locator('#camera-close').click();
     await page.waitForFunction(()=>!document.querySelector('#camera-dialog').open);
+    const canceledCaptureTrackStates=await page.evaluate(()=>window.__cameraCaptureStreams[1]?.getTracks().map(({kind,readyState})=>({kind,readyState})));
+    assert.ok(canceledCaptureTrackStates?.length,'canceling a camera take should release its acquired media tracks');
+    assert.ok(canceledCaptureTrackStates.every(track=>track.readyState==='ended'),`canceling a camera take should stop every acquired audio/video track: ${JSON.stringify(canceledCaptureTrackStates)}`);
     assert.equal(await page.locator('.pad').nth(canceledPad).evaluate(card=>card.classList.contains('empty')),true,'canceling an active camera take must leave its target pad empty');
     checkpoint('canceling an active browser capture preserves its target pad');
 
