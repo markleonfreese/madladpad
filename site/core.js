@@ -4,6 +4,19 @@ export const STEP_COUNT = 16;
 export const MAX_MEDIA_BYTES = 80 * 1024 * 1024;
 
 export const clamp = (value, min, max) => Math.min(max, Math.max(min, Number(value) || 0));
+export class CaptureSession {
+  constructor() { this.version=0; this.phase='idle'; this.target=null; this.take=null; }
+  begin(target) {
+    if (!Number.isInteger(target) || target<0 || target>=16 || this.phase!=='idle') return null;
+    this.version++; this.target=target; this.take=null; this.phase='ready'; return this.version;
+  }
+  current(token) { return token===this.version && this.phase!=='idle'; }
+  start(token) { if(!this.current(token) || this.phase!=='ready')return false; this.phase='recording'; return true; }
+  review(token,take) { if(!this.current(token) || this.phase!=='recording' || !take)return false; this.take=take;this.phase='review';return true; }
+  retake(token) { if(!this.current(token) || this.phase!=='review')return false;this.take=null;this.phase='ready';return true; }
+  keep(token) { if(!this.current(token) || this.phase!=='review')return null;const result={target:this.target,take:this.take};this.cancel();return result; }
+  cancel() { this.version++;this.phase='idle';this.target=null;this.take=null; }
+}
 export const makePad = id => ({
   id, name: `Pad ${String(id + 1).padStart(2, '0')}`, fileName: '', kind: '',
   volume: 0.9, pitch: 0, start: 0, end: 2, steps: Array(STEP_COUNT).fill(false)
