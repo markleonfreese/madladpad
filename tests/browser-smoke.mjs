@@ -30,6 +30,12 @@ wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);
 wav.writeUInt32LE(wavSampleRate,24);wav.writeUInt32LE(wavSampleRate*2,28);wav.writeUInt16LE(2,32);
 wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(wavFrames*2,40);
 for(let frame=0;frame<wavFrames;frame++)wav.writeInt16LE(Math.round(12000*Math.sin(2*Math.PI*440*frame/wavSampleRate)),44+frame*2);
+const micSampleRate=48000,micFrames=micSampleRate,micWav=Buffer.alloc(44+micFrames*2);
+micWav.write('RIFF',0);micWav.writeUInt32LE(micWav.length-8,4);micWav.write('WAVEfmt ',8);
+micWav.writeUInt32LE(16,16);micWav.writeUInt16LE(1,20);micWav.writeUInt16LE(1,22);
+micWav.writeUInt32LE(micSampleRate,24);micWav.writeUInt32LE(micSampleRate*2,28);micWav.writeUInt16LE(2,32);
+micWav.writeUInt16LE(16,34);micWav.write('data',36);micWav.writeUInt32LE(micFrames*2,40);
+for(let frame=0;frame<micFrames;frame++)micWav.writeInt16LE(Math.round(12000*Math.sin(2*Math.PI*440*frame/micSampleRate)),44+frame*2);
 const regionFrames=wavSampleRate*4,regionWav=Buffer.alloc(44+regionFrames*2);
 regionWav.write('RIFF',0);regionWav.writeUInt32LE(regionWav.length-8,4);regionWav.write('WAVEfmt ',8);
 regionWav.writeUInt32LE(16,16);regionWav.writeUInt16LE(1,20);regionWav.writeUInt16LE(1,22);
@@ -42,7 +48,7 @@ try {
   const origin = `http://localhost:${server.address().port}`;
   browserTemp=await mkdtemp(join(tmpdir(),'madladpad-smoke-'));
   const micFixturePath=join(browserTemp,'microphone-tone.wav');
-  await writeFile(micFixturePath,wav);
+  await writeFile(micFixturePath,micWav);
   const executablePath=process.env.MADLADPAD_CHROMIUM_PATH;
   if(executablePath) await access(executablePath);
   browser = await chromium.launch({headless:true,args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream',`--use-file-for-audio-capture=${micFixturePath}`],...(executablePath?{executablePath}:{})});
@@ -269,10 +275,22 @@ try {
     assert.equal(await page.locator('#voice-overdub-layers .vocal-layer button').nth(2).isEnabled(),true,'a decodable raw take should be previewable');
     await page.locator('#voice-overdub-layers .vocal-layer button').nth(2).click();
     await page.locator('#play-seq').click();
+    const layerId=await vocalRow.getAttribute('data-layer');
+    const rawTakeRms=await page.evaluate(async id=>{
+      const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('madladpad-local-v1');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+      try {
+        const file=await new Promise((resolve,reject)=>{const request=db.transaction('items','readonly').objectStore('items').get(`voice-layer:${id}`);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+        if(!file)throw new Error('Saved vocal raw take is missing from IndexedDB');
+        const context=new AudioContext();
+        try { const decoded=await context.decodeAudioData(await file.arrayBuffer());const samples=decoded.getChannelData(0);return Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length); }
+        finally { await context.close(); }
+      } finally { db.close(); }
+    },layerId);
+    assert.ok(rawTakeRms>.01,`the saved fake-microphone take should contain the fixture tone, got RMS ${rawTakeRms}`);
     const vocalMixDownload=page.waitForEvent('download',{timeout:8000});
     await page.locator('#record-audio').click();
     await vocalRow.locator('button').nth(2).click();
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(1200);
     await page.locator('#record-audio').click();
     const vocalMixFile=await vocalMixDownload;
     const vocalMixBytes=await readFile(await vocalMixFile.path());
@@ -282,7 +300,7 @@ try {
       try { const decoded=await context.decodeAudioData(bytes.buffer);const samples=decoded.getChannelData(0);return Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length); }
       finally { await context.close(); }
     },vocalMixBytes.toString('base64'));
-    assert.ok(vocalMixRms>.01,`a saved vocal overdub should be audible in the exported master mix, got RMS ${vocalMixRms}`);
+    assert.ok(vocalMixRms>rawTakeRms*.1,`a saved vocal overdub should reach the exported mix (raw RMS ${rawTakeRms}, export RMS ${vocalMixRms})`);
     checkpoint('saved vocal overdub reaches the exported audio mix');
   }
   await page.waitForTimeout(500);
