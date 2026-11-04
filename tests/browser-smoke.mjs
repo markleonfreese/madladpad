@@ -563,6 +563,20 @@ try {
     assert.ok((await readFile(await performance.path())).length>100,'adaptive audiovisual performance should export encoded media');
     checkpoint('adaptive performance capture transitions one-to-two-to-three clips');
 
+    const canceledPad=await page.locator('.pad').evaluateAll(cards=>cards.findIndex(card=>card.classList.contains('empty')&&!card.hidden));
+    assert.notEqual(canceledPad,-1,'an empty pad should remain available for capture-cancel coverage');
+    await page.locator('.pad-hit').nth(canceledPad).click();
+    await page.locator('#pad-source-dialog').waitFor({state:'visible'});
+    await page.locator('#pad-record').click();
+    await page.locator('#camera-dialog').waitFor({state:'visible'});
+    await page.waitForFunction(()=>!document.querySelector('#camera-capture').disabled);
+    await page.locator('#camera-capture').click();
+    await page.waitForFunction(()=>document.querySelector('#camera-capture').textContent.includes('STOP RECORDING'));
+    await page.locator('#camera-close').click();
+    await page.waitForFunction(()=>!document.querySelector('#camera-dialog').open);
+    assert.equal(await page.locator('.pad').nth(canceledPad).evaluate(card=>card.classList.contains('empty')),true,'canceling an active camera take must leave its target pad empty');
+    checkpoint('canceling an active browser capture preserves its target pad');
+
     const deniedPad=await page.locator('.pad').evaluateAll(cards=>cards.findIndex(card=>card.classList.contains('empty')&&!card.hidden));
     assert.notEqual(deniedPad,-1,'an empty pad should remain available for permission-denial coverage');
     await page.evaluate(()=>{
