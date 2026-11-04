@@ -124,9 +124,9 @@
 
         <section class="voice-card" aria-labelledby="melody-title">
           <h3 id="melody-title">Melody writing</h3>
-          <p class="voice-note">Build a note sequence with pitch, step, and length. The default tuning reference is A4 = 440 Hz; a custom reference changes local tone previews. MIDI export follows the standard A4 = 440 Hz tuning. Assign phrase words to notes as pitched vocal sample cues.</p>
+          <p class="voice-note">Build a note sequence with pitch, step, and length. The default tuning reference is A4 = 440 Hz; a custom reference changes local tone previews. MIDI export follows the standard A4 = 440 Hz tuning. Assign phrase words to notes as pitched vocal sample cues, or add a semitone-shifted harmony line and edit it note by note. Word cues support MIDI pitches 48–72; harmony cues outside that range are skipped.</p>
           <label class="voice-label">TUNING REFERENCE (A4)<input id="melody-tuning" type="number" min="400" max="480" step="1" value="440"> Hz</label>
-          <div class="voice-actions"><button class="pill-button" id="melody-add">ADD NOTE</button><button class="pill-button" id="melody-play">▶ PLAY MELODY</button><button class="pill-button" id="melody-export">EXPORT MIDI</button></div>
+          <div class="voice-actions"><button class="pill-button" id="melody-add">ADD NOTE</button><label class="voice-label">HARMONY INTERVAL<select id="melody-harmony-interval"><option value="3">+3 · minor third</option><option value="4">+4 · major third</option><option value="5">+5 · fourth</option><option value="7">+7 · fifth</option><option value="12">+12 · octave</option><option value="-3">−3 · minor third</option><option value="-4">−4 · major third</option><option value="-5">−5 · fourth</option><option value="-7">−7 · fifth</option><option value="-12">−12 · octave</option></select></label><button class="pill-button" id="melody-harmony-add">ADD HARMONY LINE</button><button class="pill-button" id="melody-play">▶ PLAY MELODY</button><button class="pill-button" id="melody-export">EXPORT MIDI</button></div>
           <div id="melody-notes" class="melody-notes" role="group" aria-label="Melody notes"></div>
         </section>
 

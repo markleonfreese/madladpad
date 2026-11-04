@@ -84,7 +84,11 @@ test('voice projects add bounded transcript, phrase, melody, tuning and rap data
   const defaultPhrase=normaliseProject({voice:{phrases:[{words:[{text:'Hi',start:0,end:1}]}]}}).voice.phrases[0];
   assert.deepEqual([defaultPhrase.gapMs,defaultPhrase.crossfadeMs],[35,0]);
   assert.equal(voice.melody.tuning,480);
-  assert.deepEqual(voice.melody.notes[0],{midi:108,step:0,duration:16,word:''});
+  assert.equal(voice.melody.harmonyInterval,3);
+  assert.deepEqual(voice.melody.notes[0],{midi:108,step:0,duration:16,word:'',layer:'lead'});
+  const harmony=normaliseProject({voice:{melody:{harmonyInterval:7,notes:[{midi:67,layer:'harmony'}]}}}).voice.melody;
+  assert.equal(harmony.harmonyInterval,7);
+  assert.equal(harmony.notes[0].layer,'harmony');
   assert.equal(voice.rap.scheme,'AABB');
   assert.equal(voice.rap.bars[0].length,500);
 });
