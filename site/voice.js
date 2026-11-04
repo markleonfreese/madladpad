@@ -18,8 +18,8 @@ function rhymeHints(line) {
 async function renderPhraseBuffer(phrase, audio) {
   if (!phrase.words.length) throw new Error('Add words to the phrase before exporting.');
   const sampleRate = Math.min(48000, audio.context.sampleRate);
-  const gap = clamp(phrase.gapMs ?? 35, 0, 500) / 1000;
   const requestedCrossfade = clamp(phrase.crossfadeMs ?? 0, 0, 250) / 1000;
+  const gap = requestedCrossfade ? 0 : clamp(phrase.gapMs ?? 35, 0, 500) / 1000;
   const clips = [];
   let cursor = 0, previousDuration = 0;
   for (const word of phrase.words) {
@@ -31,12 +31,14 @@ async function renderPhraseBuffer(phrase, audio) {
     if (duration < .03) continue;
     const overlap = clips.length ? Math.min(requestedCrossfade, previousDuration / 2, duration / 2) : 0;
     if (clips.length) cursor += previousDuration + gap - overlap;
-    const clip = { buffer, start, duration, at: cursor, fadeIn: overlap, fadeOut: 0 };
+    const explicitFadeIn = clips.length ? overlap : clamp(phrase.wordFadeInMs ?? 0, 0, 250) / 1000;
+    const clip = { buffer, start, duration, at: cursor, fadeIn: Math.min(explicitFadeIn, duration / 2), fadeOut: 0 };
     if (clips.length) clips.at(-1).fadeOut = overlap;
     clips.push(clip); previousDuration = duration;
     if (cursor + duration > 60) throw new Error('Phrase audio export is limited to 60 seconds. Split this phrase into shorter parts.');
   }
   if (!clips.length) throw new Error('No source audio could be decoded for this phrase.');
+  if (clips.length === 1) clips[0].fadeOut = Math.min(clamp(phrase.wordFadeOutMs ?? 0, 0, 250) / 1000, clips[0].duration / 2);
   const seconds = clips.at(-1).at + clips.at(-1).duration;
   const frameCount = Math.max(1, Math.ceil(seconds * sampleRate)), offline = new OfflineAudioContext(2, frameCount, sampleRate);
   const curve = (rising, gain = .9) => Float32Array.from({ length: 33 }, (_, index) => {
@@ -125,11 +127,16 @@ function renderPhrases(project, audio, notify, save, assignWordsToPads) {
     const card = document.createElement('div'); card.className = 'voice-phrase';
     const title = document.createElement('strong'); title.textContent = `${phrase.name} · ${phrase.words.length} words`;
     const timing = document.createElement('div'); timing.className = 'phrase-timing';
+    const timingHelp = document.createElement('small'); timingHelp.className = 'phrase-timing-help'; timingHelp.textContent = 'Choose silence between words or a crossfade overlap.'; timing.append(timingHelp);
     const timingControl = (key, label, max, help) => {
       const field = document.createElement('label'); field.textContent = label;
       const input = document.createElement('input'); input.type = 'number'; input.min = '0'; input.max = String(max); input.step = '5'; input.value = String(phrase[key] ?? 0);
       input.setAttribute('aria-label', `${phrase.name} ${label.toLowerCase()}`);
-      input.addEventListener('change', () => { phrase[key] = clamp(input.value, 0, max); save(); renderPhrases(project, audio, notify, save, assignWordsToPads); });
+      input.addEventListener('change', () => {
+        phrase[key] = clamp(input.value, 0, max);
+        if (phrase[key] > 0) phrase[key === 'gapMs' ? 'crossfadeMs' : 'gapMs'] = 0;
+        save(); renderPhrases(project, audio, notify, save, assignWordsToPads);
+      });
       const note = document.createElement('small'); note.textContent = help; field.append(input, note); timing.append(field);
     };
     timingControl('gapMs', 'GAP', 500, 'between words · ms');
@@ -154,8 +161,19 @@ function renderPhrases(project, audio, notify, save, assignWordsToPads) {
       assign.disabled = true;
       try {
         const clips = [];
-        for (const word of phrase.words) {
-          const blob = await renderPhraseWav({ words: [word], gapMs: 0, crossfadeMs: 0 }, audio);
+        const wordDurations = await Promise.all(phrase.words.map(async word => {
+          const source = audio.sources.get(word.sourcePad);
+          if (!source?.file) throw new Error(`The source sample for “${word.text}” is not loaded.`);
+          const buffer = source.buffer || await audio.context.decodeAudioData(await source.file.arrayBuffer());
+          const start = clamp(word.start, 0, Math.max(0, buffer.duration - .01));
+          return Math.min(Math.max(.04, word.end - word.start), buffer.duration - start);
+        }));
+        const crossfade = clamp(phrase.crossfadeMs ?? 0, 0, 250) / 1000;
+        for (let wordIndex = 0; wordIndex < phrase.words.length; wordIndex++) {
+          const word = phrase.words[wordIndex];
+          const fadeIn = wordIndex ? Math.min(crossfade, wordDurations[wordIndex - 1] / 2, wordDurations[wordIndex] / 2) : 0;
+          const fadeOut = wordIndex < phrase.words.length - 1 ? Math.min(crossfade, wordDurations[wordIndex] / 2, wordDurations[wordIndex + 1] / 2) : 0;
+          const blob = await renderPhraseWav({ words: [word], gapMs: 0, crossfadeMs: 0, wordFadeInMs: fadeIn * 1000, wordFadeOutMs: fadeOut * 1000 }, audio);
           const sampleRate = new DataView(await blob.slice(24, 28).arrayBuffer()).getUint32(0, true);
           const duration = (blob.size - 44) / (sampleRate * 4);
           const safeWord = word.text.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 24) || 'word';

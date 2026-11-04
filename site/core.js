@@ -25,16 +25,19 @@ function normaliseVoice(value) {
       selected: Boolean(word?.selected), score: Number.isFinite(word?.score) ? clamp(word.score, 0, 1) : null
     })).filter(word => word.text)
   })) : [];
-  const phrases = Array.isArray(source.phrases) ? source.phrases.slice(0, MAX_VOICE_PHRASES).map(phrase => ({
-    id: String(phrase?.id || Math.random().toString(36).slice(2)).slice(0, 80),
-    name: String(phrase?.name || 'Phrase').slice(0, 48),
-    gapMs: clamp(phrase?.gapMs ?? 35, 0, 500),
-    crossfadeMs: clamp(phrase?.crossfadeMs ?? 0, 0, 250),
-    words: (Array.isArray(phrase?.words) ? phrase.words : []).slice(0, MAX_TRANSCRIPT_WORDS).map(word => ({
-      text: String(word?.text || '').slice(0, 120), sourcePad: clamp(word?.sourcePad ?? 0, 0, 15),
-      start: clamp(word?.start ?? 0, 0, 3600), end: clamp(word?.end ?? 0, 0, 3600)
-    })).filter(word => word.text && word.end > word.start)
-  })) : [];
+  const phrases = Array.isArray(source.phrases) ? source.phrases.slice(0, MAX_VOICE_PHRASES).map(phrase => {
+    const crossfadeMs = clamp(phrase?.crossfadeMs ?? 0, 0, 250);
+    return {
+      id: String(phrase?.id || Math.random().toString(36).slice(2)).slice(0, 80),
+      name: String(phrase?.name || 'Phrase').slice(0, 48),
+      gapMs: crossfadeMs ? 0 : clamp(phrase?.gapMs ?? 35, 0, 500),
+      crossfadeMs,
+      words: (Array.isArray(phrase?.words) ? phrase.words : []).slice(0, MAX_TRANSCRIPT_WORDS).map(word => ({
+        text: String(word?.text || '').slice(0, 120), sourcePad: clamp(word?.sourcePad ?? 0, 0, 15),
+        start: clamp(word?.start ?? 0, 0, 3600), end: clamp(word?.end ?? 0, 0, 3600)
+      })).filter(word => word.text && word.end > word.start)
+    };
+  }) : [];
   const melodySource = source.melody && typeof source.melody === 'object' ? source.melody : {};
   const notes = Array.isArray(melodySource.notes) ? melodySource.notes.slice(0, MAX_MELODY_NOTES).map(note => ({
     midi: clamp(Math.round(note?.midi ?? 60), 24, 108),

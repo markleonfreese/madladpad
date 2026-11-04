@@ -425,8 +425,8 @@ async function assignVoiceWordsToPads(phrase,clips) {
   if(targets.length!==clips.length){notify(`This phrase needs ${clips.length} empty pads with unused patterns in the current ${project.layout} layout. Change layout or clear a lane first.`);return false;}
   const secondsPerStep=60/project.bpm/4,barDuration=secondsPerStep*16;
   let cursor=0,previousDuration=0;
-  const gap=Math.min(500,Math.max(0,Number(phrase.gapMs??35)))/1000;
   const requestedCrossfade=Math.min(250,Math.max(0,Number(phrase.crossfadeMs??0)))/1000;
+  const gap=requestedCrossfade?0:Math.min(500,Math.max(0,Number(phrase.gapMs??35)))/1000;
   const plan=clips.map((clip,index)=>{
     if(index){const overlap=Math.min(requestedCrossfade,previousDuration/2,clip.duration/2);cursor+=previousDuration+gap-overlap;}
     const position=cursor/secondsPerStep,step=Math.floor(position+1e-7),offset=position-step;
