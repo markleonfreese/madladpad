@@ -141,12 +141,12 @@ try {
     assert.ok(fixtureRms.rms>.2,`generated WAV should contain a 440 Hz tone, got ${JSON.stringify(fixtureRms)}`);
     const setRange=async(id,value)=>page.locator(id).evaluate((element,next)=>{element.value=String(next);element.dispatchEvent(new Event('input',{bubbles:true}));},value);
     await setRange('#pitch',0);
-    const recordPitchMix=async()=>{
+    const recordPitchMix=async(padIndex=0,recordMs=1300)=>{
       const downloaded=page.waitForEvent('download',{timeout:8000});
       await page.locator('#record-audio').click();
       await page.waitForFunction(()=>document.querySelector('#record-audio').textContent.includes('STOP AUDIO TAKE'));
-      await page.locator('.pad-hit').first().click();
-      await page.waitForTimeout(1300);
+      await page.locator('.pad-hit').nth(padIndex).click();
+      await page.waitForTimeout(recordMs);
       await page.locator('#record-audio').click();
       const file=await downloaded;
       return readFile(await file.path());
@@ -186,6 +186,50 @@ try {
     assert.ok(Math.abs(speedTwo.frequency-554.4)<35,`Pitch +4 at Speed 2× should stay near 554 Hz, got ${JSON.stringify(speedTwo)}`);
     assert.ok(Math.abs(speedTwo.activeDuration-.5)<.2,`Speed 2× should halve the sample duration, got ${speedTwo.activeDuration.toFixed(2)} s`);
     checkpoint(`integrated Pitch export (${neutral.frequency.toFixed(0)} Hz neutral, ${speedOne.frequency.toFixed(0)} Hz at 1× and ${speedTwo.frequency.toFixed(0)} Hz at 2×)`);
+
+    if(recordingSupported){
+      const videoTone=await page.evaluate(async()=>{
+        const mime=['video/webm;codecs=vp8,opus','video/webm'].find(type=>MediaRecorder.isTypeSupported(type));
+        if(!mime||!HTMLCanvasElement.prototype.captureStream)return null;
+        const context=new AudioContext();await context.resume();
+        const oscillator=context.createOscillator(),gain=context.createGain(),audioStream=context.createMediaStreamDestination();
+        oscillator.frequency.value=440;gain.gain.value=.18;oscillator.connect(gain).connect(audioStream);oscillator.start();
+        const canvas=document.createElement('canvas');canvas.width=160;canvas.height=90;
+        const paint=canvas.getContext('2d');let frame=0;
+        const timer=setInterval(()=>{paint.fillStyle=frame++%2?'#193b25':'#487b30';paint.fillRect(0,0,canvas.width,canvas.height);},33);
+        const videoStream=canvas.captureStream(30),stream=new MediaStream([...videoStream.getVideoTracks(),...audioStream.stream.getAudioTracks()]);
+        const recorder=new MediaRecorder(stream,{mimeType:mime}),chunks=[];
+        recorder.ondataavailable=event=>{if(event.data.size)chunks.push(event.data);};
+        const stopped=new Promise(resolve=>recorder.onstop=()=>resolve(new Blob(chunks,{type:recorder.mimeType||mime})));
+        recorder.start(100);await new Promise(resolve=>setTimeout(resolve,2000));recorder.stop();
+        const blob=await stopped;clearInterval(timer);oscillator.stop();stream.getTracks().forEach(track=>track.stop());await context.close();
+        const bytes=new Uint8Array(await blob.arrayBuffer());let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);
+        return {mime,base64:btoa(binary),size:bytes.length};
+      });
+      if(videoTone){
+        assert.ok(videoTone.size>100,'synthetic video-tone fixture should contain recorded media');
+        await page.locator('.pad-hit').nth(1).click();
+        await page.locator('.pad').nth(1).hover();
+        await page.locator('.pad .edit-pad').nth(1).click();
+        page.once('dialog',dialog=>dialog.accept());
+        await page.locator('#media-input').setInputFiles({name:'synthetic-pitch-video.webm',mimeType:'video/webm',buffer:Buffer.from(videoTone.base64,'base64')});
+        await page.getByText(/synthetic-pitch-video\.webm.*stored on this device/).waitFor();
+        await page.locator('.pad-hit').nth(1).click();
+        await page.waitForFunction(()=>{const video=document.querySelectorAll('.pad video')[1];return video?.readyState>=2&&Number.isFinite(video.duration)&&video.duration>1.5;},null,{timeout:10000});
+        await page.locator('.pad video').nth(1).evaluate(video=>{video.pause();video.currentTime=0;});
+        await setRange('#pitch',4);await setRange('#speed',1);
+        const videoOne=await analyzeMix(await recordPitchMix(1,2300));
+        assert.ok(Math.abs(videoOne.frequency-554.4)<40,`video Pitch +4 at Speed 1× should export near 554 Hz, got ${JSON.stringify(videoOne)}`);
+        assert.ok(Math.abs(videoOne.activeDuration-2)<.3,`video should play for about two seconds at Speed 1×, got ${videoOne.activeDuration.toFixed(2)} s`);
+        await setRange('#speed',2);
+        const videoTwo=await analyzeMix(await recordPitchMix(1,2300));
+        assert.ok(Math.abs(videoTwo.frequency-554.4)<40,`video Pitch +4 at Speed 2× should stay near 554 Hz, got ${JSON.stringify(videoTwo)}`);
+        assert.ok(Math.abs(videoTwo.activeDuration-1)<.25,`video should play for about one second at Speed 2×, got ${videoTwo.activeDuration.toFixed(2)} s`);
+        checkpoint(`video-element Pitch export (${videoOne.frequency.toFixed(0)} Hz at 1× and ${videoTwo.frequency.toFixed(0)} Hz at 2×)`);
+      }else{
+        console.log('Skipped video Pitch export: synthetic VP8/Opus MediaRecorder format is unavailable.');
+      }
+    }
   }else{
     console.log('Skipped integrated Pitch export: MediaRecorder or AudioContext is unavailable.');
   }
