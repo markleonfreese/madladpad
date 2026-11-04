@@ -52,4 +52,4 @@ Google Photos uses a Picker session and reads only approved selections; video do
 
 ## Original-source note
 
-[`sifxtreme/madpad-archive-node`](https://github.com/sifxtreme/madpad-archive-node) is a realtime collaborative **text editor**, unrelated to Smule's audiovisual MadPad. No code is copied from it. The uploaded prototype modules were reviewed as reference material; their unsupported MP4 and video-decoding assumptions were not carried forward.
+[`sifxtreme/madpad`](https://github.com/sifxtreme/madpad) and its [`madpad-archive-node`](https://github.com/sifxtreme/madpad-archive-node) variant are realtime collaborative **text pads**, not Smule's audiovisual MadPad. Their shared-editing idea could inform a future collaboration feature, but it does not fit this local-first MVP's current scope. Neither repository contains speech transcription, melody-writing or rap-writing code to reuse, and no code is copied from them. The uploaded prototype modules were reviewed as reference material; their unsupported MP4 and video-decoding assumptions were not carried forward.
