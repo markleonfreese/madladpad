@@ -22,12 +22,8 @@ export class SamplerAudio {
     const previous = this.sources.get(id);
     previous?.element?.pause();
     if (previous?.url) URL.revokeObjectURL(previous.url);
-    // AudioBuffer decoding is reliable for supported audio files, NOT arbitrary MP4 video containers.
-    let buffer = null;
-    if (file.type.startsWith('audio/')) {
-      try { buffer = await this.context.decodeAudioData(await file.arrayBuffer()); }
-      catch { /* Browser codec unavailable: fall back to HTMLMediaElement. */ }
-    }
+    // Use a media element for both audio and video: buffer playbackRate resamples pitch.
+    const buffer = null;
     const url = URL.createObjectURL(file);
     const source = {file, url, buffer, element:mediaElement, mediaNode:previous?.mediaNode, gain:previous?.gain};
     this.sources.set(id, source);
@@ -76,28 +72,16 @@ export class SamplerAudio {
     const delay = Math.max(0, (when - now) * 1000);
     const start = Math.max(0, pad.start);
     const end = Math.max(start + 0.02, pad.end);
-    const rate = Math.pow(2, pad.pitch / 12);
-    if (source.buffer) {
-      const audio = this.context.createBufferSource();
-      audio.buffer = source.buffer;
-      audio.playbackRate.setValueAtTime(rate, when);
-      const gain = this.context.createGain();
-      const attack = Math.min(0.008, Math.max(.002, (end-start)/10));
-      const offset = Math.min(start, Math.max(0, source.buffer.duration-.02));
-      const duration = Math.max(.01, Math.min(end-start, source.buffer.duration-offset));
-      gain.gain.setValueAtTime(0, when);
-      gain.gain.linearRampToValueAtTime(clamp(pad.volume,0,1.5), when+attack);
-      gain.gain.setValueAtTime(clamp(pad.volume,0,1.5), when+Math.max(attack,duration/rate-.006));
-      gain.gain.linearRampToValueAtTime(0, when+duration/rate);
-      audio.connect(gain).connect(this.master);
-      audio.start(when, offset, duration);
-    } else if (source.element && pad.kind !== 'image') {
+    const rate = clamp(pad.speed ?? 1, .5, 2);
+    if (source.element && pad.kind !== 'image') {
       setTimeout(() => {
         if (this.sources.get(id)?.file !== source.file) return;
         const element = source.element;
         element.pause();
         element.currentTime = Math.min(start, Number.isFinite(element.duration) ? Math.max(0, element.duration-.01) : start);
         element.playbackRate = clamp(rate,.5,2);
+        if ('preservesPitch' in element) element.preservesPitch = true;
+        else if (rate !== 1 && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('madladpad-error',{detail:'This browser may change pitch when speed changes.'}));
         element.muted = false;
         if (source.gain) source.gain.gain.value = clamp(pad.volume, 0, 1.5);
         element.play().catch(() => {});
