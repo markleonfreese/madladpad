@@ -27,3 +27,13 @@ test('offline shell and all locally referenced ES modules exist', () => {
   assert.ok(sw.includes("caches.match('/')"),
     'offline navigation must fall back to the canonical root route used by Workers Static Assets');
 });
+
+
+test('Pitch loading copy does not claim the implemented processor is unavailable', () => {
+  const html=readFileSync(join(site,'index.html'),'utf8');
+  const app=readFileSync(join(site,'app.js'),'utf8');
+  assert.match(html,/id="pitch-out">Starting…/);
+  assert.match(html,/Preparing the local Pitch processor/);
+  assert.doesNotMatch(html,/Independent pitch shifting is not available yet/);
+  assert.match(app,/Load an audio or video sample to use independent Pitch/);
+});
