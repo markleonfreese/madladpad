@@ -17,6 +17,8 @@ let cameraRecorder = null;
 let cameraTimer = null;
 let cameraUrl = null;
 let sourcePad = null;
+let captureTargetResolve = null;
+let captureTargetOrigin = null;
 let fileTarget = null;
 let cameraSaving = false;
 let cameraRegion = {start:0,end:0};
@@ -332,12 +334,32 @@ function cameraReady() {
   $('camera-capture').textContent='● START RECORDING';
 }
 
+function finishCaptureTarget(target){
+  if(!captureTargetResolve)return;
+  const resolve=captureTargetResolve;
+  captureTargetResolve=null;captureTargetOrigin=null;
+  if($('capture-target-dialog').open)$('capture-target-dialog').close();
+  resolve(target);
+}
+
+function chooseCaptureTarget(target){
+  if(!mediaFiles.has(target))return Promise.resolve(target);
+  const select=$('capture-target-select'),empty=project.pads.slice(0,PAD_COUNT[project.layout]).filter(pad=>pad.id!==target&&!mediaFiles.has(pad.id));
+  select.replaceChildren(...empty.map(pad=>{const option=document.createElement('option');option.value=String(pad.id);option.textContent=`Pad ${String(pad.id+1).padStart(2,'0')} · ${pad.name}`;return option;}));
+  $('capture-target-status').textContent=empty.length?'The old sample stays safe until you keep the new take.':'All visible pads are occupied. Change to a layout with an empty pad or cancel.';
+  $('capture-target-new').disabled=!empty.length;
+  captureTargetOrigin=target;
+  $('capture-target-dialog').showModal();
+  return new Promise(resolve=>{captureTargetResolve=resolve;});
+}
+
 async function openCamera(target=selected) {
-  if(mediaFiles.has(target)&&!confirm(`Replace the existing sample on pad ${target+1}? The current sample stays until you press Keep.`))return;
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return notify('Camera capture needs HTTPS and a supported browser.');
-  const token=cameraSession.begin(target);
+  const destination=await chooseCaptureTarget(target);
+  if(destination===null)return;
+  const token=cameraSession.begin(destination);
   if(token===null)return;
-  $('camera-title').textContent=`Record on pad ${target+1}`;
+  $('camera-title').textContent=`Record on pad ${destination+1}`;
   $('camera-status').textContent='Requesting camera and microphone access…';
   $('camera-capture').disabled=true;$('camera-capture').hidden=false;
   $('camera-retake').hidden=true;$('camera-keep').hidden=true;
@@ -521,6 +543,10 @@ function bindControls() {
   $('pad-record').addEventListener('click',()=>{const target=sourcePad;$('pad-source-dialog').close();if(target!==null)openCamera(target);});
   $('pad-files').addEventListener('click',()=>{fileTarget=sourcePad;$('pad-source-dialog').close();$('media-input').click();});
   $('pad-source-cancel').addEventListener('click',()=>$('pad-source-dialog').close());
+  $('capture-target-replace').addEventListener('click',()=>finishCaptureTarget(captureTargetOrigin));
+  $('capture-target-new').addEventListener('click',()=>finishCaptureTarget(Number($('capture-target-select').value)));
+  $('capture-target-cancel').addEventListener('click',()=>finishCaptureTarget(null));
+  $('capture-target-dialog').addEventListener('cancel',event=>{event.preventDefault();finishCaptureTarget(null);});
   $('camera-capture').addEventListener('click',captureCamera);
   $('camera-start').addEventListener('input',updateCameraRegion);$('camera-end').addEventListener('input',updateCameraRegion);
   $('camera-preview-region').addEventListener('click',previewCameraRegion);
@@ -550,7 +576,7 @@ function bindControls() {
   $('google-photos').addEventListener('click',()=>pickFromPhotos(files=>placeFiles(files),notify).catch(error=>notify(error.message)));
   window.addEventListener('madladpad-error',event=>notify(event.detail));
   document.addEventListener('keydown',event=>{
-    if(event.repeat || event.metaKey || event.ctrlKey || event.altKey || $('camera-dialog').open || $('pad-source-dialog').open || ['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName)) return;
+    if(event.repeat || event.metaKey || event.ctrlKey || event.altKey || $('camera-dialog').open || $('pad-source-dialog').open || $('capture-target-dialog').open || ['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName)) return;
     const key=event.key.toUpperCase();
     if(key===' '){event.preventDefault();transportTimer?stopSequencer():startSequencer();return;}
     const id=HOTKEYS.indexOf(key);
