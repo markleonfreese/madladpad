@@ -161,9 +161,7 @@ try {
     await page.waitForFunction(()=>!document.querySelector('#camera-capture').disabled);
     await page.locator('#camera-capture').click();
     await page.waitForFunction(()=>document.querySelector('#camera-capture').textContent.includes('STOP'));
-    await page.waitForTimeout(700);
-    await page.locator('#camera-capture').click();
-    await page.locator('#camera-keep').waitFor({state:'visible'});
+    await page.locator('#camera-keep').waitFor({state:'visible',timeout:7000});
     await page.waitForFunction(()=>!document.querySelector('#camera-keep').disabled);
     await page.locator('#camera-keep').click();
     await page.waitForFunction(()=>!document.querySelector('#camera-dialog').open&&document.querySelector('#sample-info').textContent.includes('stored on this device'));
@@ -175,6 +173,49 @@ try {
     assert.ok(capturePack.media[0].startsWith('data:audio/'),'saving a new capture must preserve the occupied pad');
     assert.ok(capturePack.media[captureTarget]?.startsWith('data:video/'),'kept camera media should survive a project-pack export');
     checkpoint('fake camera capture and safe save-as-new');
+
+    // Reuse the captured three-second sample to verify adaptive performance
+    // composition as one, two, then three pads become active during a take.
+    const longVideo=Buffer.from(capturePack.media[captureTarget].split(',')[1],'base64');
+    for(const target of [3,4]){
+      await page.locator('.pad').nth(target).hover();
+      await page.locator('.pad .edit-pad').nth(target).click();
+      await page.locator('#media-input').setInputFiles({name:'synthetic-long.webm',mimeType:'video/webm',buffer:longVideo});
+      await page.getByText(/synthetic-long\.webm.*stored on this device/).waitFor();
+    }
+    await page.evaluate(()=>{
+      const prototype=CanvasRenderingContext2D.prototype;
+      const fillRect=prototype.fillRect;
+      window.__adaptiveDraws=[];
+      let tiles=0;
+      prototype.fillRect=function(x,y,width,height){
+        const canvas=this.canvas;
+        if(x===0&&y===0&&width===canvas.width&&height===canvas.height){
+          if(window.__adaptiveDraws.length||tiles)window.__adaptiveDraws.push(tiles);
+          tiles=0;
+        } else if(this.fillStyle==='#172219')tiles++;
+        return fillRect.call(this,x,y,width,height);
+      };
+    });
+    await page.locator('#record-layout').selectOption('follow-active');
+    const performanceDownload=page.waitForEvent('download',{timeout:10000}).then(download=>({download}),error=>({error}));
+    assert.ok((await page.locator('.pad video').nth(3).getAttribute('src'))||await page.locator('.pad video').nth(3).evaluate(v=>v.currentSrc),'pad four should have its local video source');
+    assert.ok((await page.locator('.pad video').nth(4).getAttribute('src'))||await page.locator('.pad video').nth(4).evaluate(v=>v.currentSrc),'pad five should have its local video source');
+    await page.locator('#start-record').click();
+    await page.waitForFunction(()=>document.querySelector('#start-record').textContent.includes('STOP RECORDING'));
+    await page.locator('.pad-hit').nth(captureTarget).click();
+    await page.waitForFunction(()=>window.__adaptiveDraws.includes(1));
+    await page.locator('.pad-hit').nth(3).click();
+    await page.waitForFunction(()=>window.__adaptiveDraws.includes(2),null,{timeout:5000});
+    await page.locator('.pad-hit').nth(4).click();
+    await page.waitForFunction(()=>window.__adaptiveDraws.includes(3),null,{timeout:5000});
+    await page.locator('#start-record').click();
+    await page.waitForFunction(()=>document.querySelector('#start-record').textContent.includes('RECORD SET'),null,{timeout:5000});
+    const performanceResult=await performanceDownload;
+    assert.ok(performanceResult.download,`adaptive performance should download: ${performanceResult.error?.message||'no file'}`);
+    const performance=performanceResult.download;
+    assert.ok((await readFile(await performance.path())).length>100,'adaptive audiovisual performance should export encoded media');
+    checkpoint('adaptive performance capture transitions one-to-two-to-three clips');
   }else{
     console.log('Skipped camera capture: getUserMedia or MediaRecorder is unavailable.');
   }
@@ -197,7 +238,7 @@ try {
   await page.setViewportSize({width:390,height:844});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'mobile layout should not overflow horizontally');
   assert.deepEqual(errors, []);
-  console.log('Browser smoke passed: layouts, demo/keyboard, live pattern capture, named scenes, audio/video recording, local media, pack round-trip, offline reopen and mobile overflow.');
+  console.log('Browser smoke passed: layouts, demo/keyboard, live patterns/scenes, audio/video recording, adaptive one-to-three-clip composition, local media, pack round-trip, offline reopen and mobile overflow.');
 } finally {
   if (browser) await browser.close();
   await new Promise(resolve => server.close(resolve));
