@@ -23,3 +23,36 @@ test('speed alone sets media playbackRate while pitch metadata is ignored', asyn
   assert.equal(element.playbackRate,1.5);
   assert.equal(element.preservesPitch,true);
 });
+
+test('decodable audio keeps low-latency polyphonic buffer playback at Speed only', () => {
+  const nodes=[];
+  const param=()=>({
+    events:[],
+    setValueAtTime(value,time){this.events.push(['set',value,time]);},
+    linearRampToValueAtTime(value,time){this.events.push(['ramp',value,time]);}
+  });
+  const sampler=Object.create(SamplerAudio.prototype);
+  sampler.context={
+    currentTime:0,
+    createBufferSource(){
+      const node={playbackRate:param(),connect(){return this;},start(...args){this.startArgs=args;}};
+      nodes.push(node);
+      return node;
+    },
+    createGain(){return {gain:param(),connect(){return this;}};}
+  };
+  sampler.master={};
+  sampler.demoEnabled=false;
+  const mediaElement={pauseCount:0,pause(){this.pauseCount++;}};
+  sampler.sources=new Map([[0,{file:{},buffer:{duration:4},element:mediaElement}]]);
+  const pad={kind:'audio',start:0,end:2,speed:1.5,pitch:7,volume:1};
+
+  sampler.trigger(0,pad,()=>{},0);
+  sampler.trigger(0,pad,()=>{},0);
+
+  assert.equal(nodes.length,2,'retriggering should create overlapping buffer voices');
+  assert.deepEqual(nodes.map(node=>node.playbackRate.events[0][1]),[1.5,1.5],
+    'legacy pitch must not alter the Speed rate');
+  assert.deepEqual(nodes.map(node=>node.startArgs),[[0,0,2],[0,0,2]]);
+  assert.equal(mediaElement.pauseCount,0,'buffer voices should not be replaced by media-element playback');
+});
