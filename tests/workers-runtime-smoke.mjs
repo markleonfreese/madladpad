@@ -45,7 +45,7 @@ try{
   assert.equal(index.status,307,'Workers Static Assets should canonicalize /index.html');
   assert.equal(index.headers.get('location'),'/');
 
-  for(const [path,type] of [['/app.js','javascript'],['/voice.js','javascript'],['/sw.js','javascript'],['/manifest.webmanifest','json'],['/voice-inference-worker.bundle.js','javascript']]){
+  for(const [path,type] of [['/app.js','javascript'],['/voice.js','javascript'],['/sw.js','javascript'],['/manifest.webmanifest','json'],['/voice-inference-worker.bundle.js','javascript'],['/ort-wasm-simd-threaded.mjs','javascript']]){
     const response=await fetch(`${origin}${path}`);
     assert.equal(response.status,200,`${path} should be served by the configured assets directory`);
     assert.match(response.headers.get('content-type')||'',new RegExp(type==='json'?'json':type));
@@ -53,7 +53,8 @@ try{
   }
   const wasm=await fetch(`${origin}/ort-wasm-simd-threaded.wasm`);
   assert.equal(wasm.status,200,'on-device inference WASM should be served as a static asset');
-  assert.ok((await wasm.arrayBuffer()).byteLength>10_000_000,'inference WASM should not be truncated');
+  const wasmBytes=(await wasm.arrayBuffer()).byteLength;
+  assert.ok(wasmBytes>10_000_000&&wasmBytes<25*1024*1024,'single-threaded inference WASM should be complete and remain below the per-file asset limit');
 
   const fallback=await fetch(`${origin}/runtime-smoke-route`,{headers:{'Sec-Fetch-Mode':'navigate'}});
   assert.equal(fallback.status,200,'SPA navigation should receive the app shell');

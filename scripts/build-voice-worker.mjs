@@ -12,3 +12,7 @@ await copyFile(
   new URL('../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm', import.meta.url),
   new URL('../site/ort-wasm-simd-threaded.wasm', import.meta.url)
 );
+await copyFile(
+  new URL('../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.mjs', import.meta.url),
+  new URL('../site/ort-wasm-simd-threaded.mjs', import.meta.url)
+);
