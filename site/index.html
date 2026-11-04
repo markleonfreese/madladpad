@@ -61,6 +61,22 @@
           <button id="google-drive" class="source-button"><span class="source-icon">△</span> GOOGLE DRIVE <small>Choose files</small></button>
           <button id="google-photos" class="source-button"><span class="source-icon">▧</span> GOOGLE PHOTOS <small>Choose clips</small></button>
         </div>
+        <section class="region-editor" aria-labelledby="region-title">
+          <h3 id="region-title">SELECT A MOMENT</h3>
+          <p id="region-status">Load an audio or video clip to select a region.</p>
+          <video id="region-preview" controls playsinline preload="metadata" hidden></video>
+          <div class="region-bounds">
+            <label>Start (seconds)<input id="region-start" type="number" min="0" step="0.05" disabled></label>
+            <label>End (seconds)<input id="region-end" type="number" min="0" step="0.05" disabled></label>
+          </div>
+          <label>Start position<input id="region-start-range" type="range" min="0" step="0.05" disabled></label>
+          <label>End position<input id="region-end-range" type="range" min="0" step="0.05" disabled></label>
+          <div class="region-actions">
+            <button id="region-play" type="button" disabled>Preview selection</button>
+            <button id="region-apply" type="button" disabled>Apply to pad</button>
+            <button id="region-reset" type="button" disabled>Reset</button>
+          </div>
+        </section>
         <div class="sliders">
           <label>VOLUME <output id="volume-out">90%</output><input id="volume" type="range" min="0" max="150" value="90"></label>
           <label>PITCH <output id="pitch-out">0 st</output><input id="pitch" type="range" min="-12" max="12" value="0"></label>
