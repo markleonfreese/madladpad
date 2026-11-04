@@ -27,6 +27,41 @@ export const getValue = key => transaction('readonly', store => store.get(key));
 export const putValue = (key, value) => transaction('readwrite', store => store.put(value, key));
 export const deleteValue = key => transaction('readwrite', store => store.delete(key));
 
+// Commit project metadata and all 16 media slots together, or preserve the old pack.
+export async function replaceProjectMedia(project, media) {
+  if (!Array.isArray(media) || media.length !== 16) throw new Error('Expected 16 media slots');
+  const db = await openDb();
+  try {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error('Project save failed'));
+      tx.onabort = () => reject(tx.error || new Error('Project save aborted'));
+      try {
+        const store = tx.objectStore(STORE);
+        store.put(project, 'project');
+        media.forEach((file, id) => file ? store.put(file, `media:${id}`) : store.delete(`media:${id}`));
+      } catch (error) { tx.abort(); reject(error); }
+    });
+  } finally { db.close(); }
+}
+
+// Persist a capture and its project metadata together, or not at all.
+export async function saveCapturedPad(id, file, project) {
+  if(!Number.isInteger(id) || id<0 || id>=16)throw new RangeError('Invalid pad');
+  const db=await openDb();
+  try {
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction(STORE,'readwrite');
+      tx.oncomplete=()=>resolve();
+      tx.onerror=()=>reject(tx.error||new Error('Capture save failed'));
+      tx.onabort=()=>reject(tx.error||new Error('Capture save aborted'));
+      try {const store=tx.objectStore(STORE);store.put(file,`media:${id}`);store.put(project,'project');}
+      catch(error){tx.abort();reject(error);}
+    });
+  } finally {db.close();}
+}
+
 export async function collectProjectMedia() {
   return Promise.all(Array.from({length: 16}, (_, id) => getValue(`media:${id}`)));
 }
