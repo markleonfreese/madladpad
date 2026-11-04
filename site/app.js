@@ -419,6 +419,57 @@ async function addMedia(id,file,persist=true) {
   if (selected===id) syncRegionPreview();
 }
 
+async function assignVoiceWordsToPads(phrase,clips) {
+  const visiblePads=PAD_COUNT[project.layout];
+  const targets=project.pads.slice(0,visiblePads).map((pad,id)=>id).filter(id=>!mediaFiles.has(id)&&!project.pads[id].steps.some(Boolean)).slice(0,clips.length);
+  if(targets.length!==clips.length){notify(`This phrase needs ${clips.length} empty pads with unused patterns in the current ${project.layout} layout. Change layout or clear a lane first.`);return false;}
+  const secondsPerStep=60/project.bpm/4,barDuration=secondsPerStep*16;
+  let cursor=0;
+  const plan=clips.map((clip,index)=>{
+    const position=cursor/secondsPerStep,step=Math.floor(position+1e-7),offset=position-step;
+    if(step>=16||cursor+clip.duration>barDuration+1e-6)return null;
+    cursor+=clip.duration;
+    return {id:targets[index],clip,step,offset};
+  });
+  if(plan.some(item=>!item)){
+    notify('This phrase is longer than one 16-step bar at the current tempo. Raise the tempo or choose a shorter phrase, then map it again.');
+    return false;
+  }
+
+  clearTimeout(saveTimer);
+  const previousProject=JSON.parse(JSON.stringify(project));
+  const loaded=[];
+  try{
+    for(const {id,clip,step,offset} of plan){
+      const source=await audio.load(id,clip.file,pads[id].video);
+      loaded.push(id);
+      if(!source.buffer)throw new Error(`Pad ${id+1} could not decode its generated word sample.`);
+      mediaFiles.set(id,clip.file);
+      const config=project.pads[id];
+      config.kind='audio';config.fileName=clip.file.name;
+      config.name=`${phrase.name} · ${clip.word.text}`.slice(0,45);
+      config.start=0;config.end=Math.min(source.buffer.duration,clip.duration);
+      config.steps[step]=true;config.stepOffsets[step]=Math.min(.9999,Math.max(0,offset));
+      durations.set(id,source.buffer.duration);
+    }
+    const allMedia=Array.from({length:16},(_,id)=>mediaFiles.get(id)||null);
+    await replaceProjectMedia(project,allMedia);
+    for(const id of loaded)renderPad(id);
+    renderGrid();renderTrackGrid();selectPad(loaded[0]);
+    window.dispatchEvent(new Event('madladpad-media-change'));
+    notify(`${clips.length} word samples mapped to pads and the 16-step pattern. Press Play to hear ${phrase.name}.`);
+    return true;
+  }catch(error){
+    for(const id of loaded){audio.unload(id);mediaFiles.delete(id);durations.delete(id);}
+    project=normaliseProject(previousProject);
+    renderGrid();renderTrackGrid();selectPad(selected);
+    window.dispatchEvent(new Event('madladpad-media-change'));
+    queueSave();
+    notify(`Could not map phrase words; your project was restored. ${error.message}`);
+    return false;
+  }
+}
+
 async function placeFiles(files,start=selected) {
   const accepted=files.filter(supportedMediaFile);
   if (!accepted.length) return notify('Select a video, audio clip or photo.');
@@ -936,7 +987,7 @@ async function initialise() {
       } catch(error){console.warn(`Failed to restore pad ${id+1}`,error);}
     }
     renderSession();
-    initVoiceLab({ getProject: () => project, getMediaFiles: () => mediaFiles, getAudio: () => audio, notify, save: queueSave });
+    initVoiceLab({ getProject: () => project, getMediaFiles: () => mediaFiles, getAudio: () => audio, notify, save: queueSave, assignWordsToPads: assignVoiceWordsToPads });
     if(restored)notify(`Restored ${restored} locally saved samples.`);
     if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost'))navigator.serviceWorker.register('/sw.js').catch(()=>{});
     $('connection-indicator').textContent=navigator.onLine?'LOCAL STUDIO':'OFFLINE READY';

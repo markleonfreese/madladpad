@@ -94,7 +94,7 @@ function renderWords(project, current, save) {
   $('voice-make-phrase').disabled = !transcript.words.some(word => word.selected) || project.voice.phrases.length >= MAX_VOICE_PHRASES;
 }
 
-function renderPhrases(project, audio, notify, save) {
+function renderPhrases(project, audio, notify, save, assignWordsToPads) {
   const host = $('voice-phrases'); host.replaceChildren();
   project.voice.phrases.forEach((phrase, index) => {
     const card = document.createElement('div'); card.className = 'voice-phrase';
@@ -111,6 +111,25 @@ function renderPhrases(project, audio, notify, save) {
         at += Math.max(.08, end - start);
       }
     }); controls.append(play);
+    const assign = document.createElement('button'); assign.type = 'button'; assign.className = 'pill-button'; assign.textContent = 'MAP WORDS TO PADS + STEPS';
+    assign.setAttribute('aria-label', `Map ${phrase.name} words to pads and steps`);
+    assign.setAttribute('aria-describedby', 'voice-map-help');
+    assign.addEventListener('click', async () => {
+      if (!phrase.words.length) return;
+      assign.disabled = true;
+      try {
+        const clips = [];
+        for (const word of phrase.words) {
+          const blob = await renderPhraseWav({ words: [word] }, project, audio);
+          const sampleRate = new DataView(await blob.slice(24, 28).arrayBuffer()).getUint32(0, true);
+          const duration = (blob.size - 44) / (sampleRate * 4);
+          const safeWord = word.text.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 24) || 'word';
+          clips.push({ word, file: new File([blob], `${safeWord}.wav`, { type: 'audio/wav' }), duration });
+        }
+        await assignWordsToPads(phrase, clips);
+      } catch (error) { notify(`Could not map phrase words to pads: ${error.message}`); }
+      finally { assign.disabled = false; }
+    }); controls.append(assign);
     const exportAudio = document.createElement('button'); exportAudio.type = 'button'; exportAudio.className = 'pill-button'; exportAudio.textContent = 'EXPORT WAV';
     exportAudio.setAttribute('aria-label', `Export ${phrase.name} as WAV`);
     exportAudio.addEventListener('click', async () => {
@@ -122,13 +141,13 @@ function renderPhrases(project, audio, notify, save) {
       } catch (error) { notify(`Phrase export failed: ${error.message}`); }
       finally { exportAudio.disabled = false; }
     }); controls.append(exportAudio);
-    const move = (delta, label) => { const button = document.createElement('button'); button.type = 'button'; button.className = 'pill-button'; button.textContent = label; button.disabled = index + delta < 0 || index + delta >= project.voice.phrases.length; button.addEventListener('click', () => { const [item] = project.voice.phrases.splice(index, 1); project.voice.phrases.splice(index + delta, 0, item); save(); renderPhrases(project, audio, notify, save); }); controls.append(button); };
+    const move = (delta, label) => { const button = document.createElement('button'); button.type = 'button'; button.className = 'pill-button'; button.textContent = label; button.disabled = index + delta < 0 || index + delta >= project.voice.phrases.length; button.addEventListener('click', () => { const [item] = project.voice.phrases.splice(index, 1); project.voice.phrases.splice(index + delta, 0, item); save(); renderPhrases(project, audio, notify, save, assignWordsToPads); }); controls.append(button); };
     move(-1, '↑'); move(1, '↓');
-    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'pill-button'; remove.textContent = 'REMOVE'; remove.addEventListener('click', () => { project.voice.phrases.splice(index, 1); save(); renderPhrases(project, audio, notify, save); }); controls.append(remove);
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'pill-button'; remove.textContent = 'REMOVE'; remove.addEventListener('click', () => { project.voice.phrases.splice(index, 1); save(); renderPhrases(project, audio, notify, save, assignWordsToPads); }); controls.append(remove);
     const words = document.createElement('div'); words.className = 'phrase-words';
     phrase.words.forEach((word, wordIndex) => {
       const item = document.createElement('span'); item.textContent = `${word.text} `;
-      for (const [delta, label] of [[-1, '‹'], [1, '›']]) { const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.setAttribute('aria-label', `${delta < 0 ? 'Move earlier' : 'Move later'} ${word.text}`); button.disabled = wordIndex + delta < 0 || wordIndex + delta >= phrase.words.length; button.addEventListener('click', () => { const [entry] = phrase.words.splice(wordIndex, 1); phrase.words.splice(wordIndex + delta, 0, entry); save(); renderPhrases(project, audio, notify, save); }); item.append(button); }
+      for (const [delta, label] of [[-1, '‹'], [1, '›']]) { const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.setAttribute('aria-label', `${delta < 0 ? 'Move earlier' : 'Move later'} ${word.text}`); button.disabled = wordIndex + delta < 0 || wordIndex + delta >= phrase.words.length; button.addEventListener('click', () => { const [entry] = phrase.words.splice(wordIndex, 1); phrase.words.splice(wordIndex + delta, 0, entry); save(); renderPhrases(project, audio, notify, save, assignWordsToPads); }); item.append(button); }
       words.append(item);
     });
     card.append(title, controls, words); host.append(card);
@@ -166,7 +185,7 @@ function renderRap(project, save) {
   });
 }
 
-export function initVoiceLab({ getProject, getMediaFiles, getAudio, notify, save }) {
+export function initVoiceLab({ getProject, getMediaFiles, getAudio, notify, save, assignWordsToPads }) {
   const project = getProject(), audio = getAudio();
   let worker = null;
   const updateConsentState = () => { $('voice-transcribe').disabled = !$('voice-source-pad').value || !$('voice-consent').checked; };
@@ -176,7 +195,7 @@ export function initVoiceLab({ getProject, getMediaFiles, getAudio, notify, save
     for (const [id, file] of getMediaFiles()) if (/^(audio|video)\//.test(file.type)) { const option = document.createElement('option'); option.value = id; option.textContent = `${project.pads[id].name} · ${file.name || file.type}`; select.append(option); }
     if ([...select.options].some(option => option.value === selected)) select.value = selected;
     updateConsentState();
-    renderWords(project, getMediaFiles, save); renderPhrases(project, audio, notify, save); renderMelody(project, save); renderRap(project, save);
+    renderWords(project, getMediaFiles, save); renderPhrases(project, audio, notify, save, assignWordsToPads); renderMelody(project, save); renderRap(project, save);
   }
   window.addEventListener('madladpad-media-change', render);
   $('voice-source-pad').addEventListener('change', render);

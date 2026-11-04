@@ -189,6 +189,17 @@ try {
   assert.match(phraseFile.suggestedFilename(),/\.wav$/);
   const phraseBytes=await readFile(await phraseFile.path());
   assert.equal(phraseBytes.toString('ascii',0,4),'RIFF','phrase export should produce a local WAV file');
+  await page.locator('#voice-phrases button[aria-label="Map Phrase 1 words to pads and steps"]').click();
+  await page.waitForFunction(()=>document.querySelectorAll('.pad.editable').length>=3);
+  const mappedPadIds=await page.locator('.pad-title').evaluateAll(nodes=>nodes.flatMap((node,index)=>node.textContent.includes('Phrase 1 ·')?[index]:[]));
+  assert.equal(mappedPadIds.length,2,'the reordered phrase should allocate one pad per selected word');
+  assert.match(await page.locator('.pad').nth(1).locator('.pad-title').textContent(),/synthetic-set/,'mapping should preserve already occupied pads');
+  assert.match(await page.locator('.pad').nth(mappedPadIds[0]).locator('.pad-title').textContent(),/MadLadPad/,'reordered phrase word one should become its own local pad sample');
+  assert.match(await page.locator('.pad').nth(mappedPadIds[1]).locator('.pad-title').textContent(),/Hello/,'reordered phrase word two should become its own local pad sample');
+  if(await page.locator('#track-grid').isHidden())await page.locator('#track-view').click();
+  assert.equal(await page.locator(`.track-row[data-pad="${mappedPadIds[0]}"] [data-step="0"]`).getAttribute('aria-pressed'),'true','first phrase word should start at pattern step one');
+  assert.equal(await page.locator(`.track-row[data-pad="${mappedPadIds[1]}"] [data-step="3"]`).getAttribute('aria-pressed'),'true','second phrase word should follow the first word sample');
+  assert.match(await page.locator('#toast').textContent(),/word samples mapped to pads and the 16-step pattern/);
   await page.locator('#melody-add').click();
   await page.locator('#melody-notes input[aria-label="Note 1 MIDI pitch"]').fill('69');
   await page.locator('#melody-notes input[aria-label="Note 1 MIDI pitch"]').press('Tab');
@@ -207,6 +218,11 @@ try {
   await page.getByText(/synthetic\.wav.*stored on this device/).waitFor();
   assert.deepEqual(await page.locator('#voice-word-list .voice-word input[type=text]').evaluateAll(inputs=>inputs.map(input=>input.value)),['Hello','from','MadLadPad'],'transcribed words should persist locally');
   assert.match(await page.locator('#voice-phrases').textContent(),/MadLadPad.*Hello/,'ordered phrases should persist locally');
+  assert.match(await page.locator('.pad').nth(1).locator('.pad-title').textContent(),/synthetic-set/,'pre-existing sample should remain unchanged after reload');
+  assert.match(await page.locator('.pad').nth(mappedPadIds[0]).locator('.pad-title').textContent(),/MadLadPad/,'mapped word pad and source WAV should persist locally');
+  assert.match(await page.locator('.pad').nth(mappedPadIds[1]).locator('.pad-title').textContent(),/Hello/,'the following mapped word pad should persist locally');
+  if(await page.locator('#track-grid').isHidden())await page.locator('#track-view').click();
+  assert.equal(await page.locator(`.track-row[data-pad="${mappedPadIds[1]}"] [data-step="3"]`).getAttribute('aria-pressed'),'true','mapped phrase rhythm should persist locally');
   assert.equal(await page.locator('#melody-notes .melody-note').count(),1,'melody note data should persist locally');
   assert.equal(await page.locator('#rap-bars textarea').nth(0).inputValue(),'Hello from the other side','rap bars should persist locally');
   checkpoint('local speech transcription mock, phrase selection/order, melody and rap persistence/exports');
@@ -383,7 +399,9 @@ try {
     // Reuse the captured three-second sample to verify adaptive performance
     // composition as one, two, then three pads become active during a take.
     const longVideo=Buffer.from(capturePack.media[captureTarget].split(',')[1],'base64');
-    for(const target of [3,4]){
+    const longVideoTargets=await page.locator('.pad').evaluateAll(cards=>cards.flatMap((card,index)=>card.classList.contains('empty')&&!card.hidden?[index]:[]).slice(0,2));
+    assert.equal(longVideoTargets.length,2,'two empty pads should remain available for adaptive composition fixtures');
+    for(const target of longVideoTargets){
       await page.locator('.pad').nth(target).hover();
       await page.locator('.pad .edit-pad').nth(target).click();
       await page.locator('#media-input').setInputFiles({name:'synthetic-long.webm',mimeType:'video/webm',buffer:longVideo});
@@ -405,15 +423,14 @@ try {
     });
     await page.locator('#record-layout').selectOption('follow-active');
     const performanceDownload=page.waitForEvent('download',{timeout:10000}).then(download=>({download}),error=>({error}));
-    assert.ok((await page.locator('.pad video').nth(3).getAttribute('src'))||await page.locator('.pad video').nth(3).evaluate(v=>v.currentSrc),'pad four should have its local video source');
-    assert.ok((await page.locator('.pad video').nth(4).getAttribute('src'))||await page.locator('.pad video').nth(4).evaluate(v=>v.currentSrc),'pad five should have its local video source');
+    for(const target of longVideoTargets)assert.ok((await page.locator('.pad video').nth(target).getAttribute('src'))||await page.locator('.pad video').nth(target).evaluate(v=>v.currentSrc),`pad ${target+1} should have its local video source`);
     await page.locator('#start-record').click();
     await page.waitForFunction(()=>document.querySelector('#start-record').textContent.includes('STOP RECORDING'));
     await page.locator('.pad-hit').nth(captureTarget).click();
     await page.waitForFunction(()=>window.__adaptiveDraws.includes(1));
-    await page.locator('.pad-hit').nth(3).click();
+    await page.locator('.pad-hit').nth(longVideoTargets[0]).click();
     await page.waitForFunction(()=>window.__adaptiveDraws.includes(2),null,{timeout:5000});
-    await page.locator('.pad-hit').nth(4).click();
+    await page.locator('.pad-hit').nth(longVideoTargets[1]).click();
     await page.waitForFunction(()=>window.__adaptiveDraws.includes(3),null,{timeout:5000});
     await page.locator('#start-record').click();
     await page.waitForFunction(()=>document.querySelector('#start-record').textContent.includes('RECORD SET'),null,{timeout:5000});
