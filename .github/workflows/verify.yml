@@ -35,3 +35,5 @@ jobs:
         run: npm test
       - name: Run browser smoke and accessibility checks
         run: npm run test:browser
+      - name: Run native Workers Static Assets runtime smoke
+        run: npm run test:workers-runtime
