@@ -204,13 +204,18 @@ function renderControls() {
   $('sample-info').textContent = mediaFiles.has(selected) ? `${config.fileName} · ${config.kind.toUpperCase()} · stored on this device` : 'No media loaded. Add a clip to get started.';
   $('volume').value = config.volume*100;
   $('pitch').value = config.pitch;
+  const pitchAvailable=audio.canPitch(selected);
+  $('pitch').disabled=!pitchAvailable;
+  $('pitch-out').textContent=pitchAvailable?`${config.pitch>0?'+':''}${config.pitch} st`:'Unavailable';
+  $('pitch-note').textContent=pitchAvailable?'Pitch is processed separately from Speed. Pitch shifting adds a short processing delay; sound quality varies by device.':audio.pitchReady?'Pitch is unavailable for this media source in this browser. Speed remains available.':'This browser does not support the local pitch processor. Pitch is disabled; Speed remains available.';
+  $('speed').value = config.speed;
   const max = Math.max(2,durations.get(selected)||15);
   $('trim-start').max = max;
   $('trim-end').max = max;
   $('trim-start').value = config.start;
   $('trim-end').value = config.end;
   $('volume-out').textContent = `${Math.round(config.volume*100)}%`;
-  $('pitch-out').textContent = `${config.pitch>0?'+':''}${config.pitch} st`;
+  $('speed-out').textContent = `${config.speed.toFixed(2)}×`;
   $('start-out').textContent = `${config.start.toFixed(2)} s`;
   $('end-out').textContent = `${config.end.toFixed(2)} s`;
 }
@@ -823,10 +828,11 @@ function bindControls() {
   $('quantize-select').addEventListener('change',event=>{project.quantize=event.target.value;audio.setTransport(project.bpm,project.quantize);queueSave();});
   $('project-title').addEventListener('input',event=>{project.title=event.target.value;queueSave();});
   $('pad-name').addEventListener('input',event=>{project.pads[selected].name=event.target.value;renderPad(selected);renderTrackGrid();queueSave();});
-  for(const [id,key,convert] of [['volume','volume',v=>v/100],['pitch','pitch',Number],['trim-start','start',Number],['trim-end','end',Number]]) {
+  for(const [id,key,convert] of [['volume','volume',v=>v/100],['pitch','pitch',Number],['speed','speed',Number],['trim-start','start',Number],['trim-end','end',Number]]) {
     $(id).addEventListener('input',event=>{
       const pad=project.pads[selected];pad[key]=convert(Number(event.target.value));
-      if(key==='start' && pad.start>=pad.end)pad.end=pad.start+.05;
+      if(key==='pitch'&&!audio.setPadPitch(selected,pad.pitch,pad.speed))notify('Pitch processing is unavailable for this pad in this browser.');
+      if(key==='start' && pad.start>=pad.end)pad.end=Math.min(3600,pad.start+.05);
       if(key==='end' && pad.end<=pad.start)pad.start=Math.max(0,pad.end-.05);
       renderControls();queueSave();
     });
@@ -908,6 +914,7 @@ function bindControls() {
 async function initialise() {
   try {
     audio=new SamplerAudio();
+    await audio.initPitchProcessor();
     buildGrid();bindControls();
     const saved=await getValue('project');
     if(saved)project=normaliseProject(saved);

@@ -1,4 +1,5 @@
 import { clamp, nextQuantizedTime } from './core.js';
+import { effectivePitchSemitones } from './pitch-dsp.js';
 
 export class SamplerAudio {
   constructor() {
@@ -12,6 +13,58 @@ export class SamplerAudio {
     this.bpm = 120;
     this.quantize = 'off';
     this.demoEnabled = false;
+    this.pitchReady = false;
+  }
+
+  async initPitchProcessor(){
+    if(!this.context.audioWorklet||typeof AudioWorkletNode==='undefined')return false;
+    try{await this.context.audioWorklet.addModule(new URL('./pitch-shifter.js',import.meta.url));this.pitchReady=true;return true;}
+    catch(error){console.warn('Independent pitch processor unavailable',error);return false;}
+  }
+
+  createPitchNode(){
+    if(!this.pitchReady)return null;
+    try{return new AudioWorkletNode(this.context,'madladpad-pitch-shifter',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[2],channelCount:2,channelCountMode:'max'});}
+    catch(error){console.warn('Could not create independent pitch node',error);return null;}
+  }
+
+  canPitch(id){
+    if(!this.pitchReady)return false;
+    const source=this.sources.get(id);
+    return source?.pitchAvailable!==false&&(!source?.file||Boolean(source.buffer||source.mediaNode));
+  }
+
+  setPadPitch(id,semitones,speed,atTime=this.context.currentTime){
+    const source=this.sources.get(id);if(!source||!this.canPitch(id))return false;
+    source.pitch=clamp(semitones,-12,12);
+    source.speed=clamp(speed??source.speed??1,.5,2);
+    if(source.buffer||!source.mediaNode)return true;
+    return this.routeMediaPitch(source,atTime);
+  }
+
+  mediaPitchSemitones(source){
+    const property=['preservesPitch','webkitPreservesPitch','mozPreservesPitch'].find(key=>source.element&&key in source.element);
+    if(property){
+      try{source.element[property]=true;if(source.element[property])return source.pitch||0;}catch{}
+    }
+    return effectivePitchSemitones(source.pitch||0,source.speed||1);
+  }
+
+  routeMediaPitch(source,atTime=this.context.currentTime){
+    if(!source.mediaNode||!source.gain)return false;
+    const semitones=this.mediaPitchSemitones(source);
+    const usePitch=Math.abs(semitones)>.01&&this.pitchReady;
+    if(usePitch&&!source.pitchNode)source.pitchNode=this.createPitchNode();
+    const node=usePitch?source.pitchNode:null;
+    if(usePitch&&!node){source.pitchAvailable=false;return false;}
+    if(source.mediaRoute===(node?'pitch':'direct')){
+      if(node)node.parameters.get('semitones').setValueAtTime(semitones,atTime);
+      return true;
+    }
+    source.mediaNode.disconnect();source.pitchNode?.disconnect();
+    if(node){node.parameters.get('semitones').setValueAtTime(semitones,atTime);source.mediaNode.connect(node);node.connect(source.gain);source.mediaRoute='pitch';}
+    else{source.mediaNode.connect(source.gain);source.mediaRoute='direct';}
+    return true;
   }
 
   async unlock() { if (this.context.state !== 'running') await this.context.resume(); }
@@ -22,14 +75,15 @@ export class SamplerAudio {
     const previous = this.sources.get(id);
     previous?.element?.pause();
     if (previous?.url) URL.revokeObjectURL(previous.url);
-    // AudioBuffer decoding is reliable for supported audio files, NOT arbitrary MP4 video containers.
+    // Prefer AudioBuffer playback for decodable audio to retain low-latency,
+    // polyphonic triggering. Arbitrary video containers still use the media element.
     let buffer = null;
     if (file.type.startsWith('audio/')) {
       try { buffer = await this.context.decodeAudioData(await file.arrayBuffer()); }
       catch { /* Browser codec unavailable: fall back to HTMLMediaElement. */ }
     }
     const url = URL.createObjectURL(file);
-    const source = {file, url, buffer, element:mediaElement, mediaNode:previous?.mediaNode, gain:previous?.gain};
+    const source = {file,url,buffer,element:mediaElement,mediaNode:previous?.mediaNode,gain:previous?.gain,pitchNode:previous?.pitchNode,pitch:previous?.pitch||0,speed:previous?.speed||1,mediaRoute:'',pitchAvailable:true};
     this.sources.set(id, source);
     if (!mediaElement && previous?.element) {
       previous.element.removeAttribute('src');
@@ -44,10 +98,11 @@ export class SamplerAudio {
         try {
           source.mediaNode = this.context.createMediaElementSource(mediaElement);
           source.gain = this.context.createGain();
-          source.mediaNode.connect(source.gain).connect(this.master);
+          source.gain.connect(this.master);
         } catch (error) { console.warn('Browser media routing unavailable', error); }
       }
       mediaElement.muted = Boolean(buffer);
+      if(source.mediaNode)this.routeMediaPitch(source);
     }
     return source;
   }
@@ -58,7 +113,7 @@ export class SamplerAudio {
     source.element?.pause();
     URL.revokeObjectURL(source.url);
     // Preserve media element routing to avoid a second createMediaElementSource on the same DOM node.
-    this.sources.set(id, {...source, file:null, url:null, buffer:null});
+    this.sources.set(id, {...source, file:null, url:null, buffer:null, pitchAvailable:true});
     source.element?.removeAttribute('src');
     source.element?.load();
   }
@@ -76,21 +131,30 @@ export class SamplerAudio {
     }
     const start = Math.max(0, pad.start);
     const end = Math.max(start + 0.02, pad.end);
-    const rate = Math.pow(2, pad.pitch / 12);
+    const rate = clamp(pad.speed ?? 1, .5, 2);
+    this.setPadPitch(id,pad.pitch??0,rate,when);
     if (source.buffer) {
       const audio = this.context.createBufferSource();
       audio.buffer = source.buffer;
       audio.playbackRate.setValueAtTime(rate, when);
       const gain = this.context.createGain();
+      const pitchSemitones=effectivePitchSemitones(pad.pitch??0,rate),needsPitch=Math.abs(pitchSemitones)>.01,pitchNode=needsPitch?this.createPitchNode():null;
+      if(needsPitch&&!pitchNode){source.pitchAvailable=false;if(typeof window!=='undefined')window.dispatchEvent(new CustomEvent('madladpad-error',{detail:'Independent pitch processing could not start for this sample. Speed remains available.'}));}
+      if(pitchNode)pitchNode.parameters.get('semitones').setValueAtTime(pitchSemitones,when);
+      const latency=pitchNode?.parameters?Math.round(this.context.sampleRate*.04)/this.context.sampleRate:0;
       const attack = Math.min(0.008, Math.max(.002, (end-start)/10));
       const offset = Math.min(start, Math.max(0, source.buffer.duration-.02));
       const duration = Math.max(.01, Math.min(end-start, source.buffer.duration-offset));
-      gain.gain.setValueAtTime(0, when);
-      gain.gain.linearRampToValueAtTime(clamp(pad.volume,0,1.5), when+attack);
-      gain.gain.setValueAtTime(clamp(pad.volume,0,1.5), when+Math.max(attack,duration/rate-.006));
-      gain.gain.linearRampToValueAtTime(0, when+duration/rate);
-      audio.connect(gain).connect(this.master);
-      audio.start(when, offset, duration);
+      const audibleStart=when+latency;
+      gain.gain.setValueAtTime(0,audibleStart);
+      gain.gain.linearRampToValueAtTime(clamp(pad.volume,0,1.5),audibleStart+attack);
+      gain.gain.setValueAtTime(clamp(pad.volume,0,1.5),audibleStart+Math.max(attack,duration/rate-.006));
+      gain.gain.linearRampToValueAtTime(0,audibleStart+duration/rate);
+      if(pitchNode){audio.connect(pitchNode);pitchNode.connect(gain);}else audio.connect(gain);
+      gain.connect(this.master);audio.onended=()=>{audio.disconnect();pitchNode?.disconnect();gain.disconnect();};
+      // Let the processor drain its look-ahead ring after the selected clip
+      // ends. The gain envelope still ends at the requested trim boundary.
+      audio.start(when, offset, duration + (pitchNode ? latency * rate : 0));
     } else if (source.element && pad.kind !== 'image') {
       setTimeout(() => {
         if (this.sources.get(id)?.file !== source.file) return;
@@ -98,6 +162,9 @@ export class SamplerAudio {
         element.pause();
         element.currentTime = Math.min(start, Number.isFinite(element.duration) ? Math.max(0, element.duration-.01) : start);
         element.playbackRate = clamp(rate,.5,2);
+        const pitchPreservation=['preservesPitch','webkitPreservesPitch','mozPreservesPitch'].find(key=>key in element);
+        if(pitchPreservation)element[pitchPreservation]=true;
+        else if(rate!==1&&(!this.pitchReady||source.pitchAvailable===false)&&typeof window!=='undefined')window.dispatchEvent(new CustomEvent('madladpad-error',{detail:'This browser may change perceived pitch when Speed changes because Pitch processing is unavailable.'}));
         element.muted = false;
         if (source.gain) source.gain.gain.value = clamp(pad.volume, 0, 1.5);
         element.play().catch(() => {});

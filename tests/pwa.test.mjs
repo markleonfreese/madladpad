@@ -22,4 +22,6 @@ test('offline shell and all locally referenced ES modules exist', () => {
     assert.ok(existsSync(join(site,path.slice(1))),`${path} missing`);
   }
   assert.ok(shell[1].includes("'/onsets-worker.js'"));
+  assert.ok(shell[1].includes("'/pitch-dsp.js'")&&shell[1].includes("'/pitch-shifter.js'"),
+    'offline shell must include both pitch processor modules');
 });

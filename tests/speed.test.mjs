@@ -1,0 +1,58 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { makeProject, normaliseProject } from '../site/core.js';
+import { SamplerAudio } from '../site/audio.js';
+
+test('legacy projects default speed to 1 and preserve pitch metadata', () => {
+  const project = normaliseProject({pads:[{pitch:7}]});
+  assert.equal(project.pads[0].speed, 1);
+  assert.equal(project.pads[0].pitch, 7);
+  assert.equal(normaliseProject({pads:[{speed:4}]}).pads[0].speed, 2);
+  assert.equal(normaliseProject({pads:[{speed:0.1}]}).pads[0].speed, 0.5);
+  assert.equal(makeProject().pads[0].speed, 1);
+});
+
+test('speed alone sets media playbackRate while pitch metadata is ignored', async () => {
+  const element = { duration: 10, currentTime:0, playbackRate:1, preservesPitch:false, pause(){}, play(){return Promise.resolve();} };
+  const sampler = Object.create(SamplerAudio.prototype);
+  sampler.context = {currentTime:0};
+  sampler.sources = new Map([[0,{file:{},element,gain:{gain:{value:1}}}]]);
+  sampler.demoEnabled = false;
+  assert.equal(sampler.trigger(0,{kind:'video',start:0,end:0.05,speed:1.5,pitch:7,volume:1},()=>{},0),true);
+  await new Promise(resolve=>setTimeout(resolve,15));
+  assert.equal(element.playbackRate,1.5);
+  assert.equal(element.preservesPitch,true);
+});
+
+test('decodable audio keeps low-latency polyphonic buffer playback at Speed only', () => {
+  const nodes=[];
+  const param=()=>({
+    events:[],
+    setValueAtTime(value,time){this.events.push(['set',value,time]);},
+    linearRampToValueAtTime(value,time){this.events.push(['ramp',value,time]);}
+  });
+  const sampler=Object.create(SamplerAudio.prototype);
+  sampler.context={
+    currentTime:0,
+    createBufferSource(){
+      const node={playbackRate:param(),connect(){return this;},start(...args){this.startArgs=args;}};
+      nodes.push(node);
+      return node;
+    },
+    createGain(){return {gain:param(),connect(){return this;}};}
+  };
+  sampler.master={};
+  sampler.demoEnabled=false;
+  const mediaElement={pauseCount:0,pause(){this.pauseCount++;}};
+  sampler.sources=new Map([[0,{file:{},buffer:{duration:4},element:mediaElement}]]);
+  const pad={kind:'audio',start:0,end:2,speed:1.5,pitch:7,volume:1};
+
+  sampler.trigger(0,pad,()=>{},0);
+  sampler.trigger(0,pad,()=>{},0);
+
+  assert.equal(nodes.length,2,'retriggering should create overlapping buffer voices');
+  assert.deepEqual(nodes.map(node=>node.playbackRate.events[0][1]),[1.5,1.5],
+    'legacy pitch must not alter the Speed rate');
+  assert.deepEqual(nodes.map(node=>node.startArgs),[[0,0,2],[0,0,2]]);
+  assert.equal(mediaElement.pauseCount,0,'buffer voices should not be replaced by media-element playback');
+});

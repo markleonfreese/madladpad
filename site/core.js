@@ -37,7 +37,7 @@ export function isPadAudible(pads,id){
 }
 export const makePad = id => ({
   id, name: `Pad ${String(id + 1).padStart(2, '0')}`, fileName: '', kind: '',
-  volume: 0.9, pitch: 0, start: 0, end: 2, muted:false, solo:false,
+  volume: 0.9, pitch: 0, speed: 1, start: 0, end: 2, muted:false, solo:false,
   steps: Array(STEP_COUNT).fill(false), stepOffsets: Array(STEP_COUNT).fill(0)
 });
 export const makeProject = () => ({
@@ -55,8 +55,9 @@ export function normaliseProject(value) {
       kind: ['audio','video','image'].includes(source.kind) ? source.kind : '',
       volume: clamp(source.volume ?? pad.volume, 0, 1.5),
       pitch: clamp(source.pitch ?? 0, -12, 12),
-      start: clamp(source.start ?? 0, 0, Number.MAX_SAFE_INTEGER),
-      end: clamp(source.end ?? 2, 0.01, Number.MAX_SAFE_INTEGER),
+      speed: clamp(source.speed ?? 1, 0.5, 2),
+      start: clamp(source.start ?? 0, 0, 3599.99),
+      end: clamp(source.end ?? 2, 0.01, 3600),
       muted: Boolean(source.muted), solo: Boolean(source.solo),
       steps: Array.from({ length: STEP_COUNT }, (_, j) => Boolean(source.steps?.[j])),
       stepOffsets: Array.from({ length: STEP_COUNT }, (_, j) => clamp(source.stepOffsets?.[j] ?? 0, 0, .9999))

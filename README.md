@@ -6,7 +6,7 @@ An installable audiovisual sampler inspired by Smule's MadPad and the looper / p
 
 - 12 video/audio/photo pads (or 2×2 / 4×4), touch, keyboard and optional Web MIDI input.
 - Record short clips with the camera and microphone, or import multiple files from the device / Files app.
-- Set pad trim, pitch, volume and trigger quantisation. Video and audio playback uses the browser media pipeline; decoded audio files use Web Audio buffer scheduling.
+- Set pad trim, speed, volume and trigger quantisation. Audio and video use media-element playback; this can increase trigger latency. Independent pitch shifting is temporarily unavailable: old pitch values are retained but not applied. Browsers that lack pitch preservation can change pitch when speed changes.
 - 16-step beat sequencer, tempo, random beat starter, real-time audiovisual performance capture.
 - Offline install, local IndexedDB project storage, and portable `.madladpad` export / import with media.
 - Optional Google Drive and Google Photos pickers using explicit OAuth. No third-party account connection is necessary for local use.
