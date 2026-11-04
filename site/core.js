@@ -4,6 +4,17 @@ export const STEP_COUNT = 16;
 export const MAX_MEDIA_BYTES = 80 * 1024 * 1024;
 
 export const clamp = (value, min, max) => Math.min(max, Math.max(min, Number(value) || 0));
+export function normaliseRegion(start, end, duration, changed = 'start') {
+  const total = Number.isFinite(duration) && duration > 0 ? duration : 0;
+  const gap = Math.min(.05, total);
+  let a = clamp(start, 0, Math.max(0, total-gap));
+  let b = clamp(end, gap, total);
+  if (b-a < gap-1e-9) {
+    if (changed === 'end') a = Math.max(0, b-gap);
+    else b = Math.min(total, a+gap);
+  }
+  return {start:a,end:b};
+}
 export const makePad = id => ({
   id, name: `Pad ${String(id + 1).padStart(2, '0')}`, fileName: '', kind: '',
   volume: 0.9, pitch: 0, start: 0, end: 2, steps: Array(STEP_COUNT).fill(false)
@@ -23,8 +34,8 @@ export function normaliseProject(value) {
       kind: ['audio','video','image'].includes(source.kind) ? source.kind : '',
       volume: clamp(source.volume ?? pad.volume, 0, 1.5),
       pitch: clamp(source.pitch ?? 0, -12, 12),
-      start: clamp(source.start ?? 0, 0, 3600),
-      end: clamp(source.end ?? 2, 0.01, 3600),
+      start: clamp(source.start ?? 0, 0, Number.MAX_SAFE_INTEGER),
+      end: clamp(source.end ?? 2, 0.01, Number.MAX_SAFE_INTEGER),
       steps: Array.from({ length: STEP_COUNT }, (_, j) => Boolean(source.steps?.[j]))
     };
   });
