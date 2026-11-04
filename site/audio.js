@@ -28,10 +28,16 @@ export class SamplerAudio {
     catch(error){console.warn('Could not create independent pitch node',error);return null;}
   }
 
+  canPitch(id){
+    if(!this.pitchReady)return false;
+    const source=this.sources.get(id);
+    return !source?.file||Boolean(source.buffer||source.mediaNode);
+  }
+
   setPadPitch(id,semitones){
-    const source=this.sources.get(id);if(!source)return false;
+    const source=this.sources.get(id);if(!source||!this.canPitch(id))return false;
     source.pitch=clamp(semitones,-12,12);
-    if(!source.mediaNode)return this.pitchReady;
+    if(source.buffer||!source.mediaNode)return true;
     return this.routeMediaPitch(source);
   }
 

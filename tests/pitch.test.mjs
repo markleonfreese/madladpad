@@ -10,6 +10,25 @@ test('speed compensation keeps pitch independent for decoded audio',()=>{
   assert.ok(Math.abs(effectivePitchSemitones(-5,1.5)-(-12*Math.log2(1.5)-5))<1e-9);
 });
 
+test('Pitch is enabled only for empty pads or sources that can reach the processor',()=>{
+  const sampler=Object.create(SamplerAudio.prototype);
+  sampler.pitchReady=true;
+  sampler.sources=new Map([
+    [0,{file:null}],
+    [1,{file:{type:'audio/wav'},buffer:{}}],
+    [2,{file:{type:'video/webm'},mediaNode:{}}],
+    [3,{file:{type:'video/webm'},element:{}}],
+    [4,{file:{type:'image/png'}}]
+  ]);
+  assert.equal(sampler.canPitch(0),true);
+  assert.equal(sampler.canPitch(1),true);
+  assert.equal(sampler.canPitch(2),true);
+  assert.equal(sampler.canPitch(3),false);
+  assert.equal(sampler.canPitch(4),false);
+  sampler.pitchReady=false;
+  assert.equal(sampler.canPitch(1),false);
+});
+
 test('granular processor shifts frequency while preserving output duration',()=>{
   const rate=8000,total=rate*2,shifter=new GranularPitchShifter(rate,1),output=new Float32Array(total),block=128;
   for(let offset=0;offset<total;offset+=block){

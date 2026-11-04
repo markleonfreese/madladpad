@@ -111,9 +111,10 @@ function renderControls() {
   $('sample-info').textContent = mediaFiles.has(selected) ? `${config.fileName} · ${config.kind.toUpperCase()} · stored on this device` : 'No media loaded. Add a clip to get started.';
   $('volume').value = config.volume*100;
   $('pitch').value = config.pitch;
-  $('pitch').disabled=!audio.pitchReady;
-  $('pitch-out').textContent=audio.pitchReady?`${config.pitch>0?'+':''}${config.pitch} st`:'Unavailable';
-  $('pitch-note').textContent=audio.pitchReady?'Pitch is processed separately from Speed. Pitch shifting adds a short processing delay; sound quality varies by device.':'This browser does not support the local pitch processor. Pitch is disabled; Speed remains available.';
+  const pitchAvailable=audio.canPitch(selected);
+  $('pitch').disabled=!pitchAvailable;
+  $('pitch-out').textContent=pitchAvailable?`${config.pitch>0?'+':''}${config.pitch} st`:'Unavailable';
+  $('pitch-note').textContent=pitchAvailable?'Pitch is processed separately from Speed. Pitch shifting adds a short processing delay; sound quality varies by device.':audio.pitchReady?'Pitch is unavailable for this media source in this browser. Speed remains available.':'This browser does not support the local pitch processor. Pitch is disabled; Speed remains available.';
   $('speed').value = config.speed;
   const max = Math.max(2,durations.get(selected)||15);
   $('trim-start').max = max;
