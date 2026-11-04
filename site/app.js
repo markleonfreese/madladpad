@@ -338,6 +338,7 @@ async function toggleSetRecording() {
     recording=recorder;drawing=true;drawPerformanceFrame();recorder.start(200);
     $('start-record').classList.add('recording');$('start-record').textContent='■ STOP RECORDING';
     $('start-record').setAttribute('aria-pressed','true');
+    $('start-record').blur();
     notify('Recording your audiovisual performance. Tap pads or start the beat maker.');
   } catch(error) { drawing=false;recording=null;notify(error.message); }
 }
@@ -366,6 +367,7 @@ async function toggleAudioRecording() {
     audioRecording=recorder;recorder.start(200);
     $('record-audio').classList.add('recording');$('record-audio').textContent='■ STOP AUDIO TAKE';
     $('record-audio').setAttribute('aria-pressed','true');
+    $('record-audio').blur();
     notify('Recording the master audio mix. Stop to download the supported audio format.');
   }catch(error){audioRecording=null;notify(error.message);}
 }
