@@ -56,3 +56,14 @@ export function findRecorderMime(isSupported = type => MediaRecorder.isTypeSuppo
 }
 export const extensionForMime = mime => mime.startsWith('video/mp4') ? 'mp4' : 'webm';
 export const supportedMediaFile = file => file && /^(video|audio|image)\//.test(file.type);
+
+export function suggestActiveRegion(levels, duration) {
+  if (!Array.isArray(levels) || !levels.length || !Number.isFinite(duration) || duration <= 0) return {start:0,end:Math.max(.05,duration||.05)};
+  const sorted=[...levels].sort((a,b)=>a-b);
+  const floor=sorted[Math.floor((sorted.length-1)*.2)]||0;
+  const gate=Math.max(.018,floor*2.5);
+  const active=levels.map((level,index)=>level>=gate?index:-1).filter(index=>index>=0);
+  if(!active.length)return {start:0,end:duration};
+  const frame=duration/levels.length;
+  return {start:Math.max(0,active[0]*frame-.08),end:Math.min(duration,(active.at(-1)+1)*frame+.12)};
+}

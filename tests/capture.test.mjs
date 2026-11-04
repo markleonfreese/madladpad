@@ -15,6 +15,14 @@ test('take stays bound to its original pad until explicitly kept', () => {
   assert.equal(capture.phase, 'idle');
 });
 
+test('capture analysis offers active sound with trim handles and silence fallback', () => {
+  const region=core.suggestActiveRegion([0,.002,.003,.1,.16,.07,.001,.002],4);
+  assert.ok(region.start>0&&region.start<1.5);
+  assert.ok(region.end>2&&region.end<4);
+  assert.deepEqual(core.suggestActiveRegion([0,0,0],3),{start:0,end:3});
+  assert.deepEqual(core.suggestActiveRegion([],0),{start:0,end:.05});
+});
+
 test('retake discards only the pending take; cancel invalidates late recording', () => {
   const capture = new core.CaptureSession();
   const token = capture.begin(8);
