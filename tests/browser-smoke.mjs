@@ -92,6 +92,9 @@ try {
   const rapLayout=await page.locator('#rap-title').evaluate(title=>({rap:title.closest('.voice-card').getBoundingClientRect().width,melody:document.querySelector('#melody-title').closest('.voice-card').getBoundingClientRect().width}));
   assert.ok(rapLayout.rap>rapLayout.melody*1.8,`desktop rap writing should use the full Voice Lab width for readable 16-bar entry: ${JSON.stringify(rapLayout)}`);
   await openScreen('sounds');
+  const flowMusicLink=page.getByRole('link',{name:'Google Flow Music'});
+  assert.equal(await flowMusicLink.getAttribute('href'),'https://www.flowmusic.app/','Sounds should link to Google Labs’ current Flow Music destination');
+  assert.match(await page.locator('#sample-inspector').textContent(),/manual file handoff/i,'Flow Music use should be explained as a manual import, not an account integration');
   assert.equal(await page.locator('#voice-lab').isHidden(),true,'Voice Lab should be a separate screen');
   assert.equal(await page.locator('#sample-inspector').isVisible(),true,'Sound discovery should expose sample editing');
   checkpoint('initial load');
