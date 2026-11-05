@@ -1,5 +1,5 @@
-const CACHE = 'madladpad-shell-v7';
-const SHELL = ['/', '/styles.css', '/app.js', '/core.js', '/audio.js', '/pitch-dsp.js', '/pitch-shifter.js', '/storage.js', '/google.js', '/onsets.js', '/onsets-worker.js', '/voice.js', '/tuner.js', '/google-config.js', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png'];
+const CACHE = 'madladpad-shell-v8';
+const SHELL = ['/', '/styles.css', '/app.js', '/core.js', '/audio.js', '/pitch-dsp.js', '/pitch-shifter.js', '/tuning.js', '/storage.js', '/google.js', '/onsets.js', '/onsets-worker.js', '/voice.js', '/tuner.js', '/google-config.js', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });
