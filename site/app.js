@@ -792,7 +792,19 @@ function cameraReady() {
   $('camera-retake').hidden=true;$('camera-keep').hidden=true;
   $('camera-status').textContent='Camera and microphone active. Start when ready.';
   $('camera-length-label').hidden=false;$('camera-review').hidden=true;
+  $('camera-length-summary').hidden=false;updateCameraLengthSummary();
   $('camera-capture').textContent='● START RECORDING';
+}
+
+function cameraLengthDetails(){
+  const selection=$('camera-length').value,match=/^bars-(1|2|4)$/.exec(selection);
+  if(match){const bars=Number(match[1]);return {bars,seconds:bars*4*60/project.bpm};}
+  return {bars:null,seconds:Number(selection)||5};
+}
+
+function updateCameraLengthSummary(){
+  const {bars,seconds}=cameraLengthDetails();
+  $('camera-length-summary').textContent=bars?`${bars} ${bars===1?'bar':'bars'} · ${seconds.toFixed(1)} seconds at ${project.bpm} BPM`:`One-shot · up to ${seconds} seconds`;
 }
 
 function finishCaptureTarget(target){
@@ -871,14 +883,16 @@ async function captureCamera() {
         if(!file.size || !cameraSession.review(token,file))throw new Error('No recording was captured.');
         cameraStream?.getTracks().forEach(track=>track.stop());cameraStream=null;
         const video=$('camera-preview');video.pause();video.srcObject=null;video.autoplay=false;cameraUrl=URL.createObjectURL(file);video.src=cameraUrl;video.muted=false;video.controls=true;video.load();
-        const setReviewRegion=()=>{if(!cameraSession.current(token)||cameraSession.phase!=='review'||cameraRegion.end>0)return;const duration=Number.isFinite(video.duration)&&video.duration>0?video.duration:Number($('camera-length').value);cameraRegion=suggestActiveRegion(levels,duration);$('camera-start').max=Math.max(0,duration-.05);$('camera-start').value=Math.min(cameraRegion.start,Number($('camera-start').max));$('camera-end').max=duration;$('camera-end').value=cameraRegion.end;updateCameraRegion();$('camera-keep').disabled=false;};
+        const setReviewRegion=()=>{if(!cameraSession.current(token)||cameraSession.phase!=='review'||cameraRegion.end>0)return;const duration=Number.isFinite(video.duration)&&video.duration>0?video.duration:cameraLengthDetails().seconds;cameraRegion=suggestActiveRegion(levels,duration);$('camera-start').max=Math.max(0,duration-.05);$('camera-start').value=Math.min(cameraRegion.start,Number($('camera-start').max));$('camera-end').max=duration;$('camera-end').value=cameraRegion.end;updateCameraRegion();$('camera-keep').disabled=false;};
         $('camera-keep').disabled=true;video.addEventListener('loadedmetadata',setReviewRegion,{once:true});setTimeout(setReviewRegion,1200);
         $('camera-capture').hidden=true;$('camera-retake').hidden=false;$('camera-keep').hidden=false;
         $('camera-length-label').hidden=true;$('camera-review').hidden=false;$('camera-status').textContent='Camera and microphone stopped. Suggested trim surrounds the detected sound; adjust, preview or keep.';
       } catch(error){closeCamera();notify(`Could not review take: ${error.message}`);}
     };
-    recorder.start(200);$('camera-length-label').hidden=true;$('camera-capture').disabled=false;$('camera-capture').textContent='■ STOP RECORDING';$('camera-status').textContent='Recording… tap Stop when ready.';
-    cameraTimer=setTimeout(()=>{if(recorder.state!=='inactive')recorder.stop();},(Number($('camera-length').value)||5)*1000);
+    const length=cameraLengthDetails();
+    recorder.start(200);$('camera-length-label').hidden=true;$('camera-length-summary').hidden=true;$('camera-capture').disabled=false;$('camera-capture').textContent='■ STOP RECORDING';
+    $('camera-status').textContent=length.bars?`Recording ${length.bars} ${length.bars===1?'bar':'bars'} (${length.seconds.toFixed(1)} seconds at ${project.bpm} BPM)… tap Stop to finish early.`:'Recording… tap Stop when ready.';
+    cameraTimer=setTimeout(()=>{if(recorder.state!=='inactive')recorder.stop();},length.seconds*1000);
   } catch(error){cameraRecorder=null;closeCamera();notify(`Recording failed: ${error.message}`);}
 }
 
@@ -1048,6 +1062,7 @@ function bindControls() {
   });
   $('bpm-input').addEventListener('change',event=>{
     project.bpm=clamp(event.target.value,40,240);event.target.value=project.bpm;
+    updateCameraLengthSummary();
     audio.setTransport(project.bpm,project.quantize);if(transportTimer){stopSequencer();startSequencer();}queueSave();
   });
   $('quantize-select').addEventListener('change',event=>{project.quantize=event.target.value;audio.setTransport(project.bpm,project.quantize);queueSave();});
@@ -1095,6 +1110,7 @@ function bindControls() {
   $('import-project-button').addEventListener('click',()=>$('project-input').click());
   $('export-button').addEventListener('click',exportPack);
   $('camera-button').addEventListener('click',()=>openCamera(selected));
+  $('camera-length').addEventListener('change',updateCameraLengthSummary);
   $('pad-record').addEventListener('click',()=>{const target=sourcePad;$('pad-source-dialog').close();if(target!==null)openCamera(target);});
   $('pad-files').addEventListener('click',()=>{fileTarget=sourcePad;$('pad-source-dialog').close();$('media-input').click();});
   $('pad-source-cancel').addEventListener('click',()=>$('pad-source-dialog').close());
