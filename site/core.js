@@ -32,7 +32,7 @@ export function directedPads(shot, active, padCount=12) {
 
 export const makeVoiceData = () => ({
   transcripts: [], phrases: [], layers: [], melody: { tuning: 440, notes: [], followBeat:false },
-  rap: { scheme: 'AABB', bars: Array(RAP_BAR_COUNT).fill('') }
+  rap: { scheme: 'AABB', bars: Array(RAP_BAR_COUNT).fill(''), flow:Array.from({length:RAP_BAR_COUNT},()=>Array(16).fill(false)) }
 });
 
 function normaliseVoice(value) {
@@ -88,7 +88,8 @@ function normaliseVoice(value) {
     },
     rap: {
       scheme: ['AABB', 'ABAB', 'AAAA', 'FREE'].includes(rapSource.scheme) ? rapSource.scheme : 'AABB',
-      bars: Array.from({ length: RAP_BAR_COUNT }, (_, index) => String(rapSource.bars?.[index] || '').slice(0, 500))
+      bars: Array.from({ length: RAP_BAR_COUNT }, (_, index) => String(rapSource.bars?.[index] || '').slice(0, 500)),
+      flow:Array.from({length:RAP_BAR_COUNT},(_,bar)=>Array.from({length:16},(_,step)=>Boolean(rapSource.flow?.[bar]?.[step])))
     }
   };
 }

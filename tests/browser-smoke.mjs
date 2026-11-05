@@ -51,7 +51,7 @@ try {
   await writeFile(micFixturePath,micWav);
   const executablePath=process.env.MADLADPAD_CHROMIUM_PATH;
   if(executablePath) await access(executablePath);
-  browser = await chromium.launch({headless:true,args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream',`--use-file-for-audio-capture=${micFixturePath}`],...(executablePath?{executablePath}:{})});
+  browser = await chromium.launch({headless:true,args:['--autoplay-policy=no-user-gesture-required','--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream',`--use-file-for-audio-capture=${micFixturePath}`],...(executablePath?{executablePath}:{})});
   const context = await browser.newContext({acceptDownloads:true});
   await context.grantPermissions(['camera','microphone'],{origin});
   await context.route('**/*', route => {
@@ -320,6 +320,15 @@ try {
   await page.locator('#melody-play').click();
   await page.locator('#melody-follow-beat').check();
   await page.locator('#rap-bars textarea').nth(0).fill('Hello from the other side');
+  const rapFlow=page.locator('#rap-bars .rap-bar').first().locator('.rap-flow');
+  await rapFlow.locator('summary').click();
+  await rapFlow.locator('.rap-flow-step').nth(0).click();
+  await rapFlow.locator('.rap-flow-step').nth(5).click();
+  assert.equal(await rapFlow.locator('.rap-flow-step').nth(0).getAttribute('aria-pressed'),'true','rap flow steps should be editable');
+  await rapFlow.getByRole('button',{name:'Audition rap flow for bar 1'}).click();
+  await page.waitForFunction(()=>/Auditioning bar 1 flow at|Could not audition rap flow/.test(document.querySelector('#toast').textContent));
+  const rapAuditionStatus=await page.locator('#toast').textContent();
+  assert.match(rapAuditionStatus,/Auditioning bar 1 flow at/,'rap flow should provide a local click-track audition');
   assert.match(await page.locator('#rap-bars .rap-bar small').first().textContent(),/estimated syllables/);
   await page.locator('#rap-scheme').selectOption('ABAB');
   await page.locator('#rap-bars textarea').nth(0).fill('I caught the light');
@@ -333,7 +342,10 @@ try {
   assert.match((await midiDownload).suggestedFilename(),/\.mid$/);
   const lyricDownload=page.waitForEvent('download');
   await page.locator('#rap-export').click();
-  assert.match((await lyricDownload).suggestedFilename(),/\.txt$/);
+  const lyrics=await lyricDownload;
+  assert.match(lyrics.suggestedFilename(),/\.txt$/);
+  const lyricsPath=join(browserTemp,'lyrics.txt');await lyrics.saveAs(lyricsPath);
+  assert.match(await readFile(lyricsPath,'utf8'),/FLOW\s+● · · · · x/,'lyrics export should include the editable rhythmic flow map');
   const vocalOverdubSupported=await page.evaluate(()=>Boolean(window.MediaRecorder&&navigator.mediaDevices?.getUserMedia));
   if(vocalOverdubSupported){
     await openScreen('overdub');
@@ -422,6 +434,9 @@ try {
   assert.equal(await page.locator('#director-mode').inputValue(),'grid','second video step should retain its multi-pad cut');
   assert.equal(await page.locator('#rap-bars textarea').nth(0).inputValue(),'Hello from the other side','rap bars should persist locally');
   assert.equal(await page.locator('#rap-scheme').inputValue(),'AABB','rap rhyme shape should persist locally');
+  const persistedRapFlow=page.locator('#rap-bars .rap-bar').first().locator('.rap-flow-step');
+  assert.equal(await persistedRapFlow.nth(0).getAttribute('aria-pressed'),'true','rap flow should persist locally');
+  assert.equal(await persistedRapFlow.nth(5).getAttribute('aria-pressed'),'true','rap flow should persist locally');
   if(vocalOverdubSupported){
     assert.equal(await page.locator('#voice-overdub-layers .vocal-layer-name').inputValue(),'Lead take','vocal layer names should persist');
     assert.equal(await page.locator('#voice-overdub-layers .vocal-layer-start input').inputValue(),'18','vocal overdub timing should remain editable and persist');

@@ -31,6 +31,15 @@
 
 /* Each stage uses the same in-memory session and audio transport. */
 [hidden]{display:none!important}
+.rap-flow{grid-column:1/-1;margin:7px 0 3px;border:1px solid #3b4b3d;border-radius:8px;background:#19221b}
+.rap-flow>summary{min-height:42px;display:flex;align-items:center;padding:8px 11px;color:#c6d9c3;font:10px var(--mono);letter-spacing:.04em;cursor:pointer}
+.rap-flow[open]>summary{border-bottom:1px solid #354437;color:var(--acid)}
+.rap-flow-grid{display:grid;grid-template-columns:repeat(16,minmax(29px,1fr));gap:4px;overflow-x:auto;padding:10px}
+.rap-flow-step{min-width:29px;min-height:38px;border:1px solid #455548;border-radius:6px;background:#202b22;color:#9eae9e;font:10px var(--mono);touch-action:manipulation}
+.rap-flow-step[aria-pressed=true]{border-color:var(--acid);background:#b5db58;color:#152014;font-weight:800}
+.rap-flow-step:focus-visible{outline:2px solid var(--coral);outline-offset:2px}
+.rap-flow>.pill-button{margin:0 10px 10px;min-height:42px}
+@media(max-width:740px){.rap-flow-grid{grid-template-columns:repeat(8,minmax(34px,1fr))}.rap-flow-step{min-width:34px;min-height:42px}}
 .studio-nav{display:flex;gap:6px;overflow-x:auto;scrollbar-width:thin;padding:16px 0 5px;margin-bottom:14px;border-bottom:1px solid var(--line)}
 .studio-nav a{display:flex;align-items:center;gap:8px;flex:0 0 auto;min-height:44px;padding:10px 15px;border-radius:9px 9px 0 0;color:#a6b5a6;text-decoration:none;font-size:12px;font-weight:750;border-bottom:3px solid transparent}
 .studio-nav a span{font:10px var(--mono);color:#a5b9a6}
