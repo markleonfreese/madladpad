@@ -239,7 +239,7 @@ function renderMelody(project, save) {
   $('melody-harmony-add').disabled = project.voice.melody.notes.length >= MAX_MELODY_NOTES;
 }
 
-function renderRap(project, save) {
+function renderRap(project, save, audio, notify) {
   $('rap-scheme').value = project.voice.rap.scheme;
   const host = $('rap-bars'); host.replaceChildren();
   project.voice.rap.bars.forEach((line, index) => {
@@ -260,7 +260,24 @@ function renderRap(project, save) {
       meta.textContent = `${group ? `${group} rhyme` : 'Free rhyme'} · ${estimateSyllables(line)} estimated syllables${anchor ? ` · match bar ${anchor.index + 1} “${anchor.word}”` : hints.length ? ` · rhyme ideas: ${hints.join(', ')}` : ''}`;
     };
     row.updateMeta = renderMeta;
-    text.addEventListener('input', () => { project.voice.rap.bars[index] = text.value; host.querySelectorAll('.rap-bar').forEach(item => item.updateMeta?.()); save(); }); renderMeta(); row.append(number, text, meta); host.append(row);
+    text.addEventListener('input', () => { project.voice.rap.bars[index] = text.value; host.querySelectorAll('.rap-bar').forEach(item => item.updateMeta?.()); save(); }); renderMeta(); row.append(number, text, meta);
+    const flowDetails=document.createElement('details');flowDetails.className='rap-flow';
+    const summary=document.createElement('summary');summary.textContent=`FLOW · ${project.voice.rap.flow[index].filter(Boolean).length}/16 syllable starts`;flowDetails.append(summary);
+    const grid=document.createElement('div');grid.className='rap-flow-grid';grid.setAttribute('role','group');grid.setAttribute('aria-label',`Rap bar ${index+1} syllable flow steps`);
+    project.voice.rap.flow[index].forEach((active,step)=>{
+      const cell=document.createElement('button');cell.type='button';cell.className=`rap-flow-step${active?' active':''}`;cell.textContent=String(step+1);cell.setAttribute('aria-label',`Bar ${index+1} flow step ${step+1}`);cell.setAttribute('aria-pressed',String(active));
+      cell.addEventListener('click',()=>{project.voice.rap.flow[index][step]=!project.voice.rap.flow[index][step];cell.classList.toggle('active',project.voice.rap.flow[index][step]);cell.setAttribute('aria-pressed',String(project.voice.rap.flow[index][step]));summary.textContent=`FLOW · ${project.voice.rap.flow[index].filter(Boolean).length}/16 syllable starts`;save();});grid.append(cell);
+    });
+    const audition=document.createElement('button');audition.type='button';audition.className='pill-button';audition.textContent='▶ AUDITION FLOW';audition.setAttribute('aria-label',`Audition rap flow for bar ${index+1}`);
+    audition.addEventListener('click',async()=>{
+      if(!project.voice.rap.flow[index].some(Boolean)){notify(`Add syllable starts to bar ${index+1} before auditioning its flow.`);return;}
+      audition.disabled=true;
+      try{await audio.unlock();const ctx=audio.context,now=ctx.currentTime+.04,secondsPerStep=60/project.bpm/4;
+        for(let step=0;step<16;step++)if(project.voice.rap.flow[index][step]){const at=now+step*secondsPerStep,osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='sine';osc.frequency.setValueAtTime(step%4===0?1050:step%4===2?820:640,at);gain.gain.setValueAtTime(.0001,at);gain.gain.exponentialRampToValueAtTime(step%4===0?.11:.07,at+.003);gain.gain.exponentialRampToValueAtTime(.0001,at+.045);osc.connect(gain).connect(audio.master);osc.start(at);osc.stop(at+.05);osc.onended=()=>{osc.disconnect();gain.disconnect();};}
+        notify(`Auditioning bar ${index+1} flow at ${project.bpm} BPM.`);
+      }catch(error){notify(`Could not audition rap flow: ${error.message}`);}finally{audition.disabled=false;}
+    });
+    flowDetails.append(grid,audition);row.append(flowDetails);host.append(row);
   });
 }
 
@@ -337,7 +354,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     for (const [id, file] of getMediaFiles()) if (/^(audio|video)\//.test(file.type)) { const option = document.createElement('option'); option.value = id; option.textContent = `${project.pads[id].name} · ${file.name || file.type}`; select.append(option); }
     if ([...select.options].some(option => option.value === selected)) select.value = selected;
     updateConsentState(); updateManualEntryState();
-    renderWords(project, getMediaFiles, save); renderPhrases(project, audio, notify, save, assignWordsToPads); renderMelody(project, save); renderRap(project, save); renderVocalLayers();
+    renderWords(project, getMediaFiles, save); renderPhrases(project, audio, notify, save, assignWordsToPads); renderMelody(project, save); renderRap(project, save, audio, notify); renderVocalLayers();
   }
   const stopOverdub = () => {
     const take = vocalRecording;
@@ -608,8 +625,8 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     }
   });
   $('melody-export').addEventListener('click', () => { const blob = midiFile(project.voice.melody.notes, project.bpm, project.voice.melody.tuning); download(blob, `${project.title || 'madladpad'}-melody.mid`); });
-  $('rap-scheme').addEventListener('change', () => { project.voice.rap.scheme = $('rap-scheme').value; save(); renderRap(project, save); });
-  $('rap-export').addEventListener('click', () => { const lines = project.voice.rap.bars.map((line, index) => `${String(index + 1).padStart(2, '0')}  ${line}`); const blob = new Blob([`# ${project.title} · ${project.bpm} BPM · ${project.voice.rap.scheme}\n\n${lines.join('\n')}\n`], { type: 'text/plain;charset=utf-8' }); download(blob, `${project.title || 'madladpad'}-lyrics.txt`); });
+  $('rap-scheme').addEventListener('change', () => { project.voice.rap.scheme = $('rap-scheme').value; save(); renderRap(project, save, audio, notify); });
+  $('rap-export').addEventListener('click', () => { const lines = project.voice.rap.bars.map((line, index) => {const flow=project.voice.rap.flow[index];const guide=flow.some(Boolean)?`\n    FLOW  ${flow.map((active,step)=>active?(step%4===0?'●':'x'):'·').join(' ')}`:'';return `${String(index + 1).padStart(2, '0')}  ${line}${guide}`;}); const blob = new Blob([`# ${project.title} · ${project.bpm} BPM · ${project.voice.rap.scheme}\n\n${lines.join('\n')}\n`], { type: 'text/plain;charset=utf-8' }); download(blob, `${project.title || 'madladpad'}-lyrics.txt`); });
   render();
   return {
     scheduleMelodyStep(absoluteStep,time,bpm){
