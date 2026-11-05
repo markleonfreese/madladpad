@@ -242,18 +242,18 @@ function renderSuggestionTimeline(){
   markers.replaceChildren();
   if(!onsetSuggestions.length||!previewDuration){timeline.hidden=true;return;}
   timeline.hidden=false;endLabel.textContent=`${previewDuration.toFixed(1)} s`;
-  const width=timeline.clientWidth||300,minGap=38,laneEnds=[];
+  const width=timeline.clientWidth||300,minGap=46,laneEnds=[];
   const ordered=onsetSuggestions.map((candidate,index)=>({candidate,index})).sort((a,b)=>a.candidate.start-b.candidate.start);
   for(const {candidate,index} of ordered){
-    const x=Math.max(18,Math.min(width-18,candidate.start/previewDuration*width));
+    const x=Math.max(23,Math.min(width-23,candidate.start/previewDuration*width));
     let lane=laneEnds.findIndex(last=>x-last>=minGap);if(lane<0)lane=laneEnds.length;laneEnds[lane]=x+minGap;
     const marker=document.createElement('button');marker.type='button';marker.className='sample-timeline-marker';marker.dataset.suggestionIndex=String(index);marker.textContent=String(index+1);
-    marker.style.left=`${x/width*100}%`;marker.style.top=`${27+lane*31}px`;
+    marker.style.left=`${x/width*100}%`;marker.style.top=`${28+lane*42}px`;
     marker.setAttribute('aria-label',`Suggestion ${index+1}, ${candidate.start.toFixed(2)} to ${candidate.end.toFixed(2)} seconds`);
     marker.title=`Suggestion ${index+1} · ${candidate.start.toFixed(2)}–${candidate.end.toFixed(2)} s`;
     marker.addEventListener('click',()=>chooseOnsetSuggestion(candidate));markers.append(marker);
   }
-  timeline.style.height=`${Math.max(66,58+laneEnds.length*31)}px`;
+  timeline.style.height=`${Math.max(74,72+(laneEnds.length-1)*42)}px`;
 }
 window.addEventListener('resize',()=>{if(onsetSuggestions.length)renderSuggestionTimeline();});
 
