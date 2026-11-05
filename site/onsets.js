@@ -11,12 +11,18 @@ export function findCandidates(samples, sampleRate, windowSeconds=.8) {
     const stop=Math.min(samples.length,offset+frame);let sum=0,clipped=0;
     for(let i=offset;i<stop;i++){const x=Number.isFinite(samples[i])?Math.max(-1,Math.min(1,samples[i])):0;sum+=x*x;if(Math.abs(x)>=.99)clipped++;}
     const rms=Math.sqrt(sum/(stop-offset)),onset=Math.max(0,rms-previous),score=onset*2+rms*.25-clipped/(stop-offset)*1.5;
-    if(rms>.01&&onset>.01&&score>0)peaks.push({time:offset/sampleRate,score});
+    if(rms>.01&&onset>.01&&score>0)peaks.push({time:offset/sampleRate,score,onset,rms});
     previous=rms;
   }
   peaks.sort((a,b)=>b.score-a.score||a.time-b.time);
   const result=[];
   const contextBefore=Math.min(.06,windowSeconds*.1),minimumPeakSpacing=windowSeconds*.6;
-  for(const peak of peaks){if(result.some(candidate=>Math.abs(candidate.onset-peak.time)<minimumPeakSpacing))continue;const start=Math.max(0,peak.time-contextBefore);result.push({start,end:Math.min(duration,start+windowSeconds),onset:peak.time,score:peak.score});if(result.length===8)break;}
+  for(const peak of peaks){
+    if(result.some(candidate=>Math.abs(candidate.onset-peak.time)<minimumPeakSpacing))continue;
+    const start=Math.max(0,peak.time-contextBefore),end=Math.min(duration,start+windowSeconds);
+    const nearby=peaks.filter(candidate=>candidate.time>=start&&candidate.time<end&&candidate.time-peak.time>=.12);
+    const label=nearby.length?'repeated hits':peak.onset/Math.max(peak.rms,.01)>=.55?'sharp transient':'clear onset';
+    result.push({start,end,onset:peak.time,score:peak.score,label});if(result.length===8)break;
+  }
   return result;
 }

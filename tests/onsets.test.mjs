@@ -31,6 +31,15 @@ test('heavily clipped segments are penalised against clean transients', () => {
   assert.ok(candidates.length);
   assert.ok(Math.abs(candidates[0].start-2)<.25);
 });
+test('sample suggestions describe sharp transients and repeated onsets in plain language', () => {
+  const single=new Float32Array(rate*2);
+  for(let i=0;i<80;i++)single[Math.floor(.5*rate)+i]=.6*Math.sin(i*.8);
+  assert.equal(findCandidates(single,rate,.8)[0].label,'sharp transient');
+
+  const repeated=new Float32Array(rate*2);
+  for(const t of [.5,.9])for(let i=0;i<80;i++)repeated[Math.floor(t*rate)+i]=.6*Math.sin(i*.8);
+  assert.equal(findCandidates(repeated,rate,.8)[0].label,'repeated hits');
+});
 test('invalid inputs and long clips fail explicitly', () => {
   assert.throws(()=>findCandidates(new Float32Array(2),0), /sample rate/i);
   assert.throws(()=>findCandidates(new Float32Array(rate*121),rate), /120 seconds/i);

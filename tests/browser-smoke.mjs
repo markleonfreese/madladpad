@@ -490,6 +490,14 @@ try {
   const candidateBounds=candidateText.match(/· ([0-9.]+)–([0-9.]+) s/);
   const candidateDuration=candidateBounds?Number(candidateBounds[2])-Number(candidateBounds[1]):0;
   assert.ok(candidateDuration>1.1&&candidateDuration<=1.21,`selected 1.2-second suggestion length should reach ranked candidates: ${candidateText}`);
+  const suggestionMarkers=page.locator('#sample-timeline-markers .sample-timeline-marker');
+  assert.equal(await suggestionMarkers.count(),await page.locator('#sample-suggestions .suggestion').count(),'each suggestion should have a visible timeline marker');
+  assert.equal(await page.locator('#sample-timeline').isVisible(),true,'suggestion timeline should be visible with ranked results');
+  const rankedMarker=page.locator('#sample-timeline-markers [data-suggestion-index="0"]');
+  const markerLabel=await rankedMarker.getAttribute('aria-label');
+  assert.match(markerLabel,/Suggestion 1, [0-9.]+ to [0-9.]+ seconds/,'timeline marker should expose its sample range to assistive technology');
+  await rankedMarker.click();
+  assert.equal(await page.locator('#region-start').inputValue(),candidateBounds[1],'choosing a timeline marker should select and seek to its suggestion');
   await page.locator('#sample-suggestions .suggestion').first().click();
   assert.match(await page.locator('#analysis-status').textContent(),/Heuristic suggestion selected/);
   await page.waitForTimeout(500);
