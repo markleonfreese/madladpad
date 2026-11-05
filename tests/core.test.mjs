@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeProject, normaliseProject, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, midiFrequency, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, midiFrequency, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT } from '../site/core.js';
 
 test('initial layout has 12 visible pads and 16 backing slots', () => {
   const project = makeProject();
@@ -90,9 +90,31 @@ test('voice projects add bounded transcripts, phrases, vocal layers, melody, tun
   assert.equal(harmony.harmonyInterval,7);
   assert.equal(harmony.notes[0].layer,'harmony');
   const vocal=normaliseProject({voice:{layers:[{id:'vocal/one',name:'Lead',startStep:-2,gain:2,muted:true}]}}).voice.layers[0];
-  assert.deepEqual(vocal,{id:'vocalone',name:'Lead',startStep:0,gain:1.5,muted:true,solo:false});
+  assert.deepEqual(vocal,{id:'vocalone',name:'Lead',startStep:0,gain:1.5,muted:true,solo:false,sourceId:'vocalone',pitch:0});
   assert.equal(voice.rap.scheme,'AABB');
   assert.equal(voice.rap.bars[0].length,500);
+});
+test('beat-directed video layout and aspect ratios are stored, bounded and backwards compatible',()=>{
+  const p=makeProject();
+  assert.equal(p.video.shots.length,16);
+  assert.deepEqual(VIDEO_ASPECTS['9:16'],[540,960]);
+  assert.deepEqual(directedPads({mode:'auto'},[2,3,2,-1],4),[2,3]);
+  assert.deepEqual(directedPads({mode:'solo',pads:[3,1]},[1],4),[3]);
+  assert.deepEqual(directedPads({mode:'grid',pads:[2,1,2,12]},[],4),[2,1]);
+  assert.deepEqual(directedPads({mode:'black'},[1],4),[]);
+  const sanitised=normaliseVideoDirection({aspect:'bad',shots:[{mode:'grid',pads:[2,2,17,-4,'5',0]}]});
+  assert.equal(sanitised.aspect,'4:3');
+  assert.deepEqual(sanitised.shots[0],{mode:'grid',pads:[2,0]});
+  assert.equal(sanitised.shots.length,16);
+  assert.equal(normaliseProject({video:{aspect:'16:9'}}).video.aspect,'16:9');
+});
+test('melody follow-beat and pitched vocal layers remain editable after normalisation',()=>{
+  const p=normaliseProject({voice:{melody:{followBeat:true},layers:[{id:'harmony/1',sourceId:'vocal/1',pitch:16},{id:'raw',pitch:-5.5}]}});
+  assert.equal(p.voice.melody.followBeat,true);
+  assert.equal(p.voice.layers[0].pitch,12);
+  assert.equal(p.voice.layers[0].sourceId,'vocal1');
+  assert.equal(p.voice.layers[1].pitch,-5.5);
+  assert.equal(normaliseProject({}).voice.melody.followBeat,false);
 });
 test('melody uses A4 tuning and exports a MIDI track; rap syllable counts remain a rough local heuristic',async()=>{
   assert.equal(midiFrequency(69),440);

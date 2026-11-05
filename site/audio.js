@@ -148,36 +148,35 @@ export class SamplerAudio {
       const intended = epoch + clamp(layer.startStep, 0, 4096) * secondsPerStep;
       const now = this.context.currentTime, offset = Math.max(0, now - intended);
       if (offset >= source.buffer.duration) continue;
-      const node = this.context.createBufferSource(), gain = this.context.createGain();
-      node.buffer = source.buffer;
-      gain.gain.setValueAtTime(clamp(layer.gain, 0, 1.5), Math.max(now, intended));
-      node.connect(gain).connect(this.master);
-      const playback = {node, gain, layerId:layer.id};
-      this.vocalPlayback.set(layer.id, playback);
-      node.onended = () => {
-        node.disconnect(); gain.disconnect();
-        if (this.vocalPlayback.get(layer.id) === playback) this.vocalPlayback.delete(layer.id);
-      };
-      node.start(Math.max(now + .005, intended), offset);
+      this.startVocalLayer(layer.id,source.buffer,Math.max(now+.005,intended),offset,layer.gain,layer.pitch);
     }
   }
 
-  previewVocalLayer(id, gainValue = 1) {
+  startVocalLayer(id,buffer,start,offset=0,gainValue=1,pitch=0){
+    if(Math.abs(pitch)>.01&&!this.pitchReady)return false;
+    const node=this.context.createBufferSource(),gain=this.context.createGain();
+    const pitchNode=Math.abs(pitch)>.01?this.createPitchNode():null;
+    if(Math.abs(pitch)>.01&&!pitchNode)return false;
+    node.buffer=buffer;
+    gain.gain.setValueAtTime(clamp(gainValue,0,1.5),start);
+    if(pitchNode){pitchNode.parameters.get('semitones').setValueAtTime(clamp(pitch,-12,12),start);node.connect(pitchNode);pitchNode.connect(gain);}
+    else node.connect(gain);
+    gain.connect(this.master);
+    const playback={node,gain,pitchNode,layerId:id};
+    this.vocalPlayback.set(id,playback);
+    node.onended=()=>{
+      node.disconnect();pitchNode?.disconnect();gain.disconnect();
+      if(this.vocalPlayback.get(id)===playback)this.vocalPlayback.delete(id);
+    };
+    node.start(start,offset);
+    return true;
+  }
+
+  previewVocalLayer(id, gainValue = 1, pitch = 0) {
     const source = this.vocalSources.get(id);
     if (!source?.buffer) return false;
     this.stopVocalLayer(id);
-    const node = this.context.createBufferSource(), gain = this.context.createGain();
-    node.buffer = source.buffer;
-    gain.gain.setValueAtTime(clamp(gainValue, 0, 1.5), this.context.currentTime);
-    node.connect(gain).connect(this.master);
-    const playback = {node, gain, layerId:id};
-    this.vocalPlayback.set(id, playback);
-    node.onended = () => {
-      node.disconnect(); gain.disconnect();
-      if (this.vocalPlayback.get(id) === playback) this.vocalPlayback.delete(id);
-    };
-    node.start(this.context.currentTime + .005);
-    return true;
+    return this.startVocalLayer(id,source.buffer,this.context.currentTime+.005,0,gainValue,pitch);
   }
 
   updateVocalLayerStates(layers) {
@@ -198,7 +197,7 @@ export class SamplerAudio {
     if (!playback) return;
     this.vocalPlayback.delete(id);
     try { playback.node.stop(); } catch {}
-    playback.node.disconnect(); playback.gain.disconnect();
+    playback.node.disconnect();playback.pitchNode?.disconnect();playback.gain.disconnect();
   }
 
   stopVocalLayers() {

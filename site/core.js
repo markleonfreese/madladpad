@@ -9,9 +9,29 @@ export const MAX_VOCAL_LAYERS = 16;
 export const MAX_MELODY_NOTES = 128;
 export const HARMONY_INTERVALS = [-12, -7, -5, -4, -3, 3, 4, 5, 7, 12];
 export const RAP_BAR_COUNT = 16;
+export const VIDEO_ASPECTS = { '4:3':[960,720], '16:9':[960,540], '9:16':[540,960], '1:1':[720,720] };
+
+export const makeVideoDirection = () => ({ aspect:'4:3', shots:Array.from({length:STEP_COUNT},()=>({mode:'auto',pads:[]})) });
+export function normaliseVideoDirection(value) {
+  const raw=value && typeof value==='object'?value:{};
+  return {
+    aspect:Object.hasOwn(VIDEO_ASPECTS,raw.aspect)?raw.aspect:'4:3',
+    shots:Array.from({length:STEP_COUNT},(_,step)=>{
+      const shot=raw.shots?.[step]||{};
+      return {mode:['auto','solo','grid','black'].includes(shot.mode)?shot.mode:'auto',
+        pads:[...new Set((Array.isArray(shot.pads)?shot.pads:[]).filter(id=>Number.isInteger(id)&&id>=0&&id<16))].slice(0,16)};
+    })
+  };
+}
+export function directedPads(shot, active, padCount=12) {
+  if(!shot||shot.mode==='auto')return [...new Set(active.filter(id=>Number.isInteger(id)&&id>=0&&id<padCount))];
+  if(shot.mode==='black')return [];
+  const chosen=(shot.pads||[]).filter(id=>Number.isInteger(id)&&id>=0&&id<padCount);
+  return shot.mode==='solo'?chosen.slice(0,1):[...new Set(chosen)];
+}
 
 export const makeVoiceData = () => ({
-  transcripts: [], phrases: [], layers: [], melody: { tuning: 440, notes: [] },
+  transcripts: [], phrases: [], layers: [], melody: { tuning: 440, notes: [], followBeat:false },
   rap: { scheme: 'AABB', bars: Array(RAP_BAR_COUNT).fill('') }
 });
 
@@ -45,7 +65,9 @@ function normaliseVoice(value) {
     name: String(layer?.name || `Vocal take ${index + 1}`).slice(0, 48),
     startStep: clamp(layer?.startStep ?? 0, 0, 4096),
     gain: clamp(layer?.gain ?? 1, 0, 1.5),
-    muted: Boolean(layer?.muted), solo: Boolean(layer?.solo)
+    muted: Boolean(layer?.muted), solo: Boolean(layer?.solo),
+    sourceId: String(layer?.sourceId || layer?.id || `vocal-${index+1}`).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,64),
+    pitch:clamp(layer?.pitch ?? 0,-12,12)
   })) : [];
   const melodySource = source.melody && typeof source.melody === 'object' ? source.melody : {};
   const notes = Array.isArray(melodySource.notes) ? melodySource.notes.slice(0, MAX_MELODY_NOTES).map(note => ({
@@ -61,6 +83,7 @@ function normaliseVoice(value) {
     melody: {
       tuning: clamp(melodySource.tuning ?? 440, 400, 480),
       harmonyInterval: HARMONY_INTERVALS.includes(Number(melodySource.harmonyInterval)) ? Number(melodySource.harmonyInterval) : 3,
+      followBeat:Boolean(melodySource.followBeat),
       notes
     },
     rap: {
@@ -108,7 +131,7 @@ export const makePad = id => ({
 });
 export const makeProject = () => ({
   version: 1, title: 'Untitled mixtape', layout: '3x4', bpm: 120,
-  quantize: 'off', pads: Array.from({ length: 16 }, (_, i) => makePad(i)), scenes: [], voice: makeVoiceData()
+  quantize: 'off', pads: Array.from({ length: 16 }, (_, i) => makePad(i)), scenes: [], voice: makeVoiceData(), video:makeVideoDirection()
 });
 export function normaliseProject(value) {
   const base = makeProject();
@@ -139,7 +162,7 @@ export function normaliseProject(value) {
   return { version: 1, title: String(value?.title || base.title).slice(0, 80), layout,
     bpm: clamp(value?.bpm ?? 120, 40, 240),
     quantize: ['off','1/4','1/8','1/16'].includes(value?.quantize) ? value.quantize : 'off', pads, scenes,
-    voice: normaliseVoice(value?.voice) };
+    voice: normaliseVoice(value?.voice),video:normaliseVideoDirection(value?.video) };
 }
 
 export const midiFrequency = (note, tuning = 440) => clamp(tuning, 400, 480) * 2 ** ((clamp(note, 24, 108) - 69) / 12);

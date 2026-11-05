@@ -218,6 +218,7 @@ function renderPhrases(project, audio, notify, save, assignWordsToPads) {
 
 function renderMelody(project, save) {
   const host = $('melody-notes'); host.replaceChildren();
+  $('melody-follow-beat').checked=project.voice.melody.followBeat;
   $('melody-tuning').value = project.voice.melody.tuning;
   $('melody-harmony-interval').value = String(project.voice.melody.harmonyInterval);
   const wordOptions = [''].concat(project.voice.phrases.flatMap(phrase => phrase.words.map(word => word.text)));
@@ -243,6 +244,7 @@ function renderRap(project, save) {
   const host = $('rap-bars'); host.replaceChildren();
   project.voice.rap.bars.forEach((line, index) => {
     const row = document.createElement('label'); row.className = 'rap-bar';
+    row.dataset.bar=String(index);
     const number = document.createElement('span'); number.textContent = String(index + 1).padStart(2, '0');
     const text = document.createElement('textarea'); text.maxLength = 500; text.rows = 2; text.value = line; text.placeholder = `Bar ${index + 1}`; text.setAttribute('aria-label', `Rap bar ${index + 1}`);
     const meta = document.createElement('small'); const renderMeta = () => {
@@ -307,8 +309,11 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const control = (text, label, active, action) => { const button = document.createElement('button'); button.type = 'button'; button.className = `pill-button${active ? ' active' : ''}`; button.textContent = text; button.setAttribute('aria-label', label); button.setAttribute('aria-pressed', String(active)); button.addEventListener('click', action); return button; };
       const mute = control(layer.muted ? 'UNMUTE' : 'MUTE', `${layer.muted ? 'Unmute' : 'Mute'} vocal layer ${index + 1}`, layer.muted, () => { layer.muted = !layer.muted; audio.updateVocalLayerStates(project.voice.layers); save(); renderVocalLayers(); });
       const solo = control(layer.solo ? 'SOLO ON' : 'SOLO', `${layer.solo ? 'Disable solo' : 'Solo'} vocal layer ${index + 1}`, layer.solo, () => { layer.solo = !layer.solo; audio.updateVocalLayerStates(project.voice.layers); save(); renderVocalLayers(); });
-      const preview = control('▶', `Preview vocal layer ${index + 1}`, false, async () => { await audio.unlock(); if (!audio.previewVocalLayer(layer.id, layer.gain)) $('voice-overdub-status').textContent = 'This browser cannot decode the saved raw take for preview.'; });
+      const preview = control('▶', `Preview vocal layer ${index + 1}`, false, async () => { await audio.unlock(); if (!audio.previewVocalLayer(layer.id, layer.gain,layer.pitch)) $('voice-overdub-status').textContent = 'Pitch processor or audio decoder unavailable for this layer.'; });
       preview.disabled = !audio.vocalSources.get(layer.id)?.buffer;
+      const pitch=document.createElement('label');pitch.className='vocal-layer-pitch';pitch.append(document.createTextNode('PITCH (ST)'));
+      const pitchInput=document.createElement('input');pitchInput.type='number';pitchInput.min='-12';pitchInput.max='12';pitchInput.step='.1';pitchInput.value=String(layer.pitch||0);pitchInput.setAttribute('aria-label',`Pitch for vocal layer ${index+1}`);
+      pitchInput.addEventListener('change',()=>{layer.pitch=clamp(pitchInput.value,-12,12);save();renderVocalLayers();});pitch.append(pitchInput);
       const remove = control('DELETE', `Delete vocal layer ${index + 1} and its raw take`, false, async () => {
         if (!confirm(`Delete ${layer.name} and its saved raw recording?`)) return;
         const nextLayers = project.voice.layers.filter(item => item.id !== layer.id);
@@ -322,7 +327,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const meta = document.createElement('small'); meta.className = 'vocal-layer-meta';
       const bar = Math.floor(layer.startStep / 16) + 1, step = layer.startStep % 16;
       meta.textContent = `${vocalFiles.has(layer.id) ? 'Raw take saved locally' : 'Raw take file missing'} · starts at bar ${bar}, step ${step + 1}`;
-      row.append(name, offset, gain, mute, solo, preview, remove, meta); host.append(row);
+      row.append(name, offset, gain, pitch, mute, solo, preview, remove, meta); host.append(row);
     });
     updateOverdubControls();
   }
@@ -398,6 +403,24 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     }
   });
   $('voice-overdub-stop').addEventListener('click', stopOverdub);
+  $('vocal-add-harmony').addEventListener('click',async()=>{
+    if(!audio.pitchReady)return notify('The local pitch processor is unavailable; a harmony would not stay in tune and time on this device.');
+    if(project.voice.layers.length>=MAX_VOCAL_LAYERS)return notify('The vocal layer limit is full.');
+    const source=project.voice.layers.slice().reverse().find(layer=>layer.sourceId===layer.id||!layer.sourceId);
+    const raw=source&&vocalFiles.get(source.id);
+    if(!raw)return notify('Record and save a raw microphone take before adding an automatic harmony.');
+    const usedBytes=[...getMediaFiles().values(),...vocalFiles.values()].reduce((sum,file)=>sum+(file?.size||0),0);
+    if(usedBytes+raw.size>MAX_MEDIA_BYTES)return notify('Not enough local project media space to preserve another editable harmony layer.');
+    const interval=Number($('vocal-harmony-interval').value),id=`harmony-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+    const layer={id,name:`${source.name} · harmony ${interval>0?'+':''}${interval}`,sourceId:source.id,startStep:source.startStep,gain:.6,muted:false,solo:false,pitch:interval};
+    const file=new File([raw],`harmony-source-${Date.now()}.${extensionForAudioMime(raw.type)}`,{type:raw.type});
+    try{
+      await saveVoiceLayer(id,file,{...project,voice:{...project.voice,layers:[...project.voice.layers,layer]}});
+      project.voice.layers.push(layer);vocalFiles.set(id,file);
+      await audio.loadVocalLayer(id,file);save();renderVocalLayers();
+      $('voice-overdub-status').textContent=`Created an editable ${interval>0?'+':''}${interval}-semitone harmony. It retains a separate copy of the original recording.`;
+    }catch(error){$('voice-overdub-status').textContent=`Harmony could not be saved: ${error.message}`;}
+  });
   async function reloadLayers() {
     audio.stopVocalLayers(); audio.vocalSources.clear(); vocalFiles.clear();
     for (const layer of project.voice.layers) {
@@ -502,6 +525,49 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     finally { $('tuner-start').disabled = false; }
   });
   $('tuner-stop').addEventListener('click', () => stopTuner());
+  $('tuner-start').addEventListener('click', async () => {
+    $('tuner-start').disabled = true;
+    $('tuner-status').textContent = 'Requesting microphone access. Audio stays on this device…';
+    try {
+      if (!navigator.mediaDevices?.getUserMedia || !window.AudioContext) throw new Error('This browser does not support local microphone analysis.');
+      await audio.unlock();
+      tunerStream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+      if (!tunerStream.getAudioTracks().length) throw new Error('The browser did not provide an audio track.');
+      tunerSource = audio.context.createMediaStreamSource(tunerStream);
+      tunerAnalyser = audio.context.createAnalyser(); tunerAnalyser.fftSize = 2048; tunerSource.connect(tunerAnalyser);
+      tunerFrame = new Float32Array(tunerAnalyser.fftSize);
+      $('tuner-start').hidden = true; $('tuner-stop').hidden = false;
+      $('tuner-status').textContent = 'Listening locally. Play one steady note near your microphone.';
+      const update = () => {
+        if (!tunerAnalyser) return;
+        tunerAnalyser.getFloatTimeDomainData(tunerFrame);
+        const result = detectPitch(tunerFrame, audio.context.sampleRate, project.voice.melody.tuning);
+        if (result) {
+          const cents = Math.round(result.cents), inTune = Math.abs(cents) <= 5;
+          $('tuner-note').textContent = result.note; $('tuner-frequency').textContent = `${result.frequency.toFixed(1)} Hz`;
+          $('tuner-cents').textContent = `${cents > 0 ? '+' : ''}${cents} cents · A4 = ${project.voice.melody.tuning} Hz${inTune ? ' · IN TUNE' : ''}`;
+          $('tuner-needle').style.left = `${50 + Math.max(-50, Math.min(50, cents))}%`;
+        } else {
+          $('tuner-note').textContent = '—'; $('tuner-frequency').textContent = 'Play one steady note';
+          $('tuner-cents').textContent = `A4 = ${project.voice.melody.tuning} Hz`; $('tuner-needle').style.left = '50%';
+        }
+      };
+      tunerTimer = setInterval(update, 90); update();
+      const track = tunerStream.getAudioTracks()[0]; track.addEventListener('ended', () => stopTuner('Microphone ended. Tuner stopped.'));
+    } catch (error) { stopTuner(`Tuner could not start: ${error.message}`); }
+    finally { $('tuner-start').disabled = false; }
+  });
+  $('tuner-stop').addEventListener('click', () => stopTuner());
+  $('melody-follow-beat').addEventListener('change',()=>{project.voice.melody.followBeat=$('melody-follow-beat').checked;save();});
+  $('voice-story-combine').addEventListener('click',()=>{
+    if(project.voice.phrases.length<2)return notify('Create at least two phrases from recorded or imported speech first.');
+    if(project.voice.phrases.length>=MAX_VOICE_PHRASES)return notify('The phrase limit is full. Remove an unused phrase or export it first.');
+    const originals=[...project.voice.phrases],words=originals.flatMap(phrase=>phrase.words.map(word=>({...word})));
+    if(words.length>MAX_TRANSCRIPT_WORDS)return notify('The combined story exceeds the word limit. Use shorter phrases.');
+    project.voice.phrases.push({id:`story-${Date.now()}`,name:'Story montage',gapMs:35,crossfadeMs:0,words});
+    save();renderPhrases(project,audio,notify,save,assignWordsToPads);renderMelody(project,save);
+    notify('Story montage created from the current phrase order; the original phrases remain intact.');
+  });
   $('melody-harmony-interval').addEventListener('change', () => { const interval = Number($('melody-harmony-interval').value); if (!HARMONY_INTERVALS.includes(interval)) return; project.voice.melody.harmonyInterval = interval; save(); });
   $('melody-add').addEventListener('click', () => { if (project.voice.melody.notes.length >= MAX_MELODY_NOTES) return; const notes = project.voice.melody.notes; notes.push({ midi: 60, step: notes.length ? notes.at(-1).step + 4 : 0, duration: 4, word: '', layer: 'lead' }); save(); renderMelody(project, save); });
   $('melody-harmony-add').addEventListener('click', () => {
@@ -519,20 +585,26 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     save(); renderMelody(project, save);
     notify(`${added} harmony note${added === 1 ? '' : 's'} added at ${interval > 0 ? '+' : ''}${interval} semitones${skipped ? `; ${skipped} skipped` : ''}.`);
   });
+  function scheduleMelodyNote(note,start,secondsPerStep){
+    const length=note.duration*secondsPerStep;
+    const cue=note.word&&project.voice.phrases.flatMap(phrase=>phrase.words).find(word=>word.text===note.word&&audio.sources.get(word.sourcePad)?.file);
+    if(cue){
+      const sourcePad=project.pads[cue.sourcePad];
+      audio.trigger(cue.sourcePad,{...sourcePad,start:cue.start,end:Math.min(cue.end,cue.start+length),pitch:clamp(note.midi-60,-12,12),speed:1},undefined,start);
+      return;
+    }
+    const ctx=audio.context,oscillator=ctx.createOscillator(),gain=ctx.createGain();
+    oscillator.type='triangle';oscillator.frequency.setValueAtTime(midiFrequency(note.midi,project.voice.melody.tuning),start);
+    gain.gain.setValueAtTime(.0001,start);gain.gain.linearRampToValueAtTime(.16,start+.015);
+    gain.gain.setValueAtTime(.16,Math.max(start+.016,start+length-.02));gain.gain.linearRampToValueAtTime(.0001,start+length);
+    oscillator.connect(gain).connect(audio.master);oscillator.start(start);oscillator.stop(start+length+.01);
+    oscillator.onended=()=>{oscillator.disconnect();gain.disconnect();};
+  }
   $('melody-play').addEventListener('click', async () => {
     if (!project.voice.melody.notes.length) return notify('Add a note to write your melody first.');
     await audio.unlock(); const ctx = audio.context, now = ctx.currentTime + .05, secondsPerStep = 60 / project.bpm / 4;
     for (const note of project.voice.melody.notes) {
-      const start = now + note.step * secondsPerStep, length = note.duration * secondsPerStep;
-      const cue = note.word && project.voice.phrases.flatMap(phrase => phrase.words).find(word => word.text === note.word && audio.sources.get(word.sourcePad)?.file);
-      if (cue) {
-        const sourcePad = project.pads[cue.sourcePad];
-        audio.trigger(cue.sourcePad, { ...sourcePad, start: cue.start, end: cue.end, pitch: clamp(note.midi - 60, -12, 12), speed: 1 }, undefined, start);
-        continue;
-      }
-      const oscillator = ctx.createOscillator(), gain = ctx.createGain(); oscillator.type = 'triangle'; oscillator.frequency.setValueAtTime(midiFrequency(note.midi, project.voice.melody.tuning), start);
-      gain.gain.setValueAtTime(.0001, start); gain.gain.linearRampToValueAtTime(.16, start + .015); gain.gain.setValueAtTime(.16, Math.max(start + .016, start + length - .02)); gain.gain.linearRampToValueAtTime(.0001, start + length);
-      oscillator.connect(gain).connect(audio.master); oscillator.start(start); oscillator.stop(start + length + .01); oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
+      scheduleMelodyNote(note,now+note.step*secondsPerStep,secondsPerStep);
     }
   });
   $('melody-export').addEventListener('click', () => { const blob = midiFile(project.voice.melody.notes, project.bpm, project.voice.melody.tuning); download(blob, `${project.title || 'madladpad'}-melody.mid`); });
@@ -540,6 +612,15 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   $('rap-export').addEventListener('click', () => { const lines = project.voice.rap.bars.map((line, index) => `${String(index + 1).padStart(2, '0')}  ${line}`); const blob = new Blob([`# ${project.title} · ${project.bpm} BPM · ${project.voice.rap.scheme}\n\n${lines.join('\n')}\n`], { type: 'text/plain;charset=utf-8' }); download(blob, `${project.title || 'madladpad'}-lyrics.txt`); });
   render();
   return {
+    scheduleMelodyStep(absoluteStep,time,bpm){
+      if(!project.voice.melody.followBeat)return;
+      const position=absoluteStep%256,secondsPerStep=60/bpm/4;
+      for(const note of project.voice.melody.notes)if(note.step===position)scheduleMelodyNote(note,time,secondsPerStep);
+    },
+    highlightRapBar(absoluteStep){
+      const bar=Math.floor(absoluteStep/16)%16;
+      for(const row of $('rap-bars').children)row.classList.toggle('current',Number(row.dataset.bar)===bar);
+    },
     transportStarted(epoch, bpm) { audio.playVocalLayers(project.voice.layers, epoch, bpm); updateOverdubControls(); },
     transportStopped() { audio.stopVocalLayers(); if (vocalRecording) stopOverdub(); updateOverdubControls(); },
     stopTuner,

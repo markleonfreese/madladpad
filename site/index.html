@@ -69,6 +69,7 @@
           <button id="google-drive" class="source-button"><span class="source-icon">△</span> GOOGLE DRIVE <small>Choose files</small></button>
           <button id="google-photos" class="source-button"><span class="source-icon">▧</span> GOOGLE PHOTOS <small>Choose clips</small></button>
         </div>
+        <p class="voice-note">Create an original backing track in <a href="https://www.producer.ai/" target="_blank" rel="noopener noreferrer">Google Flow Music</a>, download its audio, then use Device / Files to import it here. MadLadPad does not access your Flow account or send your recordings there.</p>
         <section class="region-editor" aria-labelledby="region-title">
           <h3 id="region-title">SELECT A MOMENT</h3>
           <p id="region-status">Load an audio or video clip to select a region.</p>
@@ -90,8 +91,10 @@
         <div class="sliders">
           <label>VOLUME <output id="volume-out">90%</output><input id="volume" type="range" min="0" max="150" value="90"></label>
           <label>SPEED <output id="speed-out">1.00×</output><input id="speed" type="range" min="0.5" max="2" step="0.05" value="1"></label>
-          <label>PITCH <output id="pitch-out">Starting…</output><input id="pitch" type="range" min="-12" max="12" value="0" disabled aria-describedby="pitch-note"></label>
+          <label>PITCH <output id="pitch-out">Starting…</output><input id="pitch" type="range" min="-12" max="12" step="0.1" value="0" disabled aria-describedby="pitch-note"></label>
           <p id="pitch-note">Preparing the local Pitch processor. Speed remains available.</p>
+          <div class="region-actions"><button id="detect-note" type="button">Detect musical note</button><button id="tune-note" type="button" disabled>Tune to nearest A440 note</button></div>
+          <p id="tune-status" role="status" class="voice-note">Pitch detection works on clearly pitched solo sounds, not chords, speech or percussion.</p>
           <label>START <output id="start-out">0.00 s</output><input id="trim-start" type="range" min="0" max="10" step="0.05" value="0"></label>
           <label>END <output id="end-out">2.00 s</output><input id="trim-end" type="range" min="0.05" max="10" step="0.05" value="2"></label>
         </div>
@@ -108,6 +111,18 @@
       <div class="steps" id="steps" role="group" aria-label="Pattern steps for selected pad"></div>
       <div class="track-grid" id="track-grid" hidden role="group" aria-label="Patterns for all pads"></div>
       <div class="timeline"><span>1</span><span>2</span><span>3</span><span>4</span></div>
+    </section>
+
+    <section class="studio-stage" id="video-director" aria-labelledby="video-director-title" hidden>
+      <div class="section-label"><span>03 / VIDEO DIRECTOR</span><span>ONE SHOT PER SIXTEENTH NOTE · AUTOMATIC OR MANUAL</span></div>
+      <h2 id="video-director-title">Cut the pictures to your beat.</h2>
+      <p class="voice-intro">Each beat step can follow the sounds automatically, feature one pad full-screen, display several pads together, or cut to black. The pattern repeats every bar and is saved in your project.</p>
+      <div class="director-steps" id="director-steps" role="group" aria-label="Video cut steps"></div>
+      <div class="director-edit">
+        <label class="voice-label">SHOT TYPE<select id="director-mode"><option value="auto">Auto: follow active pads</option><option value="solo">Solo: full-screen video</option><option value="grid">Grid: selected pads together</option><option value="black">Black frame</option></select></label>
+        <div id="director-pads" class="director-pads" role="group" aria-label="Pads shown in this video shot"></div>
+      </div>
+      <p class="voice-note" id="director-status" role="status">Select a step to direct its video.</p>
     </section>
 
     <section class="voice-lab" id="voice-lab" aria-labelledby="voice-lab-title" hidden>
@@ -132,6 +147,8 @@
           <div id="voice-word-list" class="voice-word-list" role="group" aria-label="Editable transcript words"></div>
           <button class="pill-button" id="voice-make-phrase" disabled>ADD SELECTED WORDS TO PHRASE</button>
           <div id="voice-phrases" class="voice-phrases" role="group" aria-label="Reorderable audio phrases"></div>
+          <div class="voice-actions"><button class="pill-button" id="voice-story-combine">COMBINE PHRASES INTO A STORY</button></div>
+          <p class="voice-note">Combine the current phrases into a new, editable story without deleting the originals. Reorder its words, preview or export WAV.</p>
           <p class="voice-note" id="voice-map-help">Map a phrase into separate local WAV pads and a one-bar pattern at the current tempo. Existing samples and patterns stay untouched; the layout needs enough empty pads with unused patterns.</p>
         </section>
 
@@ -148,6 +165,7 @@
             <p id="tuner-status" class="voice-status" role="status">Microphone is off. Start the tuner when ready.</p>
           </section>
           <div class="voice-actions"><button class="pill-button" id="melody-add">ADD NOTE</button><label class="voice-label">HARMONY INTERVAL<select id="melody-harmony-interval"><option value="3">+3 · minor third</option><option value="4">+4 · major third</option><option value="5">+5 · fourth</option><option value="7">+7 · fifth</option><option value="12">+12 · octave</option><option value="-3">−3 · minor third</option><option value="-4">−4 · major third</option><option value="-5">−5 · fourth</option><option value="-7">−7 · fifth</option><option value="-12">−12 · octave</option></select></label><button class="pill-button" id="melody-harmony-add">ADD HARMONY LINE</button><button class="pill-button" id="melody-play">▶ PLAY MELODY</button><button class="pill-button" id="melody-export">EXPORT MIDI</button></div>
+          <label class="consent-line"><input id="melody-follow-beat" type="checkbox"> Loop the melody and harmony automatically with Beat Grid and include them in recorded mixes.</label>
           <div id="melody-notes" class="melody-notes" role="group" aria-label="Melody notes"></div>
         </section>
 
@@ -171,6 +189,8 @@
         <p class="voice-note">Use the beat grid below as a backing track. Recordings are stored as separate, editable local layers. When you are ready, move to Finish & Export to capture the full mix.</p>
         <div class="voice-actions"><button class="pill-button" id="voice-overdub-record" disabled>● RECORD VOCAL OVERDUB</button><button class="pill-button" id="voice-overdub-stop" hidden>■ STOP AND SAVE TAKE</button></div>
         <p id="voice-overdub-status" class="voice-status" role="status" aria-live="polite">Start the sequencer to record a vocal layer.</p>
+        <div class="voice-actions"><label class="voice-label">VOCAL HARMONY<select id="vocal-harmony-interval"><option value="4">+4 · major third</option><option value="3">+3 · minor third</option><option value="7">+7 · fifth</option><option value="-3">−3 · minor third</option><option value="-4">−4 · major third</option><option value="-7">−7 · fifth</option><option value="12">+12 · octave</option><option value="-12">−12 · octave</option></select></label><button id="vocal-add-harmony" class="pill-button">ADD PITCHED HARMONY TO LATEST RAW TAKE</button></div>
+        <p class="voice-note">Generated harmony layers reference the original local take; no raw recording is overwritten. A pitch processor is required to keep timing aligned. Edit harmony pitch, gain, mute and solo independently.</p>
         <div id="voice-overdub-layers" class="vocal-layers" role="group" aria-label="Vocal take layers"></div>
       </section>
     </section>
@@ -180,7 +200,10 @@
       <h2 id="export-title">Capture and share your track.</h2>
       <p class="voice-intro">Start the loop, record your performance, then review the result below. Video captures the pad visuals and the master audio; audio-only captures the mixed sound. Recording stops when you tap the same button again.</p>
       <div class="export-controls">
-        <label class="field">VIDEO FRAME<select id="record-layout"><option value="fixed">Fixed grid</option><option value="follow-active">Follow active pads</option></select></label>
+        <label class="field">VIDEO FRAME<select id="record-layout"><option value="fixed">Fixed grid</option><option value="follow-active">Follow active pads</option><option value="directed">Video Director: cuts by beat</option></select></label>
+        <label class="field">ASPECT RATIO<select id="video-aspect"><option value="4:3">4:3</option><option value="16:9">16:9 · wide</option><option value="9:16">9:16 · vertical</option><option value="1:1">1:1 · square</option></select></label>
+        <label class="field">VIDEO FORMAT<select id="record-video-format"><option value="auto">Browser's best supported</option><option value="mp4">MP4 (if supported)</option><option value="webm">WebM (if supported)</option></select></label>
+        <label class="field">AUDIO FORMAT<select id="record-audio-format"><option value="auto">Browser's best supported</option><option value="m4a">M4A (if supported)</option><option value="webm">WebM (if supported)</option><option value="ogg">Ogg (if supported)</option></select></label>
         <button class="accent-button" id="start-record" aria-pressed="false"><span class="record-dot"></span> RECORD SET</button>
         <button class="accent-button audio-record-button" id="record-audio" aria-pressed="false">♪ RECORD AUDIO MIX</button>
         <button class="quiet-button" id="export-pack-action" type="button">Export project pack</button>
@@ -191,7 +214,7 @@
         <div><h3>Video performance</h3><video id="export-video-preview" controls playsinline preload="metadata" hidden></video><p id="export-video-empty" class="voice-note">No recorded video in this session yet.</p><button id="export-video-download" class="pill-button" disabled>DOWNLOAD VIDEO AGAIN</button></div>
         <div><h3>Audio mix</h3><audio id="export-audio-preview" controls preload="metadata" hidden></audio><p id="export-audio-empty" class="voice-note">No recorded audio in this session yet.</p><button id="export-audio-download" class="pill-button" disabled>DOWNLOAD AUDIO AGAIN</button></div>
       </div>
-      <p class="voice-note">Final renders are held in this browser session for review. Use the automatic downloads or download again before leaving. Export a project pack to preserve the editable samples and vocal layers.</p>
+      <p class="voice-note">The most recent completed video and audio renders are stored locally for later review when browser storage permits. Download a copy for reliable backup. Formats depend on the browser's MediaRecorder support; the app does not transcode unsupported formats.</p>
     </section>
     <footer><span>DESIGNED FOR PEOPLE WHO HEAR MUSIC EVERYWHERE.</span><span>V0.1 · LOCAL-FIRST PWA · <a href="https://github.com/markleonfreese/madladpad" target="_blank" rel="noopener">SOURCE</a></span></footer>
   </div>

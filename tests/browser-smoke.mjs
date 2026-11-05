@@ -101,6 +101,16 @@ try {
   assert.deepEqual(errors, [], 'demo pad should not produce a page error');
   await openScreen('beats');
   assert.equal(await page.locator('#sequencer').isVisible(),true,'Beat Grid should expose sequencer');
+  assert.equal(await page.locator('#video-director').isVisible(),true,'Beat Grid should expose Video Director');
+  assert.equal(await page.locator('#director-steps button').count(),16,'video direction should have one shot per sequencer step');
+  await page.locator('#director-mode').selectOption('solo');
+  await page.locator('#director-pads input[value="0"]').check();
+  assert.match(await page.locator('#director-status').textContent(),/show pad 1/);
+  await page.locator('#director-steps button').nth(1).click();
+  await page.locator('#director-mode').selectOption('grid');
+  await page.locator('#director-pads input[value="0"]').check();
+  await page.locator('#director-pads input[value="1"]').check();
+  assert.match(await page.locator('#director-status').textContent(),/show pads 1, 2/);
   await page.locator('#track-view').click();
   assert.equal(await page.locator('#track-grid .track-row').count(),12,'all-tracks view should expose each lane in the 12-pad layout');
   assert.ok((await page.locator('#track-grid .track-row').first().locator('.track-name').textContent()).includes('Demo synth 01'),'demo-enabled empty lanes should be identified as demo synths');
@@ -294,6 +304,9 @@ try {
   const manualPhraseDownload=page.waitForEvent('download');
   await page.locator('#voice-phrases button[aria-label="Export Phrase 2 as WAV"]').click();
   assert.match((await manualPhraseDownload).suggestedFilename(),/\.wav$/,'a manual transcript phrase should export locally without on-device ASR');
+  await page.locator('#voice-story-combine').click();
+  assert.equal(await page.locator('#voice-phrases .voice-phrase').count(),3,'stories should combine existing phrases without deleting either original');
+  assert.match(await page.locator('#voice-phrases .voice-phrase').nth(2).textContent(),/Story montage/);
   await page.locator('#melody-add').click();
   await page.locator('#melody-notes input[aria-label="Note 1 MIDI pitch"]').fill('69');
   await page.locator('#melody-notes input[aria-label="Note 1 MIDI pitch"]').press('Tab');
@@ -305,6 +318,7 @@ try {
   await page.locator('#melody-harmony-add').click();
   assert.equal(await page.locator('#melody-notes .melody-note').count(),2,'repeating harmony generation should not duplicate existing notes');
   await page.locator('#melody-play').click();
+  await page.locator('#melody-follow-beat').check();
   await page.locator('#rap-bars textarea').nth(0).fill('Hello from the other side');
   assert.match(await page.locator('#rap-bars .rap-bar small').first().textContent(),/estimated syllables/);
   await page.locator('#rap-scheme').selectOption('ABAB');
@@ -400,6 +414,12 @@ try {
   assert.equal(await page.locator('#melody-notes .melody-note').count(),2,'lead and harmony note data should persist locally');
   assert.equal(await page.locator('#melody-notes input[aria-label="Harmony 2 MIDI pitch"]').inputValue(),'72','generated harmony pitch should persist locally');
   assert.equal(await page.locator('#melody-harmony-interval').inputValue(),'3','harmony interval should persist locally');
+  assert.equal(await page.locator('#melody-follow-beat').isChecked(),true,'melody sequence recording option should persist locally');
+  assert.equal(await page.locator('#voice-phrases .voice-phrase').count(),3,'saved story montage should persist without removing its source phrases');
+  await page.locator('#director-steps button').first().click();
+  assert.equal(await page.locator('#director-mode').inputValue(),'solo','first video step should retain its full-screen cut');
+  await page.locator('#director-steps button').nth(1).click();
+  assert.equal(await page.locator('#director-mode').inputValue(),'grid','second video step should retain its multi-pad cut');
   assert.equal(await page.locator('#rap-bars textarea').nth(0).inputValue(),'Hello from the other side','rap bars should persist locally');
   assert.equal(await page.locator('#rap-scheme').inputValue(),'AABB','rap rhyme shape should persist locally');
   if(vocalOverdubSupported){
@@ -628,10 +648,12 @@ try {
     });
     await openScreen('export');
     await page.locator('#record-layout').selectOption('follow-active');
+    await page.locator('#video-aspect').selectOption('9:16');
     const performanceDownload=page.waitForEvent('download',{timeout:10000}).then(download=>({download}),error=>({error}));
     for(const target of longVideoTargets)assert.ok((await page.locator('.pad video').nth(target).getAttribute('src'))||await page.locator('.pad video').nth(target).evaluate(v=>v.currentSrc),`pad ${target+1} should have its local video source`);
     await page.locator('#start-record').click();
     await page.waitForFunction(()=>document.querySelector('#start-record').textContent.includes('STOP RECORDING'));
+    assert.deepEqual(await page.locator('#capture-canvas').evaluate(canvas=>[canvas.width,canvas.height]),[540,960],'vertical aspect ratio should set encoded canvas dimensions');
     await openScreen('sounds');
     await page.locator('.pad-hit').nth(captureTarget).click();
     await page.waitForFunction(()=>window.__adaptiveDraws.includes(1));
@@ -646,6 +668,8 @@ try {
     assert.ok(performanceResult.download,`adaptive performance should download: ${performanceResult.error?.message||'no file'}`);
     const performance=performanceResult.download;
     assert.ok((await readFile(await performance.path())).length>100,'adaptive audiovisual performance should export encoded media');
+    assert.equal(await page.locator('#export-video-preview').isVisible(),true,'finished video should be reviewable on the export screen');
+    assert.equal(await page.locator('#export-video-download').isEnabled(),true,'finished video should be downloadable again');
     checkpoint('adaptive performance capture transitions one-to-two-to-three clips');
 
     await openScreen('sounds');
