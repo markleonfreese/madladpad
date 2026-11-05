@@ -201,11 +201,26 @@ function selectPad(id) {
 function renderRegion() {
   const enabled = Boolean(regionDraft && previewDuration > 0);
   for (const id of ['region-start','region-end','region-start-range','region-end-range','region-play','region-apply','region-reset']) $(id).disabled = !enabled;
+  const timeline=$('region-timeline');timeline.hidden=!enabled;
   if (!enabled) return;
   for (const id of ['region-start','region-end','region-start-range','region-end-range']) $(id).max = previewDuration;
   $('region-start').value = $('region-start-range').value = regionDraft.start;
   $('region-end').value = $('region-end-range').value = regionDraft.end;
+  const startPct=regionDraft.start/previewDuration*100,endPct=regionDraft.end/previewDuration*100;
+  $('region-timeline-selection').style.left=`${startPct}%`;$('region-timeline-selection').style.width=`${endPct-startPct}%`;
+  const stacked=(endPct-startPct)*timeline.clientWidth/100<48;timeline.style.height=stacked?'112px':'82px';
+  $('region-timeline-start-time').textContent=`${regionDraft.start.toFixed(2)} s`;$('region-timeline-end-time').textContent=`${regionDraft.end.toFixed(2)} s`;
+  for(const [id,value,min,max] of [['region-timeline-start-handle',regionDraft.start,0,Math.max(0,regionDraft.end-.05)],['region-timeline-end-handle',regionDraft.end,Math.min(previewDuration,regionDraft.start+.05),previewDuration]]){
+    const handle=$(id);handle.style.left=`${value/previewDuration*100}%`;handle.style.top=stacked?(id.includes('start')?'17px':'63px'):'19px';handle.setAttribute('aria-valuemin',min.toFixed(2));handle.setAttribute('aria-valuemax',max.toFixed(2));handle.setAttribute('aria-valuenow',value.toFixed(2));handle.setAttribute('aria-valuetext',`${value.toFixed(2)} seconds`);
+  }
   $('region-status').textContent = `Draft: ${regionDraft.start.toFixed(2)}–${regionDraft.end.toFixed(2)} s of ${previewDuration.toFixed(2)} s. Apply to save.`;
+}
+
+function moveRegionBoundary(key,value){
+  if(!regionDraft||!previewDuration)return;
+  const seconds=Math.round(value*100)/100;
+  regionDraft=normaliseRegion(key==='start'?seconds:regionDraft.start,key==='end'?seconds:regionDraft.end,previewDuration,key);
+  previewingRegion=false;$('region-preview').pause();$('region-preview').currentTime=key==='start'?regionDraft.start:regionDraft.end;renderRegion();
 }
 
 function syncRegionPreview() {
@@ -1103,6 +1118,30 @@ function bindControls() {
   $('export-video-download').addEventListener('click',()=>{if(lastTakes.video)download(lastTakes.video.blob,lastTakes.video.name);});
   $('export-audio-download').addEventListener('click',()=>{if(lastTakes.audio)download(lastTakes.audio.blob,lastTakes.audio.name);});
   const preview=$('region-preview');
+  const regionTimeline=$('region-timeline');
+  let draggedBoundary=null;
+  const boundaryAtPointer=(event,key)=>{
+    const rect=regionTimeline.getBoundingClientRect();
+    moveRegionBoundary(key,Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width))*previewDuration);
+  };
+  regionTimeline.addEventListener('pointerdown',event=>{
+    if(!regionDraft||!previewDuration)return;
+    const handle=event.target.closest('.region-timeline-handle');
+    const startPosition=regionDraft.start/previewDuration,endPosition=regionDraft.end/previewDuration;
+    const position=Math.max(0,Math.min(1,(event.clientX-regionTimeline.getBoundingClientRect().left)/regionTimeline.clientWidth));
+    draggedBoundary=handle?.id.includes('start')?'start':handle?'end':Math.abs(position-startPosition)<=Math.abs(position-endPosition)?'start':'end';
+    if(handle)handle.focus();else $(draggedBoundary==='start'?'region-timeline-start-handle':'region-timeline-end-handle').focus();
+    regionTimeline.setPointerCapture(event.pointerId);event.preventDefault();boundaryAtPointer(event,draggedBoundary);
+  });
+  regionTimeline.addEventListener('pointermove',event=>{if(draggedBoundary)boundaryAtPointer(event,draggedBoundary);});
+  for(const type of ['pointerup','pointercancel','lostpointercapture'])regionTimeline.addEventListener(type,()=>{draggedBoundary=null;});
+  for(const [id,key] of [['region-timeline-start-handle','start'],['region-timeline-end-handle','end']])$(id).addEventListener('keydown',event=>{
+    if(!regionDraft)return;
+    const value=key==='start'?regionDraft.start:regionDraft.end,min=Number(event.currentTarget.getAttribute('aria-valuemin')),max=Number(event.currentTarget.getAttribute('aria-valuemax'));
+    const step=event.key.startsWith('Page') ? .5 : .05;
+    const next=event.key==='Home'?min:event.key==='End'?max:['ArrowRight','ArrowUp','PageUp'].includes(event.key)?Math.min(max,value+step):['ArrowLeft','ArrowDown','PageDown'].includes(event.key)?Math.max(min,value-step):null;
+    if(next===null)return;event.preventDefault();moveRegionBoundary(key,next);
+  });
   preview.addEventListener('loadedmetadata',()=>{
     if (!Number.isFinite(preview.duration) || preview.duration<=0) { $('region-status').textContent='Duration unavailable; this clip cannot be previewed here.'; return; }
     previewDuration=preview.duration;
@@ -1117,9 +1156,7 @@ function bindControls() {
   for(const [id,key] of [['region-start','start'],['region-end','end'],['region-start-range','start'],['region-end-range','end']]) {
     $(id).addEventListener('input',event=>{
       if(!regionDraft || event.target.value==='')return;
-      regionDraft=normaliseRegion(key==='start'?Number(event.target.value):regionDraft.start,key==='end'?Number(event.target.value):regionDraft.end,previewDuration,key);
-      previewingRegion=false;preview.pause();preview.currentTime=key==='start'?regionDraft.start:regionDraft.end;
-      renderRegion();
+      moveRegionBoundary(key,Number(event.target.value));
     });
   }
   $('region-play').addEventListener('click',async()=>{

@@ -74,6 +74,13 @@
           <h3 id="region-title">SELECT A MOMENT</h3>
           <p id="region-status">Load an audio or video clip to select a region.</p>
           <video id="region-preview" controls playsinline preload="metadata" hidden></video>
+          <div id="region-timeline" class="region-timeline" role="group" aria-label="Media selection timeline" hidden>
+            <div class="region-timeline-track" aria-hidden="true"><span id="region-timeline-selection"></span></div>
+            <span id="region-timeline-start-time" class="region-timeline-start-time" aria-hidden="true"></span>
+            <span id="region-timeline-end-time" class="region-timeline-end-time" aria-hidden="true"></span>
+            <button id="region-timeline-start-handle" class="region-timeline-handle" type="button" role="slider" aria-label="Selection start"></button>
+            <button id="region-timeline-end-handle" class="region-timeline-handle" type="button" role="slider" aria-label="Selection end"></button>
+          </div>
           <div class="region-bounds">
             <label>Start (seconds)<input id="region-start" type="number" min="0" step="0.05" disabled></label>
             <label>End (seconds)<input id="region-end" type="number" min="0" step="0.05" disabled></label>
