@@ -133,7 +133,7 @@ export const makePad = id => ({
 });
 export const makeProject = () => ({
   version: 1, title: 'Untitled mixtape', layout: '3x4', bpm: 120,
-  quantize: 'off', pads: Array.from({ length: 16 }, (_, i) => makePad(i)), scenes: [], voice: makeVoiceData(), video:makeVideoDirection()
+  quantize: 'off', gridDivision:'1/16', pads: Array.from({ length: 16 }, (_, i) => makePad(i)), scenes: [], voice: makeVoiceData(), video:makeVideoDirection()
 });
 export function normaliseProject(value) {
   const base = makeProject();
@@ -156,6 +156,7 @@ export function normaliseProject(value) {
   });
   const scenes=Array.isArray(value?.scenes)?value.scenes.slice(0,MAX_SCENES).map((scene,index)=>({
     name:String(scene?.name||`Scene ${index+1}`).slice(0,32),
+    gridDivision:['1/4','1/8','1/16'].includes(scene?.gridDivision)?scene.gridDivision:'1/16',
     pads:Array.from({length:16},(_,j)=>({
       steps:Array.from({length:STEP_COUNT},(_,k)=>Boolean(scene?.pads?.[j]?.steps?.[k])),
       stepOffsets:Array.from({length:STEP_COUNT},(_,k)=>clamp(scene?.pads?.[j]?.stepOffsets?.[k]??0,0,.9999))
@@ -163,7 +164,8 @@ export function normaliseProject(value) {
   })):[];
   return { version: 1, title: String(value?.title || base.title).slice(0, 80), layout,
     bpm: clamp(value?.bpm ?? 120, 40, 240),
-    quantize: ['off','1/4','1/8','1/16'].includes(value?.quantize) ? value.quantize : 'off', pads, scenes,
+    quantize: ['off','1/4','1/8','1/16'].includes(value?.quantize) ? value.quantize : 'off',
+    gridDivision:['1/4','1/8','1/16'].includes(value?.gridDivision)?value.gridDivision:'1/16', pads, scenes,
     voice: normaliseVoice(value?.voice),video:normaliseVideoDirection(value?.video) };
 }
 
@@ -203,12 +205,13 @@ export function nextQuantizedTime(now, epoch, bpm, division) {
   const unit = 60 / clamp(bpm, 40, 240) / divisor;
   return epoch + Math.max(0, Math.ceil((now - epoch) / unit - 1e-7)) * unit;
 }
-export function captureStepPosition(seconds,bpm,quantize='nearest'){
+export function captureStepPosition(seconds,bpm,quantize='nearest',stride=1){
   const stepDuration=60/clamp(bpm,40,240)/4;
   const position=Math.max(0,Number(seconds)||0)/stepDuration;
   const base=Math.floor(position);
   if(quantize==='off')return {step:base%STEP_COUNT,offset:position-base};
-  return {step:Math.round(position)%STEP_COUNT,offset:0};
+  const division=Math.max(1,Math.min(STEP_COUNT,Math.round(Number(stride)||1)));
+  return {step:(Math.round(position/division)*division)%STEP_COUNT,offset:0};
 }
 export function stepTriggerTime(stepTime,bpm,offset=0){
   return stepTime+clamp(offset,0,.9999)*(60/clamp(bpm,40,240)/4);
