@@ -388,14 +388,20 @@ function renderControls() {
   $('end-out').textContent = `${config.end.toFixed(2)} s`;
 }
 
+function gridStride(){return project.gridDivision==='1/4'?4:project.gridDivision==='1/8'?2:1;}
+
 function renderSteps() {
   const holder = $('steps');
   holder.replaceChildren();
-  project.pads[selected].steps.forEach((enabled, i) => {
+  const stride=gridStride(),positions=Array.from({length:16/stride},(_,index)=>index*stride);
+  holder.style.gridTemplateColumns=`repeat(${positions.length},minmax(0,1fr))`;
+  positions.forEach(i => {
+    const enabled=project.pads[selected].steps[i];
     const button = document.createElement('button');
     button.type = 'button'; button.className = `step${enabled?' on':''}`;
     button.textContent = String(i+1).padStart(2,'0');
-    button.setAttribute('aria-label',`Step ${i+1} ${enabled?'on':'off'}`);
+    button.dataset.step=String(i);
+    button.setAttribute('aria-label',`Step ${i+1} ${enabled?'on':'off'} at ${project.gridDivision} grid`);
     button.setAttribute('aria-pressed',String(enabled));
     button.disabled=Boolean(patternRecording);
     button.addEventListener('click', () => {
@@ -414,6 +420,7 @@ function renderSteps() {
 function renderTrackGrid(){
   const holder=$('track-grid'),focused=holder.contains(document.activeElement)?{pad:document.activeElement.closest('.track-row')?.dataset.pad,step:document.activeElement.dataset.step,control:document.activeElement.dataset.control}:null;holder.replaceChildren();
   const count=PAD_COUNT[project.layout],hasSolo=project.pads.slice(0,count).some(pad=>pad.solo);
+  const stride=gridStride(),positions=Array.from({length:16/stride},(_,index)=>index*stride);
   for(let id=0;id<count;id++){
     const pad=project.pads[id],row=document.createElement('div');row.className=`track-row${pad.muted?' muted':''}${pad.solo?' solo':''}`;row.dataset.pad=id;
     const head=document.createElement('div');head.className='track-head';
@@ -421,8 +428,8 @@ function renderTrackGrid(){
     const name=document.createElement('button');name.type='button';name.className='track-name';name.textContent=`${String(id+1).padStart(2,'0')} · ${trackLabel}`;name.setAttribute('aria-label',`Select pad ${id+1}, ${trackLabel}`);name.addEventListener('click',()=>selectPad(id));head.append(name);
     for(const [key,label] of [['muted','M'],['solo','S']]){const button=document.createElement('button');button.type='button';button.dataset.control=key;button.className=`track-toggle${pad[key]?' active':''}`;button.textContent=label;button.setAttribute('aria-label',`${pad[key]?'Disable':'Enable'} ${key} for pad ${id+1}`);button.setAttribute('aria-pressed',String(pad[key]));button.addEventListener('click',()=>{pad[key]=!pad[key];renderTrackGrid();queueSave();});head.append(button);}
     const gain=document.createElement('input');gain.type='range';gain.min='0';gain.max='150';gain.value=String(Math.round(pad.volume*100));gain.className='track-gain';gain.setAttribute('aria-label',`Volume for pad ${id+1}`);gain.addEventListener('input',()=>{pad.volume=Number(gain.value)/100;if(selected===id){$('volume').value=gain.value;$('volume-out').textContent=`${gain.value}%`;}queueSave();});head.append(gain);row.append(head);
-    const cells=document.createElement('div');cells.className='track-steps';
-    pad.steps.forEach((enabled,index)=>{const button=document.createElement('button');button.type='button';button.dataset.step=String(index);button.className=`step${enabled?' on':''}`;button.textContent=String(index+1).padStart(2,'0');button.setAttribute('aria-label',`Pad ${id+1}, step ${index+1}, ${enabled?'on':'off'}`);button.setAttribute('aria-pressed',String(enabled));button.disabled=Boolean(patternRecording);button.addEventListener('click',()=>{if(patternRecording)return;patternUndoSnapshot=null;renderPatternRecordingState();pad.steps[index]=!pad.steps[index];pad.stepOffsets[index]=0;renderSteps();queueSave();});cells.append(button);});row.append(cells);
+    const cells=document.createElement('div');cells.className='track-steps';cells.style.gridTemplateColumns=`repeat(${positions.length},minmax(24px,1fr))`;
+    positions.forEach(index=>{const enabled=pad.steps[index],button=document.createElement('button');button.type='button';button.dataset.step=String(index);button.className=`step${enabled?' on':''}`;button.textContent=String(index+1).padStart(2,'0');button.setAttribute('aria-label',`Pad ${id+1}, step ${index+1} ${enabled?'on':'off'} at ${project.gridDivision} grid`);button.setAttribute('aria-pressed',String(enabled));button.disabled=Boolean(patternRecording);button.addEventListener('click',()=>{if(patternRecording)return;patternUndoSnapshot=null;renderPatternRecordingState();pad.steps[index]=!pad.steps[index];pad.stepOffsets[index]=0;renderSteps();queueSave();});cells.append(button);});row.append(cells);
     if(hasSolo&&!pad.solo)row.classList.add('solo-muted');holder.append(row);
   }
   if(focused?.pad!==undefined){const target=holder.querySelector(`.track-row[data-pad="${focused.pad}"] [${focused.control?`data-control="${focused.control}"`:`data-step="${focused.step}"`}]`);target?.focus();}
@@ -433,6 +440,7 @@ function renderSession() {
   $('layout-select').value = project.layout;
   $('bpm-input').value = project.bpm;
   $('quantize-select').value = project.quantize;
+  $('grid-division').value=project.gridDivision;
   $('video-aspect').value = project.video.aspect;
   renderGrid(); renderControls(); renderSteps(); renderScenes(); renderVideoDirector();
   audio.setTransport(project.bpm,project.quantize);
@@ -470,7 +478,7 @@ function showDirectorPlayingStep(step){
 }
 
 function sceneSnapshot(name){
-  return {name,pads:project.pads.map(pad=>({steps:[...pad.steps],stepOffsets:[...pad.stepOffsets]}))};
+  return {name,gridDivision:project.gridDivision,pads:project.pads.map(pad=>({steps:[...pad.steps],stepOffsets:[...pad.stepOffsets]}))};
 }
 
 function renderScenes(){
@@ -490,6 +498,8 @@ function renderScenes(){
 }
 
 function applyScene(scene){
+  project.gridDivision=['1/4','1/8','1/16'].includes(scene.gridDivision)?scene.gridDivision:'1/16';
+  $('grid-division').value=project.gridDivision;
   project.pads.forEach((pad,id)=>{
     const lane=scene.pads[id]||{};
     pad.steps=Array.from({length:16},(_,step)=>Boolean(lane.steps?.[step]));
@@ -545,11 +555,11 @@ function renderPatternRecordingState(){
   const active=Boolean(patternRecording),button=$('record-pattern');
   button.textContent=active?'■ STOP TAKE':'● RECORD PATTERN';
   button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));
-  $('pattern-take-mode').disabled=active;$('pattern-quantize').disabled=active;
+  $('pattern-take-mode').disabled=active;$('pattern-quantize').disabled=active;$('grid-division').disabled=active;
   $('auto-beat').disabled=active;$('clear-steps').disabled=active;
   $('undo-pattern').disabled=active||!patternUndoSnapshot;
   $('pattern-record-status').textContent=active
-    ?`${patternRecording.mode==='replace'?'Replace':'Overdub'} · ${patternRecording.quantize==='nearest'?'nearest 16th':'free timing'}`
+    ?`${patternRecording.mode==='replace'?'Replace':'Overdub'} · ${patternRecording.quantize==='nearest'?`nearest ${patternRecording.gridDivision}`:'free timing'}`
     :patternUndoSnapshot?'Take saved locally · undo available':'Ready to record pad taps into the 16-step loop.';
 }
 
@@ -557,7 +567,7 @@ function capturePatternTap(id){
   const take=patternRecording,pad=project.pads[id];
   const elapsed=audio.context.currentTime-take.startedAt;
   if(elapsed<0)return;
-  const position=captureStepPosition(elapsed,take.bpm,take.quantize);
+  const position=captureStepPosition(elapsed,take.bpm,take.quantize,take.stride);
   pad.steps[position.step]=true;
   pad.stepOffsets[position.step]=position.offset;
   renderSteps();queueSave();
@@ -576,7 +586,7 @@ async function togglePatternRecording(){
   patternUndoSnapshot=project.pads.map(pad=>({steps:[...pad.steps],stepOffsets:[...pad.stepOffsets]}));
   const mode=$('pattern-take-mode').value;
   if(mode==='replace')for(const pad of project.pads){pad.steps.fill(false);pad.stepOffsets.fill(0);}
-  patternRecording={startedAt,bpm:project.bpm,mode,quantize:$('pattern-quantize').value,startsOnBar};
+  patternRecording={startedAt,bpm:project.bpm,mode,quantize:$('pattern-quantize').value,gridDivision:project.gridDivision,stride:gridStride(),startsOnBar};
   renderSteps();renderPatternRecordingState();queueSave();
   $('record-pattern').blur();notify(`Recording ${mode==='replace'?'replacement':'overdub'} pattern${startsOnBar?' from the next bar':''}. Tap pads, then stop the take.`);
 }
@@ -699,8 +709,9 @@ function startSequencer() {
         const time=nextStepTime;
         if(pendingScene&&time>=pendingScene.at-1e-4){const queued=pendingScene;pendingScene=null;applyScene(queued.scene);renderScenes();notify(`Scene “${queued.scene.name}” launched.`);}
         const step=nextStep%16;
+        const stride=gridStride();
         project.pads.slice(0,PAD_COUNT[project.layout]).forEach(pad => {
-          if (pad.steps[step]&&padIsAudible(pad.id)) audio.trigger(pad.id,pad,flashPad,stepTriggerTime(time,project.bpm,pad.stepOffsets?.[step]||0));
+          if (step%stride===0&&pad.steps[step]&&padIsAudible(pad.id)) audio.trigger(pad.id,pad,flashPad,stepTriggerTime(time,project.bpm,pad.stepOffsets?.[step]||0));
         });
         const absoluteStep=nextStep;
         voiceLab?.scheduleMelodyStep(absoluteStep,time,project.bpm);
@@ -708,7 +719,7 @@ function startSequencer() {
           if(!transportTimer)return;
           showDirectorPlayingStep(step);
           voiceLab?.highlightRapBar(absoluteStep);
-          updateBeatIndicator(step);
+          updateBeatIndicator(Math.floor(step/stride));
         },Math.max(0,(time-audio.context.currentTime)*1000));
         nextStep++;
         nextStepTime+=secondsPerStep;
@@ -1179,6 +1190,11 @@ function bindControls() {
     project.layout=event.target.value;
     if(selected>=PAD_COUNT[project.layout])selected=0;
     renderGrid();renderControls();renderSteps();renderVideoDirector();syncRegionPreview();queueSave();
+  });
+  $('grid-division').addEventListener('change',event=>{
+    if(patternRecording)return;
+    project.gridDivision=['1/4','1/8','1/16'].includes(event.target.value)?event.target.value:'1/16';
+    renderSteps();queueSave();
   });
   $('bpm-input').addEventListener('change',event=>{
     project.bpm=clamp(event.target.value,40,240);event.target.value=project.bpm;

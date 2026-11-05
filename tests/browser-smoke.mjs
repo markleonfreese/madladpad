@@ -130,6 +130,20 @@ try {
     assert.equal(await page.locator('#track-grid .track-row').count(),count,`all-tracks view should refresh to ${count} lanes for ${layout}`);
     assert.equal(await page.locator('#track-grid .track-row .track-steps .step').count(),count*16,`every ${layout} lane should retain all 16 steps`);
   }
+  await page.locator('#grid-division').selectOption('1/4');
+  assert.equal(await page.locator('#steps .step').count(),4,'quarter grid should show four cells');
+  assert.deepEqual(await page.locator('#steps .step').evaluateAll(buttons=>buttons.map(button=>Number(button.dataset.step))),[0,4,8,12]);
+  assert.equal(await page.locator('#track-grid .track-steps .step').count(),48,'quarter grid should show four mapped cells per visible lane');
+  await page.locator('#grid-division').selectOption('1/8');
+  assert.equal(await page.locator('#steps .step').count(),8,'eighth grid should show eight cells');
+  await page.locator('#grid-division').selectOption('1/16');
+  assert.equal(await page.locator('#steps .step').count(),16,'switching back should reveal all stored sixteenth steps');
+  await page.locator('.track-row[data-pad="0"] [data-step="15"]').click();
+  await page.locator('#grid-division').selectOption('1/4');
+  assert.equal(await page.locator('.track-row[data-pad="0"] [data-step="15"]').count(),0,'coarser grids should hide finer cells');
+  await page.locator('#grid-division').selectOption('1/16');
+  assert.equal(await page.locator('.track-row[data-pad="0"] [data-step="15"]').getAttribute('aria-pressed'),'true','hidden fine steps should remain stored when changing divisions');
+  await page.locator('.track-row[data-pad="0"] [data-step="15"]').click();
   assert.ok((await page.locator('#track-grid .track-row').first().locator('.track-name').textContent()).includes('Demo synth 01'),'demo-enabled empty lanes should be identified as demo synths');
   await page.locator('#demo-button').click();
   assert.ok((await page.locator('#track-grid .track-row').first().locator('.track-name').textContent()).includes('Empty pad'),'turning demo sounds off should refresh visible lane labels');
@@ -156,7 +170,11 @@ try {
   await page.locator('#play-seq').click();
   checkpoint('layouts, demo and sequencer');
   await page.waitForFunction(() => document.querySelector('#play-seq').textContent.includes('STOP'));
+  await page.locator('#grid-division').selectOption('1/4');
+  await page.locator('#steps .step.current[data-step="8"]').waitFor({timeout:4000});
+  assert.equal(await page.locator('#steps .step.current').getAttribute('data-step'),'8','coarse-grid playhead should track the mapped sixteenth-step position');
   await page.locator('#play-seq').click();
+  await page.locator('#grid-division').selectOption('1/16');
   await page.keyboard.press('q');
   assert.deepEqual(errors, [], 'keyboard-triggered demo pad should not produce a page error');
   await page.locator('#clear-steps').click();
@@ -187,6 +205,8 @@ try {
   assert.ok(!replacementPattern.includes(15),'replace should clear the previous step');
   await page.locator('#undo-pattern').click();
   assert.deepEqual(await activeSteps(),originalPattern,'undo should restore the replaced pattern');
+  await page.locator('#grid-division').selectOption('1/4');
+  await page.locator('#steps .step').nth(1).click();
   await page.locator('#scene-name').fill('Smoke Intro');
   await page.locator('#save-scene').click();
   await page.locator('#clear-steps').click();
@@ -194,7 +214,8 @@ try {
   assert.equal(await page.locator('#steps .step.on').count(),0,'clear should remove the selected pattern');
   await page.locator('#launch-scene').click();
   await page.waitForFunction(()=>document.querySelector('#steps .step.on'));
-  assert.ok(await page.locator('#steps .step.on').count()>0,'loading a saved scene should restore its pattern');
+  assert.equal(await page.locator('#grid-division').inputValue(),'1/4','scene loading should restore its saved grid division');
+  assert.equal(await page.locator('#steps .step.on').first().getAttribute('data-step'),'4','scene loading should restore its coarse-grid pattern');
   assert.equal(await page.locator('#scene-select option').count(),1);
   checkpoint('live pattern capture and named scene round-trip');
   const recordingSupported=await page.evaluate(()=>Boolean(window.MediaRecorder&&HTMLCanvasElement.prototype.captureStream));
@@ -255,6 +276,8 @@ try {
   assert.equal(await page.locator('#project-title').inputValue(), 'Smoke pack');
   assert.equal(await page.locator('#scene-select option').count(),1,'named scenes should persist across reload');
   assert.ok(await page.locator('#steps .step.on').count()>0,'scene pattern should persist across reload');
+  await openScreen('beats');
+  await page.locator('#grid-division').selectOption('1/16');
   await openScreen('voice');
   await page.locator('#voice-consent').check();
   await page.locator('#voice-transcribe').click();

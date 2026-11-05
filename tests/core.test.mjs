@@ -7,6 +7,7 @@ test('initial layout has 12 visible pads and 16 backing slots', () => {
   assert.equal(PAD_COUNT[project.layout], 12);
   assert.equal(project.pads.length, 16);
   assert.equal(project.pads[0].steps.length, 16);
+  assert.equal(project.gridDivision,'1/16');
 });
 test('malformed project metadata is bounded and cannot inject extra pads', () => {
   const project = normaliseProject({layout: '100x100', bpm: 999, pads: [{pitch: -500, volume: 9, steps: [1,0]}]});
@@ -37,12 +38,21 @@ test('scene launch schedules on the next bar and scenes normalize safely',()=>{
   assert.equal(p.scenes[0].pads[0].steps[0],true);
   assert.deepEqual(p.scenes[0].pads[0].stepOffsets.slice(0,2),[.25,.9999]);
   assert.deepEqual(makeProject().scenes,[]);
+  assert.equal(p.scenes[0].gridDivision,'1/16','legacy scenes should default to the full 16th-note grid');
+  assert.equal(normaliseProject({gridDivision:'1/4',scenes:[{gridDivision:'1/8'}]}).gridDivision,'1/4');
+  assert.equal(normaliseProject({gridDivision:'triplet'}).gridDivision,'1/16');
+  assert.equal(normaliseProject({scenes:[{gridDivision:'1/8'}]}).scenes[0].gridDivision,'1/8');
 });
 test('pattern capture can snap or retain timing offsets within a step',()=>{
   assert.deepEqual(captureStepPosition(.1,120,'nearest'),{step:1,offset:0});
   assert.deepEqual(captureStepPosition(.1,120,'off'),{step:0,offset:.8});
   assert.deepEqual(captureStepPosition(2.125,120,'off'),{step:1,offset:0});
   assert.deepEqual(captureStepPosition(-1,120,'off'),{step:0,offset:0});
+  assert.deepEqual(captureStepPosition(.24,120,'nearest',4),{step:0,offset:0});
+  assert.deepEqual(captureStepPosition(.26,120,'nearest',4),{step:4,offset:0});
+  assert.deepEqual(captureStepPosition(.13,120,'nearest',2),{step:2,offset:0});
+  assert.deepEqual(captureStepPosition(1.99,120,'nearest',4),{step:0,offset:0},'coarse quantization wraps cleanly to the next bar');
+  assert.deepEqual(captureStepPosition(.1,120,'off',4),{step:0,offset:.8},'free timing stays at sixteenth-note resolution');
   assert.equal(stepTriggerTime(5,120,.8),5.1);
   assert.equal(stepTriggerTime(5,120,2),5+.9999*.125);
 });
