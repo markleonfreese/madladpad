@@ -285,7 +285,7 @@ function analyseVideoAudioDuringPlayback(file,token){
 }
 
 async function findGoodSounds(){
-  const token=++onsetRun,file=mediaFiles.get(selected);
+  const token=++onsetRun,file=mediaFiles.get(selected),windowSeconds=Number($('suggestion-length').value);
   onsetWorker?.terminate();onsetWorker=null;$('sample-suggestions').replaceChildren();
   if(!file||!file.type.match(/^(audio|video)\//))return $('analysis-status').textContent='Choose a local audio or video sample first.';
   if(!previewDuration)return $('analysis-status').textContent='Wait for the media duration to load before starting analysis.';
@@ -311,7 +311,7 @@ async function findGoodSounds(){
     const worker=new Worker(new URL('./onsets-worker.js',import.meta.url),{type:'module'});onsetWorker=worker;
     worker.onmessage=event=>{if(token!==onsetRun)return;if(event.data.error){$('cancel-analysis').hidden=true;$('find-samples').disabled=false;$('analysis-status').textContent=`Analysis unavailable: ${event.data.error}. Manual selection still works.`;worker.terminate();onsetWorker=null;return;}showOnsetSuggestions(event.data.suggestions,token,analysisSource);$('find-samples').disabled=false;};
     worker.onerror=()=>{if(token!==onsetRun)return;$('cancel-analysis').hidden=true;$('find-samples').disabled=false;$('analysis-status').textContent='Local analysis failed in this browser. Manual selection still works.';worker.terminate();onsetWorker=null;};
-    worker.postMessage({buffer:mono.buffer,sampleRate},[mono.buffer]);$('analysis-status').textContent=`Finding transient regions from ${analysisSource} locally…`;
+    worker.postMessage({buffer:mono.buffer,sampleRate,windowSeconds},[mono.buffer]);$('analysis-status').textContent=`Finding ${windowSeconds}-second transient regions from ${analysisSource} locally…`;
   }catch(error){if(token===onsetRun){$('cancel-analysis').hidden=true;$('find-samples').disabled=false;$('analysis-status').textContent=`Suggestions unavailable for this media codec: ${error.message}. Manual selection still works.`;}}
 }
 

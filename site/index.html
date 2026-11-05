@@ -85,7 +85,7 @@
             <button id="region-apply" type="button" disabled>Apply to pad</button>
             <button id="region-reset" type="button" disabled>Reset</button>
           </div>
-          <div class="region-actions"><button id="find-samples" type="button" disabled>Find good sounds on this device</button><button id="cancel-analysis" type="button" hidden>Cancel analysis</button></div>
+          <div class="region-actions"><label class="suggestion-length-control" for="suggestion-length">SUGGESTION LENGTH<select id="suggestion-length"><option value="0.25">0.25 s · quick hit</option><option value="0.5">0.5 s · short</option><option value="0.8" selected>0.8 s · phrase</option><option value="1.2">1.2 s · long phrase</option><option value="2">2 s · full phrase</option></select></label><button id="find-samples" type="button" disabled>Find good sounds on this device</button><button id="cancel-analysis" type="button" hidden>Cancel analysis</button></div>
           <p id="analysis-status" role="status">Suggestions are opt-in and processed locally.</p><div id="sample-suggestions" class="sample-suggestions" role="group" aria-label="Suggested sample regions"></div>
         </section>
         <div class="sliders">
