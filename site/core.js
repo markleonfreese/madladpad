@@ -231,7 +231,9 @@ export function suggestActiveRegion(levels, duration) {
   if (!Array.isArray(levels) || !levels.length || !Number.isFinite(duration) || duration <= 0) return {start:0,end:Math.max(.05,duration||.05)};
   const sorted=[...levels].sort((a,b)=>a-b);
   const floor=sorted[Math.floor((sorted.length-1)*.2)]||0;
-  const gate=Math.max(.018,floor*2.5);
+  // Adapt to the quietest part of the take so low-gain speech can clear the
+  // detector while sustained room noise still has to rise well above its floor.
+  const gate=Math.max(.006,floor*2.5);
   const active=levels.map((level,index)=>level>=gate?index:-1).filter(index=>index>=0);
   if(!active.length)return {start:0,end:duration};
   const frame=duration/levels.length;

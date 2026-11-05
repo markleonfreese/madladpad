@@ -23,6 +23,20 @@ test('capture analysis offers active sound with trim handles and silence fallbac
   assert.deepEqual(core.suggestActiveRegion([],0),{start:0,end:.05});
 });
 
+test('capture analysis finds quiet sounds above a local noise floor', () => {
+  const quiet=Array(40).fill(.002);
+  quiet[10]=.012;quiet[11]=.01;quiet[12]=.008;
+  const quietRegion=core.suggestActiveRegion(quiet,2);
+  assert.ok(quietRegion.start>.2&&quietRegion.start<.6);
+  assert.ok(quietRegion.end>.5&&quietRegion.end<1);
+
+  const noisy=Array(40).fill(.01);
+  noisy[20]=.05;noisy[21]=.04;
+  const noisyRegion=core.suggestActiveRegion(noisy,2);
+  assert.ok(noisyRegion.start>.8&&noisyRegion.start<1.2);
+  assert.ok(noisyRegion.end>1.1&&noisyRegion.end<1.5);
+});
+
 test('retake discards only the pending take; cancel invalidates late recording', () => {
   const capture = new core.CaptureSession();
   const token = capture.begin(8);
