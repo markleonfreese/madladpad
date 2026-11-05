@@ -53,6 +53,7 @@ const lastTakes = { video:null, audio:null };
 function showStudioScreen() {
   const requested = location.hash.slice(1);
   const screen = STUDIO_SCREENS.has(requested) ? requested : 'sounds';
+  if (screen !== 'voice') voiceLab?.stopTuner?.('Voice Lab closed. Microphone is off.');
   document.body.dataset.screen = screen;
   for(const link of $('studio-nav').querySelectorAll('[data-studio-screen]')) {
     if(link.dataset.studioScreen===screen)link.setAttribute('aria-current','page');

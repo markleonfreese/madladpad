@@ -1,5 +1,6 @@
 import { clamp, midiFrequency, midiFile, estimateSyllables, HARMONY_INTERVALS, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, findAudioRecorderMime, extensionForAudioMime } from './core.js';
 import { getValue, saveVoiceLayer, deleteVoiceLayer } from './storage.js';
+import { detectPitch } from './tuner.js';
 
 const $ = id => document.getElementById(id);
 const rhymes = {
@@ -265,10 +266,22 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   const project = getProject(), audio = getAudio();
   let worker = null;
   let vocalRecording = null;
+  let tunerStream = null, tunerSource = null, tunerAnalyser = null, tunerTimer = null, tunerFrame = null;
   const vocalFiles = new Map();
   const updateConsentState = () => { $('voice-transcribe').disabled = !$('voice-source-pad').value || !$('voice-consent').checked; };
   const updateManualEntryState = () => { $('voice-manual-add').disabled = !$('voice-source-pad').value || !getMediaFiles().has(Number($('voice-source-pad').value)) || !$('voice-manual-text').value.trim(); };
   const transportState = () => getTransport?.() || {running:false, epoch:audio.transportEpoch, bpm:project.bpm};
+  const stopTuner = (message = 'Tuner stopped. Microphone is off.') => {
+    if (tunerTimer) clearInterval(tunerTimer);
+    tunerTimer = null;
+    if (tunerFrame) cancelAnimationFrame(tunerFrame);
+    tunerFrame = null;
+    try { tunerSource?.disconnect(); } catch { /* already disconnected */ }
+    tunerSource = null; tunerAnalyser = null;
+    tunerStream?.getTracks().forEach(track => track.stop()); tunerStream = null;
+    $('tuner-start').hidden = false; $('tuner-stop').hidden = true;
+    $('tuner-status').textContent = message;
+  };
   const updateOverdubControls = () => {
     const state = transportState();
     $('voice-overdub-record').disabled = !state.running || Boolean(vocalRecording) || project.voice.layers.length >= MAX_VOCAL_LAYERS;
@@ -456,6 +469,39 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     transcript.words.forEach(word => { word.selected = false; }); save(); render();
   });
   $('melody-tuning').addEventListener('change', () => { project.voice.melody.tuning = clamp($('melody-tuning').value, 400, 480); save(); renderMelody(project, save); });
+  $('tuner-start').addEventListener('click', async () => {
+    $('tuner-start').disabled = true;
+    $('tuner-status').textContent = 'Requesting microphone access. Audio stays on this device…';
+    try {
+      if (!navigator.mediaDevices?.getUserMedia || !window.AudioContext) throw new Error('This browser does not support local microphone analysis.');
+      await audio.unlock();
+      tunerStream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+      if (!tunerStream.getAudioTracks().length) throw new Error('The browser did not provide an audio track.');
+      tunerSource = audio.context.createMediaStreamSource(tunerStream);
+      tunerAnalyser = audio.context.createAnalyser(); tunerAnalyser.fftSize = 2048; tunerSource.connect(tunerAnalyser);
+      tunerFrame = new Float32Array(tunerAnalyser.fftSize);
+      $('tuner-start').hidden = true; $('tuner-stop').hidden = false;
+      $('tuner-status').textContent = 'Listening locally. Play one steady note near your microphone.';
+      const update = () => {
+        if (!tunerAnalyser) return;
+        tunerAnalyser.getFloatTimeDomainData(tunerFrame);
+        const result = detectPitch(tunerFrame, audio.context.sampleRate, project.voice.melody.tuning);
+        if (result) {
+          const cents = Math.round(result.cents), inTune = Math.abs(cents) <= 5;
+          $('tuner-note').textContent = result.note; $('tuner-frequency').textContent = `${result.frequency.toFixed(1)} Hz`;
+          $('tuner-cents').textContent = `${cents > 0 ? '+' : ''}${cents} cents · A4 = ${project.voice.melody.tuning} Hz${inTune ? ' · IN TUNE' : ''}`;
+          $('tuner-needle').style.left = `${50 + Math.max(-50, Math.min(50, cents))}%`;
+        } else {
+          $('tuner-note').textContent = '—'; $('tuner-frequency').textContent = 'Play one steady note';
+          $('tuner-cents').textContent = `A4 = ${project.voice.melody.tuning} Hz`; $('tuner-needle').style.left = '50%';
+        }
+      };
+      tunerTimer = setInterval(update, 90); update();
+      const track = tunerStream.getAudioTracks()[0]; track.addEventListener('ended', () => stopTuner('Microphone ended. Tuner stopped.'));
+    } catch (error) { stopTuner(`Tuner could not start: ${error.message}`); }
+    finally { $('tuner-start').disabled = false; }
+  });
+  $('tuner-stop').addEventListener('click', () => stopTuner());
   $('melody-harmony-interval').addEventListener('change', () => { const interval = Number($('melody-harmony-interval').value); if (!HARMONY_INTERVALS.includes(interval)) return; project.voice.melody.harmonyInterval = interval; save(); });
   $('melody-add').addEventListener('click', () => { if (project.voice.melody.notes.length >= MAX_MELODY_NOTES) return; const notes = project.voice.melody.notes; notes.push({ midi: 60, step: notes.length ? notes.at(-1).step + 4 : 0, duration: 4, word: '', layer: 'lead' }); save(); renderMelody(project, save); });
   $('melody-harmony-add').addEventListener('click', () => {
@@ -496,6 +542,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   return {
     transportStarted(epoch, bpm) { audio.playVocalLayers(project.voice.layers, epoch, bpm); updateOverdubControls(); },
     transportStopped() { audio.stopVocalLayers(); if (vocalRecording) stopOverdub(); updateOverdubControls(); },
+    stopTuner,
     transportChanged() { updateOverdubControls(); },
     isRecording() { return Boolean(vocalRecording); },
     reloadLayers
