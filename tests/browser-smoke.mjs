@@ -614,7 +614,7 @@ try {
   const captureSupported=await page.evaluate(()=>Boolean(navigator.mediaDevices?.getUserMedia&&window.MediaRecorder));
   if(captureSupported){
     await page.locator('#bpm-input').fill('240');
-    await page.locator('#bpm-input').press('Tab');
+    await page.locator('#bpm-input').dispatchEvent('change');
     const trackCameraStreams=()=>page.evaluate(()=>{
       window.__cameraCaptureStreams=[];
       const getUserMedia=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
@@ -646,7 +646,7 @@ try {
     await page.locator('#camera-retake').click();
     await page.waitForFunction(()=>!document.querySelector('#camera-capture').disabled,null,{timeout:5000});
     await page.locator('#bpm-input').fill('120');
-    await page.locator('#bpm-input').press('Tab');
+    await page.locator('#bpm-input').dispatchEvent('change');
     await page.locator('#camera-length').selectOption('3');
     assert.equal(await page.locator('#camera-length-summary').textContent(),'One-shot · up to 3 seconds','one-shot capture options should retain their fixed duration');
     await page.waitForFunction(()=>!document.querySelector('#camera-capture').disabled);
