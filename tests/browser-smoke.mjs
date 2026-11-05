@@ -60,6 +60,15 @@ try {
   });
   const page = await context.newPage();
   await page.addInitScript(() => {
+    window.forceWebmDecodeFailure=false;
+    const decodeAudioData=AudioContext.prototype.decodeAudioData;
+    AudioContext.prototype.decodeAudioData=function(data,...args){
+      const bytes=new Uint8Array(data,0,Math.min(data.byteLength,4));
+      if(window.forceWebmDecodeFailure&&bytes.length===4&&bytes[0]===0x1a&&bytes[1]===0x45&&bytes[2]===0xdf&&bytes[3]===0xa3)return Promise.reject(new DOMException('Synthetic video container decode failure','EncodingError'));
+      return decodeAudioData.call(this,data,...args);
+    };
+  });
+  await page.addInitScript(() => {
     const NativeWorker = window.Worker;
     window.Worker = class extends NativeWorker {
       constructor(url, options) {
@@ -488,6 +497,42 @@ try {
   await page.locator('.pad').first().hover();
   await page.locator('.pad .edit-pad').first().click();
   checkpoint('manual later-region preview/apply, local suggestions and reload persistence');
+  const syntheticVideo=await page.evaluate(async()=>{
+    if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream)throw new Error('WebM capture unavailable');
+    const canvas=document.createElement('canvas');canvas.width=160;canvas.height=120;const draw=canvas.getContext('2d');
+    const paint=()=>{draw.fillStyle=`rgb(${Math.floor(Math.random()*255)},40,120)`;draw.fillRect(0,0,160,120);if(!recorder.state||recorder.state==='recording')requestAnimationFrame(paint);};
+    const audio=new AudioContext(),oscillator=audio.createOscillator(),gain=audio.createGain(),destination=audio.createMediaStreamDestination();
+    gain.gain.value=0;oscillator.connect(gain);gain.connect(destination);oscillator.start();
+    const stream=new MediaStream([...canvas.captureStream(30).getVideoTracks(),...destination.stream.getAudioTracks()]);
+    const mimeType=MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')?'video/webm;codecs=vp8,opus':'video/webm';
+    const recorder=new MediaRecorder(stream,{mimeType,videoBitsPerSecond:200000,audioBitsPerSecond:64000}),chunks=[];
+    recorder.ondataavailable=event=>{if(event.data.size)chunks.push(event.data);};
+    const started=audio.currentTime;for(const time of [.25,.9,1.55]){gain.gain.setValueAtTime(0,started+time);gain.gain.linearRampToValueAtTime(.55,started+time+.01);gain.gain.setValueAtTime(.55,started+time+.12);gain.gain.linearRampToValueAtTime(0,started+time+.14);}
+    recorder.start();requestAnimationFrame(paint);
+    const blob=await new Promise(resolve=>{recorder.onstop=()=>resolve(new Blob(chunks,{type:recorder.mimeType}));setTimeout(()=>recorder.stop(),2100);});
+    for(const track of stream.getTracks())track.stop();oscillator.stop();await audio.close();
+    return {type:blob.type,bytes:Array.from(new Uint8Array(await blob.arrayBuffer()))};
+  });
+  assert.match(syntheticVideo.type,/video\/webm/,'fallback fixture should be a WebM video');
+  await page.locator('.pad').nth(10).hover();
+  await page.locator('.pad .edit-pad').nth(10).click();
+  await page.locator('#media-input').setInputFiles({name:'synthetic-audio-video.webm',mimeType:'video/webm',buffer:Buffer.from(syntheticVideo.bytes)});
+  await page.waitForTimeout(1000);
+  await page.getByText(/synthetic-audio-video\.webm.*stored on this device/).waitFor({timeout:5000});
+  await page.waitForFunction(()=>Number(document.querySelector('#region-end').max)>=2);
+  await page.evaluate(()=>window.forceWebmDecodeFailure=true);
+  await page.locator('#find-samples').click();
+  await page.waitForFunction(()=>document.querySelectorAll('#sample-suggestions .suggestion').length>=2||document.querySelector('#analysis-status').textContent.includes('unavailable'),null,{timeout:10000});
+  assert.ok(await page.locator('#sample-suggestions .suggestion').count()>=2,`video playback fallback should find transient audio: ${await page.locator('#analysis-status').textContent()}`);
+  assert.match(await page.locator('#analysis-status').textContent(),/from video playback/,'video suggestions should identify their local playback analysis source');
+  checkpoint('video codec fallback analyses its local audio track through browser playback');
+  await page.locator('#find-samples').click();
+  await page.waitForFunction(()=>/Trying its audio track|Listening to this video's audio/.test(document.querySelector('#analysis-status').textContent),null,{timeout:5000});
+  await page.locator('#cancel-analysis').click();
+  assert.match(await page.locator('#analysis-status').textContent(),/Analysis canceled/,'video playback analysis should cancel cleanly');
+  assert.equal(await page.locator('#sample-suggestions .suggestion').count(),0,'canceling a second run should discard stale suggestions');
+  await page.evaluate(()=>window.forceWebmDecodeFailure=false);
+  checkpoint('video playback analysis cancellation');
   if(audioRecordingSupported){
     await page.waitForFunction(()=>!document.querySelector('#pitch').disabled);
     const fixtureRms=await page.evaluate(async encoded=>{const bytes=Uint8Array.from(atob(encoded),character=>character.charCodeAt(0));const context=new AudioContext();const decoded=await context.decodeAudioData(bytes.buffer);const samples=decoded.getChannelData(0);const rms=Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length);await context.close();return {duration:decoded.duration,rms};},wav.toString('base64'));

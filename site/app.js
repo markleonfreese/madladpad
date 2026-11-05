@@ -42,6 +42,7 @@ let regionDraft = null;
 let previewingRegion = false;
 let onsetWorker = null;
 let onsetRun = 0;
+let onsetMediaAnalysis = null;
 const durations = new Map();
 const mediaFiles = new Map();
 const pads = [];
@@ -222,13 +223,14 @@ function syncRegionPreview() {
 }
 
 function cancelOnsetAnalysis(updateStatus=true){
+  onsetMediaAnalysis?.cancel();
   onsetRun++;onsetWorker?.terminate();onsetWorker=null;
   if($('cancel-analysis'))$('cancel-analysis').hidden=true;
   if($('find-samples'))$('find-samples').disabled=!mediaFiles.has(selected);
   if(updateStatus&&$('analysis-status'))$('analysis-status').textContent='Analysis canceled. Manual region selection is still available.';
 }
 
-function showOnsetSuggestions(suggestions,token){
+function showOnsetSuggestions(suggestions,token,source='decoded local audio'){
   if(token!==onsetRun)return;
   onsetWorker?.terminate();onsetWorker=null;$('cancel-analysis').hidden=true;
   const list=$('sample-suggestions');list.replaceChildren();
@@ -237,7 +239,49 @@ function showOnsetSuggestions(suggestions,token){
     const button=document.createElement('button');button.type='button';button.className='suggestion';button.textContent=`Candidate ${index+1} · ${candidate.start.toFixed(2)}–${candidate.end.toFixed(2)} s · onset score ${candidate.score.toFixed(2)}`;
     button.addEventListener('click',()=>{regionDraft=normaliseRegion(candidate.start,candidate.end,previewDuration);$('region-preview').pause();previewingRegion=false;$('region-preview').currentTime=regionDraft.start;renderRegion();$('analysis-status').textContent='Heuristic suggestion selected. Preview, adjust, apply or ignore it.';});list.append(button);
   });
-  $('analysis-status').textContent='Local heuristic candidates. Scores rank transients; they do not judge musical quality.';
+  $('analysis-status').textContent=`Local heuristic candidates from ${source}. Scores rank transients; they do not judge musical quality.`;
+}
+
+function analyseVideoAudioDuringPlayback(file,token){
+  return new Promise((resolve,reject)=>{
+    const context=audio.context,element=document.createElement('video'),url=URL.createObjectURL(file),levels=[];
+    let source,gain,timer,progress,settled=false;
+    const cleanup=()=>{
+      clearInterval(timer);clearInterval(progress);element.pause();element.removeAttribute('src');element.load();
+      try{source?.disconnect();gain?.disconnect();}catch{}
+      URL.revokeObjectURL(url);if(onsetMediaAnalysis?.token===token)onsetMediaAnalysis=null;
+    };
+    const finish=(error=null)=>{
+      if(settled)return;settled=true;cleanup();
+      if(error)reject(error);else resolve(token===onsetRun?Float32Array.from(levels):null);
+    };
+    const cancel=()=>finish();
+    onsetMediaAnalysis={token,cancel};
+    element.preload='auto';element.playsInline=true;element.src=url;
+    element.onerror=()=>finish(new Error('The browser could not play this video to inspect its audio track.'));
+    element.onended=()=>finish();
+    element.onloadedmetadata=async()=>{
+      try{
+        if(!Number.isFinite(element.duration)||element.duration<=0||element.duration>120)throw new Error('Video playback analysis is limited to 120 seconds.');
+        await context.resume();
+        if(token!==onsetRun)return finish();
+        const analyser=context.createAnalyser();analyser.fftSize=1024;
+        source=context.createMediaElementSource(element);gain=context.createGain();gain.gain.value=0;
+        source.connect(analyser);analyser.connect(gain);gain.connect(context.destination);
+        const samples=new Float32Array(analyser.fftSize);
+        timer=setInterval(()=>{
+          if(token!==onsetRun)return cancel();
+          analyser.getFloatTimeDomainData(samples);let sum=0;
+          for(const sample of samples)sum+=sample*sample;
+          levels.push(Math.sqrt(sum/samples.length));
+          if(levels.length>=6000)finish();
+        },20);
+        progress=setInterval(()=>{if(token===onsetRun)$('analysis-status').textContent=`Listening to this video's audio locally… ${element.currentTime.toFixed(1)} s of ${element.duration.toFixed(1)} s. Keep this tab open or cancel.`;},500);
+        await element.play();
+      }catch(error){finish(error);}
+    };
+    element.load();
+  });
 }
 
 async function findGoodSounds(){
@@ -247,17 +291,27 @@ async function findGoodSounds(){
   if(!previewDuration)return $('analysis-status').textContent='Wait for the media duration to load before starting analysis.';
   if(file.size>32*1024*1024)return $('analysis-status').textContent='This file exceeds the 32 MB phone-analysis budget. Manual selection still works.';
   if(previewDuration>120)return $('analysis-status').textContent='Analysis is limited to 120 seconds. Manual selection still works.';
-  $('cancel-analysis').hidden=false;$('find-samples').disabled=true;$('analysis-status').textContent='Decoding this local file. Cancel ignores the result, but cannot interrupt the browser decoder. Video containers vary; manual selection always remains available.';
+  $('cancel-analysis').hidden=false;$('find-samples').disabled=true;$('analysis-status').textContent='Reading this local file. The browser may not interrupt file decoding immediately; manual selection always remains available.';
   try{
-    const decoded=await audio.context.decodeAudioData(await file.arrayBuffer());
-    if(token!==onsetRun)return;
-    if(decoded.duration>120||decoded.length*decoded.numberOfChannels>8_000_000)throw new Error('Decoded audio exceeds the 120-second or 8-million-sample budget.');
-    const mono=new Float32Array(decoded.length),channels=decoded.numberOfChannels;
-    for(let channel=0;channel<channels;channel++){const samples=decoded.getChannelData(channel);for(let i=0;i<mono.length;i++)mono[i]+=samples[i]/channels;}
+    let mono,sampleRate,analysisSource='decoded local audio';
+    try{
+      const decoded=await audio.context.decodeAudioData(await file.arrayBuffer());
+      if(token!==onsetRun)return;
+      if(decoded.duration>120||decoded.length*decoded.numberOfChannels>8_000_000)throw new Error('Decoded audio exceeds the 120-second or 8-million-sample budget.');
+      mono=new Float32Array(decoded.length);sampleRate=decoded.sampleRate;
+      for(let channel=0;channel<decoded.numberOfChannels;channel++){const samples=decoded.getChannelData(channel);for(let i=0;i<mono.length;i++)mono[i]+=samples[i]/decoded.numberOfChannels;}
+    }catch(error){
+      if(token!==onsetRun)return;
+      if(!file.type.startsWith('video/'))throw error;
+      $('analysis-status').textContent='This browser cannot decode the video container directly. Trying its audio track through local playback…';
+      mono=await analyseVideoAudioDuringPlayback(file,token);
+      if(token!==onsetRun||!mono)return;
+      sampleRate=50;analysisSource='video playback';
+    }
     const worker=new Worker(new URL('./onsets-worker.js',import.meta.url),{type:'module'});onsetWorker=worker;
-    worker.onmessage=event=>{if(token!==onsetRun)return;if(event.data.error){$('cancel-analysis').hidden=true;$('find-samples').disabled=false;$('analysis-status').textContent=`Analysis unavailable: ${event.data.error}. Manual selection still works.`;worker.terminate();onsetWorker=null;return;}showOnsetSuggestions(event.data.suggestions,token);$('find-samples').disabled=false;};
+    worker.onmessage=event=>{if(token!==onsetRun)return;if(event.data.error){$('cancel-analysis').hidden=true;$('find-samples').disabled=false;$('analysis-status').textContent=`Analysis unavailable: ${event.data.error}. Manual selection still works.`;worker.terminate();onsetWorker=null;return;}showOnsetSuggestions(event.data.suggestions,token,analysisSource);$('find-samples').disabled=false;};
     worker.onerror=()=>{if(token!==onsetRun)return;$('cancel-analysis').hidden=true;$('find-samples').disabled=false;$('analysis-status').textContent='Local analysis failed in this browser. Manual selection still works.';worker.terminate();onsetWorker=null;};
-    worker.postMessage({buffer:mono.buffer,sampleRate:decoded.sampleRate},[mono.buffer]);$('analysis-status').textContent='Finding transient regions locally…';
+    worker.postMessage({buffer:mono.buffer,sampleRate},[mono.buffer]);$('analysis-status').textContent=`Finding transient regions from ${analysisSource} locally…`;
   }catch(error){if(token===onsetRun){$('cancel-analysis').hidden=true;$('find-samples').disabled=false;$('analysis-status').textContent=`Suggestions unavailable for this media codec: ${error.message}. Manual selection still works.`;}}
 }
 
