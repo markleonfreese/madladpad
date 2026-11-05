@@ -37,7 +37,7 @@ npx wrangler dev
 
 The browser smoke uses synthetic media and Chromium's fake camera/microphone. It checks the UI, persistence, exports and offline shell; it does not replace real Android/iOS camera, codec, touch, listening or accessibility acceptance. `test:workers-runtime` launches Wrangler locally and checks the configured static assets, canonical `/index.html` redirect and SPA navigation fallback without contacting Cloudflare.
 
-Cloudflare Workers Static Assets serves `site/`; `wrangler.jsonc` configures the project. `npx wrangler deploy` publishes to the Cloudflare account selected by the authenticated CLI. Verify the account and target hostname before deployment.
+Cloudflare Workers Static Assets serves `site/`; `wrangler.jsonc` pins the project to the personal Cloudflare account that owns the public Worker. Read [RELEASE.md](RELEASE.md) before publishing or rolling back production.
 
 ## Google Picker setup (optional)
 
