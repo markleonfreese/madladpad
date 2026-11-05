@@ -32,7 +32,7 @@
 [hidden]{display:none!important}
 .studio-nav{display:flex;gap:6px;overflow-x:auto;scrollbar-width:thin;padding:16px 0 5px;margin-bottom:14px;border-bottom:1px solid var(--line)}
 .studio-nav a{display:flex;align-items:center;gap:8px;flex:0 0 auto;min-height:44px;padding:10px 15px;border-radius:9px 9px 0 0;color:#a6b5a6;text-decoration:none;font-size:12px;font-weight:750;border-bottom:3px solid transparent}
-.studio-nav a span{font:10px var(--mono);color:#7b927e}
+.studio-nav a span{font:10px var(--mono);color:#a5b9a6}
 .studio-nav a[aria-current=page]{color:var(--acid);border-bottom-color:var(--acid);background:#1f2b21}
 .studio-nav a:focus-visible{outline:2px solid var(--acid);outline-offset:-2px}
 .workspace.wide-grid{grid-template-columns:minmax(0,1fr)}
