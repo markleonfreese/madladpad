@@ -60,10 +60,11 @@ try {
   });
   const page = await context.newPage();
   await page.addInitScript(() => {
+    window.forceWebmDecodeFailure=false;
     const decodeAudioData=AudioContext.prototype.decodeAudioData;
     AudioContext.prototype.decodeAudioData=function(data,...args){
       const bytes=new Uint8Array(data,0,Math.min(data.byteLength,4));
-      if(bytes.length===4&&bytes[0]===0x1a&&bytes[1]===0x45&&bytes[2]===0xdf&&bytes[3]===0xa3)return Promise.reject(new DOMException('Synthetic video container decode failure','EncodingError'));
+      if(window.forceWebmDecodeFailure&&bytes.length===4&&bytes[0]===0x1a&&bytes[1]===0x45&&bytes[2]===0xdf&&bytes[3]===0xa3)return Promise.reject(new DOMException('Synthetic video container decode failure','EncodingError'));
       return decodeAudioData.call(this,data,...args);
     };
   });
@@ -517,9 +518,9 @@ try {
   await page.locator('.pad .edit-pad').nth(10).click();
   await page.locator('#media-input').setInputFiles({name:'synthetic-audio-video.webm',mimeType:'video/webm',buffer:Buffer.from(syntheticVideo.bytes)});
   await page.waitForTimeout(1000);
-  console.log('[smoke] video fixture',JSON.stringify({type:syntheticVideo.type,bytes:syntheticVideo.bytes.length,info:await page.locator('#sample-info').textContent(),toast:await page.locator('#toast').textContent()}));
   await page.getByText(/synthetic-audio-video\.webm.*stored on this device/).waitFor({timeout:5000});
   await page.waitForFunction(()=>Number(document.querySelector('#region-end').max)>=2);
+  await page.evaluate(()=>window.forceWebmDecodeFailure=true);
   await page.locator('#find-samples').click();
   await page.waitForFunction(()=>document.querySelectorAll('#sample-suggestions .suggestion').length>=2||document.querySelector('#analysis-status').textContent.includes('unavailable'),null,{timeout:10000});
   assert.ok(await page.locator('#sample-suggestions .suggestion').count()>=2,`video playback fallback should find transient audio: ${await page.locator('#analysis-status').textContent()}`);
@@ -530,6 +531,7 @@ try {
   await page.locator('#cancel-analysis').click();
   assert.match(await page.locator('#analysis-status').textContent(),/Analysis canceled/,'video playback analysis should cancel cleanly');
   assert.equal(await page.locator('#sample-suggestions .suggestion').count(),0,'canceling a second run should discard stale suggestions');
+  await page.evaluate(()=>window.forceWebmDecodeFailure=false);
   checkpoint('video playback analysis cancellation');
   if(audioRecordingSupported){
     await page.waitForFunction(()=>!document.querySelector('#pitch').disabled);
