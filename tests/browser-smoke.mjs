@@ -613,6 +613,8 @@ try {
   checkpoint('pack round-trip');
   const captureSupported=await page.evaluate(()=>Boolean(navigator.mediaDevices?.getUserMedia&&window.MediaRecorder));
   if(captureSupported){
+    await page.locator('#bpm-input').fill('240');
+    await page.locator('#bpm-input').press('Tab');
     const trackCameraStreams=()=>page.evaluate(()=>{
       window.__cameraCaptureStreams=[];
       const getUserMedia=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
@@ -629,7 +631,24 @@ try {
     assert.notEqual(captureTarget,0,'occupied pad media should remain protected until Keep');
     await page.locator('#capture-target-new').click();
     await page.locator('#camera-dialog').waitFor({state:'visible'});
+    await page.locator('#camera-length').selectOption('bars-2');
+    assert.equal(await page.locator('#camera-length-summary').textContent(),'2 bars · 2.0 seconds at 240 BPM','the two-bar option should follow the session tempo');
+    await page.locator('#camera-length').selectOption('bars-4');
+    assert.equal(await page.locator('#camera-length-summary').textContent(),'4 bars · 4.0 seconds at 240 BPM','the four-bar option should follow the session tempo');
+    await page.locator('#camera-length').selectOption('bars-1');
+    assert.equal(await page.locator('#camera-length-summary').textContent(),'1 bar · 1.0 seconds at 240 BPM','a one-bar take should show its duration at the session tempo');
+    await page.locator('#camera-capture').click();
+    await page.waitForFunction(()=>document.querySelector('#camera-capture').textContent.includes('STOP'));
+    assert.match(await page.locator('#camera-status').textContent(),/Recording 1 bar \(1\.0 seconds at 240 BPM\)/);
+    await page.locator('#camera-keep').waitFor({state:'visible',timeout:6000});
+    await page.waitForFunction(()=>!document.querySelector('#camera-keep').disabled,null,{timeout:6000});
+    assert.equal(await page.locator('#camera-review').isVisible(),true,'a bar-length take should stop automatically and open trim review');
+    await page.locator('#camera-retake').click();
+    await page.waitForFunction(()=>!document.querySelector('#camera-capture').disabled,null,{timeout:5000});
+    await page.locator('#bpm-input').fill('120');
+    await page.locator('#bpm-input').press('Tab');
     await page.locator('#camera-length').selectOption('3');
+    assert.equal(await page.locator('#camera-length-summary').textContent(),'One-shot · up to 3 seconds','one-shot capture options should retain their fixed duration');
     await page.waitForFunction(()=>!document.querySelector('#camera-capture').disabled);
     await page.locator('#camera-capture').click();
     await page.waitForFunction(()=>document.querySelector('#camera-capture').textContent.includes('STOP'));
@@ -637,8 +656,10 @@ try {
     await page.waitForFunction(()=>!document.querySelector('#camera-keep').disabled);
     await page.locator('#camera-keep').click();
     await page.waitForFunction(()=>!document.querySelector('#camera-dialog').open&&document.querySelector('#sample-info').textContent.includes('stored on this device'));
-    const keptCaptureTrackStates=await page.evaluate(()=>window.__cameraCaptureStreams[0]?.getTracks().map(({kind,readyState})=>({kind,readyState})));
-    assert.ok(keptCaptureTrackStates?.length,'keeping a camera take should release its acquired media tracks');
+    await page.locator('#bpm-input').fill('120');
+    await page.locator('#bpm-input').press('Tab');
+    const keptCaptureTrackStates=await page.evaluate(()=>window.__cameraCaptureStreams.flatMap(stream=>stream.getTracks().map(({kind,readyState})=>({kind,readyState}))));
+    assert.ok(keptCaptureTrackStates.length>=4,'the bar-length test and kept capture should each acquire camera and microphone tracks');
     assert.ok(keptCaptureTrackStates.every(track=>track.readyState==='ended'),`keeping a camera take should stop every acquired audio/video track: ${JSON.stringify(keptCaptureTrackStates)}`);
     await page.reload();
     await openScreen('sounds');
