@@ -288,6 +288,21 @@ try {
   assert.equal(tunerBrowserResult.note,'A4','browser-loaded tuner module should identify the standard reference note');
   assert.ok(Math.abs(tunerBrowserResult.frequency-440)<1);
   assert.equal(tunerBrowserResult.rendered,'—','tuner should not read the microphone before explicit opt-in');
+  await page.evaluate(()=>{
+    window.__tunerGetUserMediaCalls=0; window.__tunerStreams=[];
+    const native=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,value:async(...args)=>{
+      window.__tunerGetUserMediaCalls++;
+      const stream=await native(...args); window.__tunerStreams.push(stream); return stream;
+    }});
+  });
+  await page.locator('#tuner-start').click();
+  await page.waitForFunction(()=>document.querySelector('#tuner-status').textContent.includes('Listening locally'));
+  await page.locator('#tuner-stop').click();
+  assert.equal(await page.evaluate(()=>window.__tunerGetUserMediaCalls),1,'one tuner tap should acquire exactly one microphone stream');
+  assert.ok(await page.evaluate(()=>window.__tunerStreams.length===1&&window.__tunerStreams[0].getTracks().every(track=>track.readyState==='ended')),'stopping the tuner should release its only microphone stream');
+  assert.match(await page.locator('#tuner-status').textContent(),/Tuner stopped/);
+  checkpoint('tuner opens and releases exactly one microphone stream per tap');
   await page.locator('#voice-consent').uncheck();
   await page.locator('#voice-manual-text').fill('by hand');
   await page.locator('#voice-manual-start').fill('0.05');
