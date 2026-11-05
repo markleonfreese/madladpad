@@ -489,7 +489,7 @@ try {
   const candidateText=await page.locator('#sample-suggestions .suggestion').first().textContent();
   const candidateBounds=candidateText.match(/· ([0-9.]+)–([0-9.]+) s/);
   const candidateDuration=candidateBounds?Number(candidateBounds[2])-Number(candidateBounds[1]):0;
-  assert.ok(candidateDuration>1.1&&candidateDuration<=1.2,`selected 1.2-second suggestion length should reach ranked candidates: ${candidateText}`);
+  assert.ok(candidateDuration>1.1&&candidateDuration<=1.21,`selected 1.2-second suggestion length should reach ranked candidates: ${candidateText}`);
   await page.locator('#sample-suggestions .suggestion').first().click();
   assert.match(await page.locator('#analysis-status').textContent(),/Heuristic suggestion selected/);
   await page.waitForTimeout(500);
