@@ -542,39 +542,6 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     finally { $('tuner-start').disabled = false; }
   });
   $('tuner-stop').addEventListener('click', () => stopTuner());
-  $('tuner-start').addEventListener('click', async () => {
-    $('tuner-start').disabled = true;
-    $('tuner-status').textContent = 'Requesting microphone access. Audio stays on this device…';
-    try {
-      if (!navigator.mediaDevices?.getUserMedia || !window.AudioContext) throw new Error('This browser does not support local microphone analysis.');
-      await audio.unlock();
-      tunerStream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
-      if (!tunerStream.getAudioTracks().length) throw new Error('The browser did not provide an audio track.');
-      tunerSource = audio.context.createMediaStreamSource(tunerStream);
-      tunerAnalyser = audio.context.createAnalyser(); tunerAnalyser.fftSize = 2048; tunerSource.connect(tunerAnalyser);
-      tunerFrame = new Float32Array(tunerAnalyser.fftSize);
-      $('tuner-start').hidden = true; $('tuner-stop').hidden = false;
-      $('tuner-status').textContent = 'Listening locally. Play one steady note near your microphone.';
-      const update = () => {
-        if (!tunerAnalyser) return;
-        tunerAnalyser.getFloatTimeDomainData(tunerFrame);
-        const result = detectPitch(tunerFrame, audio.context.sampleRate, project.voice.melody.tuning);
-        if (result) {
-          const cents = Math.round(result.cents), inTune = Math.abs(cents) <= 5;
-          $('tuner-note').textContent = result.note; $('tuner-frequency').textContent = `${result.frequency.toFixed(1)} Hz`;
-          $('tuner-cents').textContent = `${cents > 0 ? '+' : ''}${cents} cents · A4 = ${project.voice.melody.tuning} Hz${inTune ? ' · IN TUNE' : ''}`;
-          $('tuner-needle').style.left = `${50 + Math.max(-50, Math.min(50, cents))}%`;
-        } else {
-          $('tuner-note').textContent = '—'; $('tuner-frequency').textContent = 'Play one steady note';
-          $('tuner-cents').textContent = `A4 = ${project.voice.melody.tuning} Hz`; $('tuner-needle').style.left = '50%';
-        }
-      };
-      tunerTimer = setInterval(update, 90); update();
-      const track = tunerStream.getAudioTracks()[0]; track.addEventListener('ended', () => stopTuner('Microphone ended. Tuner stopped.'));
-    } catch (error) { stopTuner(`Tuner could not start: ${error.message}`); }
-    finally { $('tuner-start').disabled = false; }
-  });
-  $('tuner-stop').addEventListener('click', () => stopTuner());
   $('melody-follow-beat').addEventListener('change',()=>{project.voice.melody.followBeat=$('melody-follow-beat').checked;save();});
   $('voice-story-combine').addEventListener('click',()=>{
     if(project.voice.phrases.length<2)return notify('Create at least two phrases from recorded or imported speech first.');
