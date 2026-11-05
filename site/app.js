@@ -1,4 +1,4 @@
-import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, directedPads, makeProject, normaliseProject, normaliseRegion, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, CaptureSession, suggestActiveRegion, isPadAudible, captureStepPosition, stepTriggerTime, nextBarTime } from './core.js';
+import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, directedPads, makeProject, normaliseProject, normaliseRegion, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, CaptureSession, suggestActiveRegion, isPadAudible, captureStepPosition, stepTriggerTime, nextBarTime, videoVisualDurationMs } from './core.js';
 import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, collectVoiceMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
 import { pickFromDrive, pickFromPhotos } from './google.js';
@@ -491,7 +491,7 @@ function undoPatternRecording(){
 
 function flashPad(id) {
   activeUntil.set(id,performance.now()+180);
-  const config=project.pads[id];visualUntil.set(id,performance.now()+Math.max(180,(config.end-config.start)/Math.max(.5,config.speed)*1000));
+  const config=project.pads[id];visualUntil.set(id,performance.now()+videoVisualDurationMs(config.start,config.end,config.speed));
   pads[id].card.classList.add('playing');
   setTimeout(() => { if ((activeUntil.get(id)||0) <= performance.now()) pads[id].card.classList.remove('playing'); },210);
 }
