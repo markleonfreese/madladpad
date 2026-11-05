@@ -27,3 +27,26 @@
 .audio-record-button{background:#bdebd1;color:#132019}.audio-record-button:hover{background:#d5f7e3}
 .vocal-layers{display:grid;gap:8px;margin-top:12px}.vocal-layer{display:grid;grid-template-columns:minmax(110px,1fr) 100px minmax(130px,1.2fr) auto auto auto auto;gap:8px;align-items:center;padding:9px;background:#202b22;border:1px solid #3b4b3c;border-radius:8px}.vocal-layer-name{width:100%;min-width:0;min-height:38px;background:#111812;color:var(--ink);border:1px solid #3a493d;border-radius:5px;padding:6px;font:11px var(--mono)}.vocal-layer-start{display:grid;gap:3px;color:#b9cabb;font:8px var(--mono)}.vocal-layer-start input{width:100%;min-width:0;min-height:38px;background:#111812;color:var(--ink);border:1px solid #3a493d;border-radius:5px;padding:5px}.vocal-layer-gain{display:grid;grid-template-columns:auto minmax(65px,1fr) 32px;gap:7px;align-items:center;color:#b9cabb;font:9px var(--mono)}.vocal-layer-gain input{width:100%;accent-color:var(--acid)}.vocal-layer-gain output{color:var(--ink);text-align:right}.vocal-layer-meta{grid-column:1/-1;color:#9aaa9b;font:10px var(--mono)}
 @media(max-width:740px){.vocal-layer{grid-template-columns:minmax(80px,1fr) auto auto auto}.vocal-layer-name{grid-column:1/-1}.vocal-layer-start{grid-column:1/2}.vocal-layer-gain{grid-column:1/-1}.vocal-layer-meta{grid-column:1/-1}}
+
+/* Each stage uses the same in-memory session and audio transport. */
+[hidden]{display:none!important}
+.studio-nav{display:flex;gap:6px;overflow-x:auto;scrollbar-width:thin;padding:16px 0 5px;margin-bottom:14px;border-bottom:1px solid var(--line)}
+.studio-nav a{display:flex;align-items:center;gap:8px;flex:0 0 auto;min-height:44px;padding:10px 15px;border-radius:9px 9px 0 0;color:#a6b5a6;text-decoration:none;font-size:12px;font-weight:750;border-bottom:3px solid transparent}
+.studio-nav a span{font:10px var(--mono);color:#a5b9a6}
+.studio-nav a[aria-current=page]{color:var(--acid);border-bottom-color:var(--acid);background:#1f2b21}
+.studio-nav a:focus-visible{outline:2px solid var(--acid);outline-offset:-2px}
+.workspace.wide-grid{grid-template-columns:minmax(0,1fr)}
+.studio-stage{margin-top:22px;border:1px solid var(--line);background:#151c17;border-radius:17px;padding:23px}
+.studio-stage h2{font-size:clamp(25px,4vw,38px);letter-spacing:-.045em;margin:0 0 7px}
+.studio-stage>.voice-card{margin-top:19px}
+.export-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:20px 0}
+.export-controls .field{min-width:170px}
+.export-controls .field select{min-width:170px}
+.export-controls button{min-height:44px}
+.export-previews{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:17px;margin:19px 0}
+.export-previews>div{min-width:0;padding:16px;border:1px solid var(--line);border-radius:11px;background:#1b231e}
+.export-previews h3{margin:0 0 13px;font-size:17px}
+.export-previews video,.export-previews audio{display:block;width:100%;max-height:420px;margin-bottom:11px;border-radius:9px;background:#0a0f0b}
+.export-live-preview{display:block;width:min(100%,780px);height:auto;aspect-ratio:4/3;background:#0a0f0b;border:1px solid var(--line);border-radius:10px;margin-top:10px}
+.transport-controls #studio-play{min-height:44px;align-self:end}
+@media(max-width:740px){.studio-nav{margin-left:-15px;margin-right:-15px;padding-left:15px;padding-right:15px}.studio-nav a{padding:9px 12px}.studio-stage{padding:15px}.export-previews{grid-template-columns:1fr}.export-controls>.field{flex:1 1 100%}.export-controls .accent-button{flex:1 1 100%}}
