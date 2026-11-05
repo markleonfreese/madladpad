@@ -269,6 +269,15 @@ try {
   assert.equal(await page.locator(`.track-row[data-pad="${mappedPadIds[1]}"] [data-step="2"]`).getAttribute('aria-pressed'),'true','second phrase word should overlap the first word at the saved crossfade timing');
   assert.match(await page.locator('#toast').textContent(),/word samples mapped to pads and the 16-step pattern/);
   await openScreen('voice');
+  const tunerBrowserResult=await page.evaluate(async()=>{
+    const {detectPitch}=await import('/tuner.js');
+    const samples=Float32Array.from({length:4096},(_,index)=>.25*Math.sin(2*Math.PI*440*index/48000));
+    const result=detectPitch(samples,48000,Number(document.querySelector('#melody-tuning').value));
+    return {note:result?.note,frequency:result?.frequency,rendered:document.querySelector('#tuner-note')?.textContent};
+  });
+  assert.equal(tunerBrowserResult.note,'A4','browser-loaded tuner module should identify the standard reference note');
+  assert.ok(Math.abs(tunerBrowserResult.frequency-440)<1);
+  assert.equal(tunerBrowserResult.rendered,'—','tuner should not read the microphone before explicit opt-in');
   await page.locator('#voice-consent').uncheck();
   await page.locator('#voice-manual-text').fill('by hand');
   await page.locator('#voice-manual-start').fill('0.05');
