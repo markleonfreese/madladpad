@@ -125,6 +125,11 @@ try {
   assert.match(await page.locator('#director-status').textContent(),/show pads 1, 2/);
   await page.locator('#track-view').click();
   assert.equal(await page.locator('#track-grid .track-row').count(),12,'all-tracks view should expose each lane in the 12-pad layout');
+  for (const [layout,count] of [['2x2',4],['4x4',16],['3x4',12]]) {
+    await page.locator('#layout-select').selectOption(layout);
+    assert.equal(await page.locator('#track-grid .track-row').count(),count,`all-tracks view should refresh to ${count} lanes for ${layout}`);
+    assert.equal(await page.locator('#track-grid .track-row .track-steps .step').count(),count*16,`every ${layout} lane should retain all 16 steps`);
+  }
   assert.ok((await page.locator('#track-grid .track-row').first().locator('.track-name').textContent()).includes('Demo synth 01'),'demo-enabled empty lanes should be identified as demo synths');
   await page.locator('#demo-button').click();
   assert.ok((await page.locator('#track-grid .track-row').first().locator('.track-name').textContent()).includes('Empty pad'),'turning demo sounds off should refresh visible lane labels');
