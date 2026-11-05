@@ -1,7 +1,8 @@
 // Experimental mono PCM heuristic. It ranks local transients, not musical quality.
-export function findCandidates(samples, sampleRate) {
+export function findCandidates(samples, sampleRate, windowSeconds=.8) {
   if (!(samples instanceof Float32Array)) throw new TypeError('Expected mono Float32Array PCM');
   if (!Number.isFinite(sampleRate) || sampleRate < 1 || sampleRate > 192000) throw new RangeError('Invalid sample rate');
+  if (!Number.isFinite(windowSeconds) || windowSeconds < .2 || windowSeconds > 2) throw new RangeError('Suggestion window must be between 0.2 and 2 seconds');
   if (samples.length / sampleRate > 120) throw new RangeError('Analysis limited to 120 seconds');
   if (samples.length > 8_000_000) throw new RangeError('Analysis exceeds the PCM sample budget');
   const frame=Math.max(1,Math.round(sampleRate*.02)),duration=samples.length/sampleRate,peaks=[];
@@ -15,6 +16,7 @@ export function findCandidates(samples, sampleRate) {
   }
   peaks.sort((a,b)=>b.score-a.score||a.time-b.time);
   const result=[];
-  for(const peak of peaks){if(result.some(candidate=>Math.abs(candidate.onset-peak.time)<.3))continue;const start=Math.max(0,peak.time-.04);result.push({start,end:Math.min(duration,start+.3),onset:peak.time,score:peak.score});if(result.length===8)break;}
+  const contextBefore=Math.min(.06,windowSeconds*.1),minimumPeakSpacing=windowSeconds*.6;
+  for(const peak of peaks){if(result.some(candidate=>Math.abs(candidate.onset-peak.time)<minimumPeakSpacing))continue;const start=Math.max(0,peak.time-contextBefore);result.push({start,end:Math.min(duration,start+windowSeconds),onset:peak.time,score:peak.score});if(result.length===8)break;}
   return result;
 }

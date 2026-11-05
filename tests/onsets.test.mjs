@@ -15,6 +15,15 @@ test('separate transient bursts produce diverse bounded regions', () => {
   assert.ok(candidates.some(c => Math.abs(c.start-2) < .25));
   assert.ok(candidates.every(c => c.start >= 0 && c.end <= 3 && c.end > c.start));
 });
+test('candidate window length is selectable from 0.2 to 2 seconds', () => {
+  const signal=new Float32Array(rate*4);
+  for(const t of [.5,2.5])for(let i=0;i<80;i++)signal[Math.floor(t*rate)+i]=.6*Math.sin(i*.8);
+  const short=findCandidates(signal,rate,.25),long=findCandidates(signal,rate,1.5);
+  assert.ok(short.some(candidate=>Math.abs((candidate.end-candidate.start)-.25)<.01));
+  assert.ok(long.some(candidate=>Math.abs((candidate.end-candidate.start)-1.5)<.01));
+  assert.throws(()=>findCandidates(signal,rate,.19),/0.2 and 2 seconds/);
+  assert.throws(()=>findCandidates(signal,rate,2.01),/0.2 and 2 seconds/);
+});
 test('heavily clipped segments are penalised against clean transients', () => {
   const signal = new Float32Array(rate * 3);
   for(let i=0;i<160;i++) { signal[rate+i]=1; signal[2*rate+i]=.8*Math.sin(i*.8); }

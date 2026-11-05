@@ -482,9 +482,14 @@ try {
   await page.locator('#region-apply').click();
   assert.equal(await page.locator('#trim-start').inputValue(),'1.85');
   assert.equal(await page.locator('#trim-end').inputValue(),'2.25');
+  await page.locator('#suggestion-length').selectOption('1.2');
   await page.locator('#find-samples').click();
   await page.waitForFunction(()=>document.querySelectorAll('#sample-suggestions .suggestion').length>=2||document.querySelector('#analysis-status').textContent.includes('unavailable'),null,{timeout:10000});
   assert.ok(await page.locator('#sample-suggestions .suggestion').count()>=2,'local analysis should return multiple transient candidates');
+  const candidateText=await page.locator('#sample-suggestions .suggestion').first().textContent();
+  const candidateBounds=candidateText.match(/· ([0-9.]+)–([0-9.]+) s/);
+  const candidateDuration=candidateBounds?Number(candidateBounds[2])-Number(candidateBounds[1]):0;
+  assert.ok(candidateDuration>1.1&&candidateDuration<=1.2,`selected 1.2-second suggestion length should reach ranked candidates: ${candidateText}`);
   await page.locator('#sample-suggestions .suggestion').first().click();
   assert.match(await page.locator('#analysis-status').textContent(),/Heuristic suggestion selected/);
   await page.waitForTimeout(500);
