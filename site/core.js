@@ -95,6 +95,7 @@ function normaliseVoice(value) {
 }
 
 export const clamp = (value, min, max) => Math.min(max, Math.max(min, Number(value) || 0));
+export const videoVisualDurationMs = (start, end, speed) => Math.max(180, (Number(end) - Number(start)) / clamp(speed ?? 1, 0.5, 2) * 1000);
 export function normaliseRegion(start, end, duration, changed = 'start') {
   const total = Number.isFinite(duration) && duration > 0 ? duration : 0;
   const gap = Math.min(.05, total);

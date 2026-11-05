@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, midiFrequency, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, midiFrequency, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs } from '../site/core.js';
 
 test('initial layout has 12 visible pads and 16 backing slots', () => {
   const project = makeProject();
@@ -19,6 +19,12 @@ test('malformed project metadata is bounded and cannot inject extra pads', () =>
 test('quantisation schedules forward on 16th-note grid', () => {
   assert.equal(nextQuantizedTime(1.07, 0, 120, '1/16'), 1.125);
   assert.equal(nextQuantizedTime(1.07, 0, 120, 'off'), 1.07);
+});
+test('video composition holds each pad for the speed-adjusted playback duration',()=>{
+  assert.equal(videoVisualDurationMs(0,2,1),2000);
+  assert.equal(videoVisualDurationMs(0,2,2),1000);
+  assert.equal(videoVisualDurationMs(.5,1.5,.5),2000);
+  assert.equal(videoVisualDurationMs(1,1,1),180,'a zero-length sample still gets a brief visual flash');
 });
 test('scene launch schedules on the next bar and scenes normalize safely',()=>{
   assert.equal(nextBarTime(.5,0,120),2);
