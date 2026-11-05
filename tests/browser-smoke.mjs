@@ -75,8 +75,16 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(origin);
   await wait(page, '.pad-hit');
+  const openScreen=async screen=>{
+    await page.locator(`[data-studio-screen="${screen}"]`).click();
+    await page.waitForFunction(value=>document.body.dataset.screen===value,screen);
+  };
+  await openScreen('voice');
   const rapLayout=await page.locator('#rap-title').evaluate(title=>({rap:title.closest('.voice-card').getBoundingClientRect().width,melody:document.querySelector('#melody-title').closest('.voice-card').getBoundingClientRect().width}));
   assert.ok(rapLayout.rap>rapLayout.melody*1.8,`desktop rap writing should use the full Voice Lab width for readable 16-bar entry: ${JSON.stringify(rapLayout)}`);
+  await openScreen('sounds');
+  assert.equal(await page.locator('#voice-lab').isHidden(),true,'Voice Lab should be a separate screen');
+  assert.equal(await page.locator('#sample-inspector').isVisible(),true,'Sound discovery should expose sample editing');
   checkpoint('initial load');
   assert.equal(await page.locator('.pad:not([hidden])').count(), 12);
   await page.addScriptTag({path:axePath});
@@ -91,6 +99,8 @@ try {
   await page.locator('.pad-hit').first().click();
   await page.waitForTimeout(250);
   assert.deepEqual(errors, [], 'demo pad should not produce a page error');
+  await openScreen('beats');
+  assert.equal(await page.locator('#sequencer').isVisible(),true,'Beat Grid should expose sequencer');
   await page.locator('#track-view').click();
   assert.equal(await page.locator('#track-grid .track-row').count(),12,'all-tracks view should expose each lane in the 12-pad layout');
   assert.ok((await page.locator('#track-grid .track-row').first().locator('.track-name').textContent()).includes('Demo synth 01'),'demo-enabled empty lanes should be identified as demo synths');
@@ -163,15 +173,20 @@ try {
   const recordingSupported=await page.evaluate(()=>Boolean(window.MediaRecorder&&HTMLCanvasElement.prototype.captureStream));
   if(recordingSupported){
     const setDownload=page.waitForEvent('download',{timeout:5000});
+    await openScreen('export');
     await page.locator('#start-record').click();
+    await openScreen('beats');
     await page.locator('.pad-hit').first().click();
     await page.waitForTimeout(450);
+    await openScreen('export');
     await page.locator('#start-record').click();
     const recording=await setDownload;
     const recordingPath=await recording.path();
     assert.ok(recordingPath,'set recording should produce a downloadable media file');
     const recordedVideo=await readFile(recordingPath);
     assert.ok(recordedVideo.length>100,'set recording should contain encoded media');
+    await page.locator('#export-video-preview').waitFor({state:'visible'});
+    await openScreen('sounds');
     await page.locator('.pad').nth(1).hover();
     await page.locator('.pad .edit-pad').nth(1).click();
     await page.locator('#media-input').setInputFiles({name:'synthetic-set.webm',mimeType:'video/webm',buffer:recordedVideo});
@@ -187,18 +202,23 @@ try {
   const audioRecordingSupported=await page.evaluate(()=>Boolean(window.MediaRecorder&&window.AudioContext));
   if(audioRecordingSupported){
     const audioDownload=page.waitForEvent('download',{timeout:5000});
+    await openScreen('export');
     await page.locator('#record-audio').click();
+    await openScreen('sounds');
     await page.locator('.pad-hit').first().click();
     await page.waitForTimeout(450);
+    await openScreen('export');
     await page.locator('#record-audio').click();
     const mix=await audioDownload;
     assert.match(mix.suggestedFilename(),/\.(m4a|webm|mp4|ogg|wav)$/i,'audio export should use a supported audio extension');
     const mixPath=await mix.path();
     assert.ok(mixPath&& (await readFile(mixPath)).length>100,'audio-only export should contain encoded media');
+    await page.locator('#export-audio-preview').waitFor({state:'visible'});
     checkpoint('audio-only mix export');
   }else{
     console.log('Skipped audio-only mix export: MediaRecorder or AudioContext is unavailable.');
   }
+  await openScreen('sounds');
   await page.locator('#media-input').setInputFiles({name:'synthetic.wav',mimeType:'audio/wav',buffer:wav});
   await page.getByText(/synthetic.wav.*stored on this device/).waitFor();
   await page.locator('#project-title').fill('Smoke pack');
@@ -208,6 +228,7 @@ try {
   assert.equal(await page.locator('#project-title').inputValue(), 'Smoke pack');
   assert.equal(await page.locator('#scene-select option').count(),1,'named scenes should persist across reload');
   assert.ok(await page.locator('#steps .step.on').count()>0,'scene pattern should persist across reload');
+  await openScreen('voice');
   await page.locator('#voice-consent').check();
   await page.locator('#voice-transcribe').click();
   await page.waitForFunction(()=>document.querySelectorAll('#voice-word-list .voice-word').length===3);
@@ -242,10 +263,12 @@ try {
   assert.match(await page.locator('.pad').nth(1).locator('.pad-title').textContent(),/synthetic-set/,'mapping should preserve already occupied pads');
   assert.match(await page.locator('.pad').nth(mappedPadIds[0]).locator('.pad-title').textContent(),/MadLadPad/,'reordered phrase word one should become its own local pad sample');
   assert.match(await page.locator('.pad').nth(mappedPadIds[1]).locator('.pad-title').textContent(),/Hello/,'reordered phrase word two should become its own local pad sample');
+  await openScreen('beats');
   if(await page.locator('#track-grid').isHidden())await page.locator('#track-view').click();
   assert.equal(await page.locator(`.track-row[data-pad="${mappedPadIds[0]}"] [data-step="0"]`).getAttribute('aria-pressed'),'true','first phrase word should start at pattern step one');
   assert.equal(await page.locator(`.track-row[data-pad="${mappedPadIds[1]}"] [data-step="2"]`).getAttribute('aria-pressed'),'true','second phrase word should overlap the first word at the saved crossfade timing');
   assert.match(await page.locator('#toast').textContent(),/word samples mapped to pads and the 16-step pattern/);
+  await openScreen('voice');
   await page.locator('#voice-consent').uncheck();
   await page.locator('#voice-manual-text').fill('by hand');
   await page.locator('#voice-manual-start').fill('0.05');
@@ -290,6 +313,7 @@ try {
   assert.match((await lyricDownload).suggestedFilename(),/\.txt$/);
   const vocalOverdubSupported=await page.evaluate(()=>Boolean(window.MediaRecorder&&navigator.mediaDevices?.getUserMedia));
   if(vocalOverdubSupported){
+    await openScreen('overdub');
     await page.locator('#play-seq').click();
     await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
     await page.waitForFunction(()=>!document.querySelector('#voice-overdub-record').disabled);
@@ -328,9 +352,12 @@ try {
     },layerId);
     assert.ok(rawTakeRms>.01,`the saved fake-microphone take should contain the fixture tone, got RMS ${rawTakeRms}`);
     const vocalMixDownload=page.waitForEvent('download',{timeout:8000});
+    await openScreen('export');
     await page.locator('#record-audio').click();
+    await openScreen('overdub');
     await vocalRow.locator('button').nth(2).click();
     await page.waitForTimeout(1200);
+    await openScreen('export');
     await page.locator('#record-audio').click();
     const vocalMixFile=await vocalMixDownload;
     const vocalMixBytes=await readFile(await vocalMixFile.path());
@@ -345,6 +372,7 @@ try {
   }
   await page.waitForTimeout(500);
   await page.reload();
+  await openScreen('sounds');
   await page.getByText(/synthetic\.wav.*stored on this device/).waitFor();
   await page.waitForFunction(()=>document.querySelectorAll('#voice-word-list .voice-word input[type=text]').length===4);
   assert.deepEqual(await page.locator('#voice-word-list .voice-word input[type=text]').evaluateAll(inputs=>inputs.map(input=>input.value)),['Hello','from','MadLadPad','by hand'],'transcribed and manually aligned words should persist locally');
@@ -357,6 +385,7 @@ try {
   assert.match(await page.locator('.pad').nth(1).locator('.pad-title').textContent(),/synthetic-set/,'pre-existing sample should remain unchanged after reload');
   assert.match(await page.locator('.pad').nth(mappedPadIds[0]).locator('.pad-title').textContent(),/MadLadPad/,'mapped word pad and source WAV should persist locally');
   assert.match(await page.locator('.pad').nth(mappedPadIds[1]).locator('.pad-title').textContent(),/Hello/,'the following mapped word pad should persist locally');
+  await openScreen('beats');
   if(await page.locator('#track-grid').isHidden())await page.locator('#track-view').click();
   assert.equal(await page.locator(`.track-row[data-pad="${mappedPadIds[1]}"] [data-step="2"]`).getAttribute('aria-pressed'),'true','mapped crossfade timing should persist locally');
   assert.equal(await page.locator('#melody-notes .melody-note').count(),2,'lead and harmony note data should persist locally');
@@ -371,6 +400,7 @@ try {
   }
   checkpoint('local speech transcription mock, phrase selection/order, melody and rap persistence/exports');
   checkpoint('local audio import and reload');
+  await openScreen('sounds');
   await page.locator('.pad').nth(11).hover();
   await page.locator('.pad .edit-pad').nth(11).click();
   await page.locator('#media-input').setInputFiles({name:'synthetic-region.wav',mimeType:'audio/wav',buffer:regionWav});
@@ -407,12 +437,16 @@ try {
     await setRange('#pitch',0);
     const recordPitchMix=async(padIndex=0,recordMs=1300)=>{
       const downloaded=page.waitForEvent('download',{timeout:8000});
+      await openScreen('export');
       await page.locator('#record-audio').click();
       await page.waitForFunction(()=>document.querySelector('#record-audio').textContent.includes('STOP AUDIO TAKE'));
+      await openScreen('sounds');
       await page.locator('.pad-hit').nth(padIndex).click();
       await page.waitForTimeout(recordMs);
+      await openScreen('export');
       await page.locator('#record-audio').click();
       const file=await downloaded;
+      await openScreen('sounds');
       return readFile(await file.path());
     };
     const analyzeMix=async audioBytes=>page.evaluate(async encoded=>{
@@ -548,6 +582,7 @@ try {
     assert.ok(keptCaptureTrackStates?.length,'keeping a camera take should release its acquired media tracks');
     assert.ok(keptCaptureTrackStates.every(track=>track.readyState==='ended'),`keeping a camera take should stop every acquired audio/video track: ${JSON.stringify(keptCaptureTrackStates)}`);
     await page.reload();
+    await openScreen('sounds');
     await page.getByText(/synthetic.wav.*stored on this device/).waitFor();
     await trackCameraStreams();
     const capturePackPromise=page.waitForEvent('download');
@@ -582,17 +617,20 @@ try {
         return fillRect.call(this,x,y,width,height);
       };
     });
+    await openScreen('export');
     await page.locator('#record-layout').selectOption('follow-active');
     const performanceDownload=page.waitForEvent('download',{timeout:10000}).then(download=>({download}),error=>({error}));
     for(const target of longVideoTargets)assert.ok((await page.locator('.pad video').nth(target).getAttribute('src'))||await page.locator('.pad video').nth(target).evaluate(v=>v.currentSrc),`pad ${target+1} should have its local video source`);
     await page.locator('#start-record').click();
     await page.waitForFunction(()=>document.querySelector('#start-record').textContent.includes('STOP RECORDING'));
+    await openScreen('sounds');
     await page.locator('.pad-hit').nth(captureTarget).click();
     await page.waitForFunction(()=>window.__adaptiveDraws.includes(1));
     await page.locator('.pad-hit').nth(longVideoTargets[0]).click();
     await page.waitForFunction(()=>window.__adaptiveDraws.includes(2),null,{timeout:5000});
     await page.locator('.pad-hit').nth(longVideoTargets[1]).click();
     await page.waitForFunction(()=>window.__adaptiveDraws.includes(3),null,{timeout:5000});
+    await openScreen('export');
     await page.locator('#start-record').click();
     await page.waitForFunction(()=>document.querySelector('#start-record').textContent.includes('RECORD SET'),null,{timeout:5000});
     const performanceResult=await performanceDownload;
@@ -601,6 +639,7 @@ try {
     assert.ok((await readFile(await performance.path())).length>100,'adaptive audiovisual performance should export encoded media');
     checkpoint('adaptive performance capture transitions one-to-two-to-three clips');
 
+    await openScreen('sounds');
     const canceledPad=await page.locator('.pad').evaluateAll(cards=>cards.findIndex(card=>card.classList.contains('empty')&&!card.hidden));
     assert.notEqual(canceledPad,-1,'an empty pad should remain available for capture-cancel coverage');
     await page.locator('.pad-hit').nth(canceledPad).click();
@@ -651,6 +690,7 @@ try {
   checkpoint('offline reopen');
   await context.setOffline(false);
   await page.setViewportSize({width:390,height:844});
+  await openScreen('voice');
   const mobileLayout=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('body *')].filter(el=>el.getBoundingClientRect().right>innerWidth+1).slice(0,12).map(el=>({tag:el.tagName,id:el.id,className:typeof el.className==='string'?el.className:'',right:el.getBoundingClientRect().right}))}));
   assert.equal(mobileLayout.scroll<=mobileLayout.width,true,`mobile layout should not overflow horizontally: ${JSON.stringify(mobileLayout)}`);
   const mobileRap=await page.locator('#rap-title').evaluate(title=>title.closest('.voice-card').getBoundingClientRect().width);

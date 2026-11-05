@@ -26,7 +26,15 @@
       </div>
     </header>
 
-    <section class="intro" aria-label="Introduction">
+    <nav id="studio-nav" class="studio-nav" aria-label="Studio sections">
+      <a href="#sounds" data-studio-screen="sounds" aria-current="page"><span>01</span> Sounds</a>
+      <a href="#beats" data-studio-screen="beats"><span>02</span> Beat Grid</a>
+      <a href="#voice" data-studio-screen="voice"><span>03</span> Voice Lab</a>
+      <a href="#overdub" data-studio-screen="overdub"><span>04</span> Overdub</a>
+      <a href="#export" data-studio-screen="export"><span>05</span> Finish & Export</a>
+    </nav>
+
+    <section class="intro" id="studio-intro" aria-label="Introduction">
       <div><p class="overline"><span class="live-dot"></span> THE WORLD IS YOUR INSTRUMENT</p><h2>Collect the moment.<br><em>Play the unexpected.</em></h2></div>
       <p>Record a door slam. Sample a laugh. Chop up a holiday video. Turn ordinary moments into extraordinary noise.</p>
     </section>
@@ -37,15 +45,13 @@
         <label class="field">LAYOUT<select id="layout-select"><option value="3x4">12 PADS</option><option value="2x2">4 PADS</option><option value="4x4">16 PADS</option></select></label>
         <label class="field">BPM<input id="bpm-input" type="number" min="40" max="240" value="120"></label>
         <label class="field">QUANTISE<select id="quantize-select"><option value="off">FREE</option><option value="1/4">1/4</option><option value="1/8">1/8</option><option value="1/16">1/16</option></select></label>
-        <label class="field">VIDEO FRAME<select id="record-layout"><option value="fixed">Fixed grid</option><option value="follow-active">Follow active pads</option></select></label>
-        <button class="accent-button" id="start-record" aria-pressed="false"><span class="record-dot"></span> RECORD SET</button>
-        <button class="accent-button audio-record-button" id="record-audio" aria-pressed="false">♪ RECORD AUDIO MIX</button>
+        <button class="play-button" id="studio-play" type="button" aria-pressed="false">▶ PLAY LOOP</button>
       </div>
     </section>
 
-    <main class="workspace">
+    <main class="workspace" id="studio-workspace">
       <section class="performance-area" aria-label="Sampler grid">
-        <div class="section-label"><span>01 / PLAYGROUND</span><span>TOUCH · KEYS · MIDI</span></div>
+        <div class="section-label"><span id="grid-section-label">01 / SOUND PADS</span><span>TOUCH · KEYS · MIDI</span></div>
         <div id="pad-grid" class="pad-grid layout-3x4" role="group" aria-label="Playable sample pads"></div>
         <div class="pad-bottom">
           <p>Tap a loaded pad to play. Tap an empty pad to add a sound. Use Q W E R / A S D F / Z X C V on a keyboard.</p>
@@ -53,7 +59,7 @@
         </div>
       </section>
 
-      <aside class="inspector" aria-label="Sample editing panel">
+      <aside class="inspector" id="sample-inspector" aria-label="Sample editing panel">
         <div class="section-label"><span>02 / SAMPLE LAB</span><span id="selected-number">PAD 01</span></div>
         <div class="inspector-head"><div class="selected-circle" id="selected-circle">01</div><div><label for="pad-name">EDITING SAMPLE</label><input id="pad-name" maxlength="45" value="Pad 01" aria-label="Pad name"></div></div>
         <p class="sample-info" id="sample-info">No media loaded. Add a clip to get started.</p>
@@ -94,7 +100,7 @@
       </aside>
     </main>
 
-    <section class="sequencer" aria-label="16-step sequencer">
+    <section class="sequencer" id="sequencer" aria-label="16-step sequencer" hidden>
       <div class="section-label"><span>03 / BEAT MAKER</span><span>16 STEPS · ALL PADS CAN PLAY TOGETHER</span></div>
       <div class="sequencer-head"><div><h3>Make it a loop.</h3><p>Edit one pad or arrange the whole kit in a multi-track grid.</p></div><div class="seq-buttons"><button class="pill-button" id="track-view" aria-pressed="false">ALL TRACKS</button><button class="pill-button" id="auto-beat">SURPRISE ME</button><button class="pill-button" id="clear-steps">CLEAR SELECTED</button><label class="pattern-setting">TAKE<select id="pattern-take-mode"><option value="overdub">OVERDUB</option><option value="replace">REPLACE</option></select></label><label class="pattern-setting">QUANTISE<select id="pattern-quantize"><option value="nearest">NEAREST 16TH</option><option value="off">FREE</option></select></label><button class="pill-button record-pattern-button" id="record-pattern" aria-pressed="false">● RECORD PATTERN</button><button class="pill-button" id="undo-pattern" disabled>UNDO TAKE</button><label class="pattern-setting">SCENE<select id="scene-select" aria-label="Select scene"><option value="" disabled selected>No saved scenes</option></select></label><input id="scene-name" class="scene-name-input" maxlength="32" placeholder="Scene name" aria-label="Scene name"><button class="pill-button" id="save-scene" disabled>SAVE NEW</button><button class="pill-button" id="update-scene" disabled>UPDATE</button><button class="pill-button" id="launch-scene" disabled>LOAD SCENE</button><button class="pill-button" id="delete-scene" disabled>DELETE</button><button class="play-button" id="play-seq">▶ PLAY</button></div></div>
       <p id="scene-status" class="pattern-record-status" role="status" aria-live="polite">Save the current pattern as a named scene.</p>
@@ -104,10 +110,10 @@
       <div class="timeline"><span>1</span><span>2</span><span>3</span><span>4</span></div>
     </section>
 
-    <section class="voice-lab" aria-labelledby="voice-lab-title">
+    <section class="voice-lab" id="voice-lab" aria-labelledby="voice-lab-title" hidden>
       <div class="section-label"><span>04 / VOICE LAB</span><span>WORDS · MELODY · BARS</span></div>
       <h2 id="voice-lab-title">Turn a voice into a track.</h2>
-      <p class="voice-intro">Transcribe local clips, shape word samples into phrases, write melodies and rap bars, then record and mix vocal layers over your beat. Your audio and writing stay on this device.</p>
+      <p class="voice-intro">Transcribe local clips, shape words into phrases, write melodies and rap bars. Continue to Overdub to record vocal layers. Your audio and writing stay on this device.</p>
       <div class="voice-columns">
         <section class="voice-card" aria-labelledby="transcript-title">
           <h3 id="transcript-title">Speech transcription</h3>
@@ -145,21 +151,45 @@
           <div class="voice-actions"><button class="pill-button" id="rap-export">EXPORT LYRICS</button></div>
         </section>
 
-        <section class="voice-card" aria-labelledby="vocal-layers-title">
-          <h3 id="vocal-layers-title">Vocal overdubs</h3>
-          <p class="voice-note">Start the beat, then record a microphone take over it. Each raw take is saved as its own local layer and aligned to the nearest sixteenth note. Adjust gain, mute or solo layers, and record the full mix to export. Microphone audio is not uploaded.</p>
-          <div class="voice-actions"><button class="pill-button" id="voice-overdub-record" disabled>● RECORD VOCAL OVERDUB</button><button class="pill-button" id="voice-overdub-stop" hidden>■ STOP AND SAVE TAKE</button></div>
-          <p id="voice-overdub-status" class="voice-status" role="status" aria-live="polite">Start the sequencer to record a vocal layer.</p>
-          <div id="voice-overdub-layers" class="vocal-layers" role="group" aria-label="Vocal take layers"></div>
-        </section>
       </div>
+    </section>
+
+    <section id="overdub-lab" class="studio-stage" aria-labelledby="overdub-title" hidden>
+      <div class="section-label"><span>04 / OVERDUB STUDIO</span><span>RECORD · LAYER · MIX</span></div>
+      <h2 id="overdub-title">Add a voice to your beat.</h2>
+      <p class="voice-intro">Start the loop, record a new take, then adjust levels or mute and solo layers. Each microphone take stays on this device and is aligned to the nearest sixteenth note.</p>
+      <section class="voice-card" aria-labelledby="vocal-layers-title">
+        <h3 id="vocal-layers-title">Vocal overdubs</h3>
+        <p class="voice-note">Use the beat grid below as a backing track. Recordings are stored as separate, editable local layers. When you are ready, move to Finish & Export to capture the full mix.</p>
+        <div class="voice-actions"><button class="pill-button" id="voice-overdub-record" disabled>● RECORD VOCAL OVERDUB</button><button class="pill-button" id="voice-overdub-stop" hidden>■ STOP AND SAVE TAKE</button></div>
+        <p id="voice-overdub-status" class="voice-status" role="status" aria-live="polite">Start the sequencer to record a vocal layer.</p>
+        <div id="voice-overdub-layers" class="vocal-layers" role="group" aria-label="Vocal take layers"></div>
+      </section>
+    </section>
+
+    <section id="export-lab" class="studio-stage" aria-labelledby="export-title" hidden>
+      <div class="section-label"><span>05 / FINAL MIX</span><span>PREVIEW · DOWNLOAD · BACK UP</span></div>
+      <h2 id="export-title">Capture and share your track.</h2>
+      <p class="voice-intro">Start the loop, record your performance, then review the result below. Video captures the pad visuals and the master audio; audio-only captures the mixed sound. Recording stops when you tap the same button again.</p>
+      <div class="export-controls">
+        <label class="field">VIDEO FRAME<select id="record-layout"><option value="fixed">Fixed grid</option><option value="follow-active">Follow active pads</option></select></label>
+        <button class="accent-button" id="start-record" aria-pressed="false"><span class="record-dot"></span> RECORD SET</button>
+        <button class="accent-button audio-record-button" id="record-audio" aria-pressed="false">♪ RECORD AUDIO MIX</button>
+        <button class="quiet-button" id="export-pack-action" type="button">Export project pack</button>
+      </div>
+      <p id="export-record-status" class="voice-status" role="status">Record a video or audio take to preview it here. Completed takes also download automatically.</p>
+      <canvas id="capture-canvas" class="export-live-preview" width="960" height="720" aria-label="Live performance composition" hidden></canvas>
+      <div class="export-previews">
+        <div><h3>Video performance</h3><video id="export-video-preview" controls playsinline preload="metadata" hidden></video><p id="export-video-empty" class="voice-note">No recorded video in this session yet.</p><button id="export-video-download" class="pill-button" disabled>DOWNLOAD VIDEO AGAIN</button></div>
+        <div><h3>Audio mix</h3><audio id="export-audio-preview" controls preload="metadata" hidden></audio><p id="export-audio-empty" class="voice-note">No recorded audio in this session yet.</p><button id="export-audio-download" class="pill-button" disabled>DOWNLOAD AUDIO AGAIN</button></div>
+      </div>
+      <p class="voice-note">Final renders are held in this browser session for review. Use the automatic downloads or download again before leaving. Export a project pack to preserve the editable samples and vocal layers.</p>
     </section>
     <footer><span>DESIGNED FOR PEOPLE WHO HEAR MUSIC EVERYWHERE.</span><span>V0.1 · LOCAL-FIRST PWA · <a href="https://github.com/markleonfreese/madladpad" target="_blank" rel="noopener">SOURCE</a></span></footer>
   </div>
 
   <input hidden id="media-input" type="file" accept="video/*,audio/*,image/*" multiple>
   <input hidden id="project-input" type="file" accept=".madladpad,application/json">
-  <canvas hidden id="capture-canvas" width="960" height="720" aria-hidden="true"></canvas>
   <dialog id="pad-source-dialog" class="camera-dialog"><h3 id="pad-source-title">Add a sample</h3><p>Choose a source for this empty pad.</p><div><button class="accent-button" id="pad-record">RECORD ON PAD</button><button class="quiet-button" id="pad-files">DEVICE / FILES</button><button class="quiet-button" id="pad-source-cancel">CANCEL</button></div></dialog>
   <dialog id="capture-target-dialog" class="camera-dialog" aria-labelledby="capture-target-title" aria-describedby="capture-target-status"><h3 id="capture-target-title">Choose where to save the take</h3><p id="capture-target-status">The current sample stays safe until you keep the new take.</p><label for="capture-target-select">SAVE AS NEW ON</label><select id="capture-target-select"></select><div><button class="accent-button" id="capture-target-replace">REPLACE THIS PAD AFTER REVIEW</button><button class="quiet-button" id="capture-target-new">SAVE AS NEW</button><button class="quiet-button" id="capture-target-cancel">CANCEL</button></div></dialog>
   <dialog id="camera-dialog" class="camera-dialog"><h3 id="camera-title">Record on pad</h3><video id="camera-preview" muted autoplay playsinline></video><label id="camera-length-label">RECORD LENGTH <select id="camera-length"><option value="3">3 seconds</option><option value="5" selected>5 seconds</option><option value="10">10 seconds</option><option value="15">15 seconds</option><option value="30">30 seconds</option></select></label><p id="camera-status" role="status">Requesting camera and microphone access…</p><div><button class="accent-button" id="camera-capture" disabled>● START RECORDING</button><button class="quiet-button" id="camera-retake" hidden>RETAKE</button><button class="accent-button" id="camera-keep" hidden>KEEP ON PAD</button><button class="quiet-button" id="camera-close">CANCEL</button></div><section id="camera-review" hidden><p>Suggested sound region · adjust either edge, then preview or keep. Original capture remains available for re-trimming.</p><label>START <output id="camera-start-out">0.00 s</output><input id="camera-start" type="range" min="0" max="1" step="0.05" value="0"></label><label>END <output id="camera-end-out">0.00 s</output><input id="camera-end" type="range" min="0.05" max="1" step="0.05" value="1"></label><button class="quiet-button" id="camera-preview-region">▶ PREVIEW SAMPLE</button></section></dialog>

@@ -47,6 +47,47 @@ const pads = [];
 const activeUntil = new Map();
 const visualUntil = new Map();
 const keys = new Set();
+const STUDIO_SCREENS = new Set(['sounds','beats','voice','overdub','export']);
+const lastTakes = { video:null, audio:null };
+
+function showStudioScreen() {
+  const requested = location.hash.slice(1);
+  const screen = STUDIO_SCREENS.has(requested) ? requested : 'sounds';
+  document.body.dataset.screen = screen;
+  for(const link of $('studio-nav').querySelectorAll('[data-studio-screen]')) {
+    if(link.dataset.studioScreen===screen)link.setAttribute('aria-current','page');
+    else link.removeAttribute('aria-current');
+  }
+  $('studio-intro').hidden = screen!=='sounds';
+  $('studio-workspace').hidden = screen!=='sounds' && screen!=='beats';
+  $('studio-workspace').classList.toggle('wide-grid',screen==='beats');
+  $('sample-inspector').hidden = screen!=='sounds';
+  $('grid-section-label').textContent = screen==='beats' ? '02 / PERFORMANCE PADS' : '01 / SOUND PADS';
+  $('sequencer').hidden = screen!=='beats' && screen!=='overdub';
+  $('voice-lab').hidden = screen!=='voice';
+  $('overdub-lab').hidden = screen!=='overdub';
+  $('export-lab').hidden = screen!=='export';
+}
+
+function updateTransportButton() {
+  const playing = Boolean(transportTimer);
+  $('studio-play').textContent = playing ? '■ STOP LOOP' : '▶ PLAY LOOP';
+  $('studio-play').setAttribute('aria-pressed',String(playing));
+  $('studio-play').classList.toggle('active',playing);
+}
+
+function rememberTake(kind,blob) {
+  const previous = lastTakes[kind];
+  if(previous)URL.revokeObjectURL(previous.url);
+  const type=kind==='video'?'video':'audio';
+  lastTakes[kind]={blob,url:URL.createObjectURL(blob),name:`madladpad-${kind}-${Date.now()}.${kind==='video'?extensionForMime(blob.type):extensionForAudioMime(blob.type)}`};
+  const player=$(`export-${type}-preview`);
+  player.src=lastTakes[kind].url;
+  player.hidden=false;
+  $(`export-${type}-empty`).hidden=true;
+  $(`export-${type}-download`).disabled=false;
+  $('export-record-status').textContent=`${type==='video'?'Video':'Audio'} take ready. Review it here or download it again.`;
+}
 
 function notify(message) {
   const toast = $('toast');
@@ -516,6 +557,7 @@ function startSequencer() {
     voiceLab?.transportStarted(audio.transportEpoch,project.bpm);
     tick();
     $('play-seq').textContent='■ STOP'; $('play-seq').classList.add('active');
+    updateTransportButton();
     renderScenes();
   }).catch(error=>notify(error.message));
 }
@@ -532,6 +574,7 @@ function stopSequencer() {
   if(pendingScene){pendingScene=null;renderScenes();notify('Queued scene canceled because the sequencer stopped.');}
   else renderScenes();
   $('play-seq').textContent='▶ PLAY'; $('play-seq').classList.remove('active');
+  updateTransportButton();
   [...$('steps').children].forEach(el=>el.classList.remove('current'));
   $('track-grid').querySelectorAll('.current').forEach(el=>el.classList.remove('current'));
 }
@@ -604,18 +647,19 @@ async function toggleSetRecording() {
       stream.getVideoTracks().forEach(track=>track.stop());
       const type=recorder.mimeType||mime||'video/webm';
       const blob=new Blob(chunks,{type});
-      if(blob.size)download(blob,`madladpad-${Date.now()}.${extensionForMime(type)}`);
+      if(blob.size){rememberTake('video',blob);download(blob,lastTakes.video.name);}
       else notify('The browser did not capture video.');
+      $('capture-canvas').hidden=true;
       recording=null;
       $('start-record').classList.remove('recording');$('start-record').innerHTML='<span class="record-dot"></span> RECORD SET';
       $('start-record').setAttribute('aria-pressed','false');
     };
-    recording=recorder;drawing=true;drawPerformanceFrame();recorder.start(200);
+    recording=recorder;drawing=true;$('capture-canvas').hidden=false;drawPerformanceFrame();recorder.start(200);
     $('start-record').classList.add('recording');$('start-record').textContent='■ STOP RECORDING';
     $('start-record').setAttribute('aria-pressed','true');
     $('start-record').blur();
     notify('Recording your audiovisual performance. Tap pads or start the beat maker.');
-  } catch(error) { drawing=false;recording=null;notify(error.message); }
+  } catch(error) { drawing=false;recording=null;$('capture-canvas').hidden=true;notify(error.message); }
 }
 
 async function toggleAudioRecording() {
@@ -633,7 +677,7 @@ async function toggleAudioRecording() {
     recorder.onstop=()=>{
       const type=recorder.mimeType||mime||'audio/webm';
       const blob=new Blob(chunks,{type});
-      if(blob.size)download(blob,`madladpad-audio-${Date.now()}.${extensionForAudioMime(type)}`);
+      if(blob.size){rememberTake('audio',blob);download(blob,lastTakes.audio.name);}
       else notify('The browser did not capture audio.');
       audioRecording=null;
       $('record-audio').classList.remove('recording');$('record-audio').textContent='♪ RECORD AUDIO MIX';
@@ -857,6 +901,12 @@ async function importPack(file) {
 }
 
 function bindControls() {
+  window.addEventListener('hashchange',showStudioScreen);
+  showStudioScreen();
+  $('studio-play').addEventListener('click',()=>transportTimer?stopSequencer():startSequencer());
+  $('export-pack-action').addEventListener('click',()=>$('export-button').click());
+  $('export-video-download').addEventListener('click',()=>{if(lastTakes.video)download(lastTakes.video.blob,lastTakes.video.name);});
+  $('export-audio-download').addEventListener('click',()=>{if(lastTakes.audio)download(lastTakes.audio.blob,lastTakes.audio.name);});
   const preview=$('region-preview');
   preview.addEventListener('loadedmetadata',()=>{
     if (!Number.isFinite(preview.duration) || preview.duration<=0) { $('region-status').textContent='Duration unavailable; this clip cannot be previewed here.'; return; }
