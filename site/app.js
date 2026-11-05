@@ -43,6 +43,7 @@ let previewingRegion = false;
 let onsetWorker = null;
 let onsetRun = 0;
 let onsetMediaAnalysis = null;
+let onsetSuggestions = [];
 const durations = new Map();
 const mediaFiles = new Map();
 const pads = [];
@@ -217,7 +218,7 @@ function syncRegionPreview() {
   const file=mediaFiles.get(selected);
   video.hidden = !file || !/^(audio|video)\//.test(file.type);
   $('region-status').textContent=video.hidden?'Load an audio or video clip to select a region.':'Loading media duration…';
-  $('find-samples').disabled=video.hidden;$('analysis-status').textContent='Suggestions are opt-in and processed locally.';$('sample-suggestions').replaceChildren();
+  onsetSuggestions=[];$('find-samples').disabled=video.hidden;$('analysis-status').textContent='Suggestions are opt-in and processed locally.';$('sample-suggestions').replaceChildren();renderSuggestionTimeline();
   renderRegion();
   if (!video.hidden) { previewUrl=URL.createObjectURL(file); video.src=previewUrl; video.load(); }
 }
@@ -230,15 +231,43 @@ function cancelOnsetAnalysis(updateStatus=true){
   if(updateStatus&&$('analysis-status'))$('analysis-status').textContent='Analysis canceled. Manual region selection is still available.';
 }
 
+function chooseOnsetSuggestion(candidate){
+  regionDraft=normaliseRegion(candidate.start,candidate.end,previewDuration);
+  $('region-preview').pause();previewingRegion=false;$('region-preview').currentTime=regionDraft.start;renderRegion();
+  $('analysis-status').textContent='Heuristic suggestion selected. Preview, adjust, apply or ignore it.';
+}
+
+function renderSuggestionTimeline(){
+  const timeline=$('sample-timeline'),markers=$('sample-timeline-markers'),endLabel=$('sample-timeline-end');
+  markers.replaceChildren();
+  if(!onsetSuggestions.length||!previewDuration){timeline.hidden=true;return;}
+  timeline.hidden=false;endLabel.textContent=`${previewDuration.toFixed(1)} s`;
+  const width=timeline.clientWidth||300,minGap=38,laneEnds=[];
+  const ordered=onsetSuggestions.map((candidate,index)=>({candidate,index})).sort((a,b)=>a.candidate.start-b.candidate.start);
+  for(const {candidate,index} of ordered){
+    const x=Math.max(18,Math.min(width-18,candidate.start/previewDuration*width));
+    let lane=laneEnds.findIndex(last=>x-last>=minGap);if(lane<0)lane=laneEnds.length;laneEnds[lane]=x+minGap;
+    const marker=document.createElement('button');marker.type='button';marker.className='sample-timeline-marker';marker.dataset.suggestionIndex=String(index);marker.textContent=String(index+1);
+    marker.style.left=`${x/width*100}%`;marker.style.top=`${27+lane*31}px`;
+    marker.setAttribute('aria-label',`Suggestion ${index+1}, ${candidate.start.toFixed(2)} to ${candidate.end.toFixed(2)} seconds`);
+    marker.title=`Suggestion ${index+1} · ${candidate.start.toFixed(2)}–${candidate.end.toFixed(2)} s`;
+    marker.addEventListener('click',()=>chooseOnsetSuggestion(candidate));markers.append(marker);
+  }
+  timeline.style.height=`${Math.max(66,58+laneEnds.length*31)}px`;
+}
+window.addEventListener('resize',()=>{if(onsetSuggestions.length)renderSuggestionTimeline();});
+
 function showOnsetSuggestions(suggestions,token,source='decoded local audio'){
   if(token!==onsetRun)return;
   onsetWorker?.terminate();onsetWorker=null;$('cancel-analysis').hidden=true;
   const list=$('sample-suggestions');list.replaceChildren();
-  if(!suggestions.length){$('analysis-status').textContent='No clear transients found. Keep choosing a region manually.';return;}
+  onsetSuggestions=suggestions;
+  if(!suggestions.length){renderSuggestionTimeline();$('analysis-status').textContent='No clear transients found. Keep choosing a region manually.';return;}
   suggestions.forEach((candidate,index)=>{
-    const button=document.createElement('button');button.type='button';button.className='suggestion';button.textContent=`Candidate ${index+1} · ${candidate.start.toFixed(2)}–${candidate.end.toFixed(2)} s · onset score ${candidate.score.toFixed(2)}`;
-    button.addEventListener('click',()=>{regionDraft=normaliseRegion(candidate.start,candidate.end,previewDuration);$('region-preview').pause();previewingRegion=false;$('region-preview').currentTime=regionDraft.start;renderRegion();$('analysis-status').textContent='Heuristic suggestion selected. Preview, adjust, apply or ignore it.';});list.append(button);
+    const button=document.createElement('button');button.type='button';button.className='suggestion';button.textContent=`Suggestion ${index+1} · ${candidate.start.toFixed(2)}–${candidate.end.toFixed(2)} s · ${candidate.label||'clear onset'}`;
+    button.addEventListener('click',()=>chooseOnsetSuggestion(candidate));list.append(button);
   });
+  renderSuggestionTimeline();
   $('analysis-status').textContent=`Local heuristic candidates from ${source}. Scores rank transients; they do not judge musical quality.`;
 }
 
@@ -286,7 +315,7 @@ function analyseVideoAudioDuringPlayback(file,token){
 
 async function findGoodSounds(){
   const token=++onsetRun,file=mediaFiles.get(selected),windowSeconds=Number($('suggestion-length').value);
-  onsetWorker?.terminate();onsetWorker=null;$('sample-suggestions').replaceChildren();
+  onsetWorker?.terminate();onsetWorker=null;onsetSuggestions=[];$('sample-suggestions').replaceChildren();renderSuggestionTimeline();
   if(!file||!file.type.match(/^(audio|video)\//))return $('analysis-status').textContent='Choose a local audio or video sample first.';
   if(!previewDuration)return $('analysis-status').textContent='Wait for the media duration to load before starting analysis.';
   if(file.size>32*1024*1024)return $('analysis-status').textContent='This file exceeds the 32 MB phone-analysis budget. Manual selection still works.';
