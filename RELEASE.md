@@ -14,6 +14,7 @@ Run from a clean checkout of the exact `main` commit to publish:
 
 ```sh
 npm ci
+npm run build
 npm test
 npx playwright install chromium
 npm run test:browser
@@ -35,7 +36,7 @@ The authenticated CLI must show `workers:write` and the target account ID in `wr
 
 ## Publish and verify
 
-`npm run deploy` runs `build:voice` before `wrangler deploy`. Wrangler's default deploy publishes a new version to 100% of production traffic, so run it only after the exact `main` commit and its checks are accepted. There is no configured staging Worker or preview hostname.
+`npm run deploy` runs the canonical `build` script before `wrangler deploy`. Wrangler's default deploy publishes a new version to 100% of production traffic, so run it only after the exact `main` commit and its checks are accepted. Until Workers Builds is verified, there is no configured staging Worker or preview hostname. When connecting Workers Builds, use `npm run build` for both main and previews, `npx wrangler versions upload` for the production-branch deploy command (uploads without promotion), and `npx wrangler preview` for other branches. Promote only an explicitly accepted version.
 
 After publishing:
 
