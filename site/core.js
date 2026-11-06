@@ -160,7 +160,8 @@ export function normaliseProject(value) {
     pads:Array.from({length:16},(_,j)=>({
       steps:Array.from({length:STEP_COUNT},(_,k)=>Boolean(scene?.pads?.[j]?.steps?.[k])),
       stepOffsets:Array.from({length:STEP_COUNT},(_,k)=>clamp(scene?.pads?.[j]?.stepOffsets?.[k]??0,0,.9999))
-    }))
+    })),
+    videoShots:Array.isArray(scene?.videoShots)?normaliseVideoDirection({shots:scene.videoShots}).shots:null
   })):[];
   return { version: 1, title: String(value?.title || base.title).slice(0, 80), layout,
     bpm: clamp(value?.bpm ?? 120, 40, 240),
