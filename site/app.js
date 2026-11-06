@@ -478,7 +478,7 @@ function showDirectorPlayingStep(step){
 }
 
 function sceneSnapshot(name){
-  return {name,gridDivision:project.gridDivision,pads:project.pads.map(pad=>({steps:[...pad.steps],stepOffsets:[...pad.stepOffsets]}))};
+  return {name,gridDivision:project.gridDivision,pads:project.pads.map(pad=>({steps:[...pad.steps],stepOffsets:[...pad.stepOffsets]})),videoShots:project.video.shots.map(shot=>({mode:shot.mode,pads:[...shot.pads]}))};
 }
 
 function renderScenes(){
@@ -505,7 +505,8 @@ function applyScene(scene){
     pad.steps=Array.from({length:16},(_,step)=>Boolean(lane.steps?.[step]));
     pad.stepOffsets=Array.from({length:16},(_,step)=>clamp(lane.stepOffsets?.[step]??0,0,.9999));
   });
-  renderSteps();queueSave();
+  if(Array.isArray(scene.videoShots))project.video.shots=scene.videoShots.map(shot=>({mode:shot.mode,pads:[...shot.pads]}));
+  renderSteps();renderVideoDirector();queueSave();
 }
 
 function saveScene(){

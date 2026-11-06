@@ -42,6 +42,11 @@ test('scene launch schedules on the next bar and scenes normalize safely',()=>{
   assert.equal(normaliseProject({gridDivision:'1/4',scenes:[{gridDivision:'1/8'}]}).gridDivision,'1/4');
   assert.equal(normaliseProject({gridDivision:'triplet'}).gridDivision,'1/16');
   assert.equal(normaliseProject({scenes:[{gridDivision:'1/8'}]}).scenes[0].gridDivision,'1/8');
+  assert.equal(p.scenes[0].videoShots,null,'legacy scenes without a director keep using the project-level video direction');
+  const directed=normaliseProject({scenes:[{videoShots:[{mode:'grid',pads:[0,1,99]},{mode:'invalid',pads:[2]}]}]}).scenes[0].videoShots;
+  assert.equal(directed.length,16);
+  assert.deepEqual(directed[0],{mode:'grid',pads:[0,1]});
+  assert.deepEqual(directed[1],{mode:'auto',pads:[2]});
 });
 test('pattern capture can snap or retain timing offsets within a step',()=>{
   assert.deepEqual(captureStepPosition(.1,120,'nearest'),{step:1,offset:0});
