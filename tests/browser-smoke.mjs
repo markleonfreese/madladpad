@@ -877,6 +877,18 @@ try {
   await page.waitForFunction(()=>document.querySelector('#project-title').value==='Smoke pack',null,{timeout:8000});
   assert.equal(await page.locator('#project-title').inputValue(),'Smoke pack','offline reopen should load the saved local project');
   checkpoint('offline reopen');
+  await openScreen('export');
+  if(recordingSupported){
+    await page.waitForFunction(()=>document.querySelector('#export-video-download').disabled===false,null,{timeout:8000});
+    assert.equal(await page.locator('#export-video-preview').isVisible(),true,'a saved video render should be reviewable after an offline reload');
+    assert.match(await page.locator('#export-video-preview').getAttribute('src'),/^blob:/,'the offline video preview should restore from a local blob');
+  }
+  if(audioRecordingSupported){
+    await page.waitForFunction(()=>document.querySelector('#export-audio-download').disabled===false,null,{timeout:8000});
+    assert.equal(await page.locator('#export-audio-preview').isVisible(),true,'a saved audio render should be reviewable after an offline reload');
+    assert.match(await page.locator('#export-audio-preview').getAttribute('src'),/^blob:/,'the offline audio preview should restore from a local blob');
+  }
+  checkpoint('offline render restore');
   await context.setOffline(false);
   await page.setViewportSize({width:390,height:844});
   await openScreen('voice');
