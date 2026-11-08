@@ -121,6 +121,17 @@ try {
   const audit=await page.evaluate(async()=>axe.run(document));
   assert.deepEqual(audit.violations.map(violation=>violation.id),[], `initial page should have no axe-core violations: ${JSON.stringify(audit.violations.map(({id,nodes})=>({id,nodes:nodes.map(node=>({target:node.target,summary:node.failureSummary}))})))}`);
   checkpoint(`axe-core audit (${audit.passes.length} rules passed)`);
+  const desktopViewport=page.viewportSize();
+  await openScreen('voice');
+  for(const width of [320,390]){
+    await page.setViewportSize({width,height:844});
+    const voiceAudit=await page.evaluate(async()=>axe.run(document));
+    assert.deepEqual(voiceAudit.violations.map(violation=>violation.id),[],`Voice Lab at ${width}px should expose a main landmark and pass axe checks: ${JSON.stringify(voiceAudit.violations.map(({id,nodes})=>({id,nodes:nodes.map(node=>({target:node.target,summary:node.failureSummary}))})))}`);
+    assert.equal(await page.getByRole('main').count(),1,'every studio screen should retain one primary-content landmark');
+  }
+  await page.setViewportSize(desktopViewport);
+  await openScreen('sounds');
+  checkpoint('Voice Lab mobile accessibility at 320 px and 390 px');
   for (const [value, count] of [['2x2',4],['4x4',16],['3x4',12]]) {
     await page.locator('#layout-select').selectOption(value);
     assert.equal(await page.locator('.pad:not([hidden])').count(), count);
