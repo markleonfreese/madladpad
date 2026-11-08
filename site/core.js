@@ -192,7 +192,10 @@ export function midiFile(notes, bpm = 120, tuning = 440) {
     const pitch = clamp(Math.round(note.midi), 24, 108);
     events.push([start, [0x90, pitch, 96]], [end, [0x80, pitch, 0]]);
   }
-  events.sort((a, b) => a[0] - b[0]);
+  // At a shared tick, release a note before retriggering the same pitch.
+  // Some MIDI players stop the newly started note if its note-off comes last.
+  const eventPriority = bytes => bytes[0] === 0xff ? 0 : bytes[0] === 0x80 ? 1 : 2;
+  events.sort((a, b) => a[0] - b[0] || eventPriority(a[1]) - eventPriority(b[1]));
   let previous = 0; const track = [];
   for (const [tick, bytes] of events) { track.push(...vlq(tick - previous), ...bytes); previous = tick; }
   track.push(0, 255, 47, 0);
