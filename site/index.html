@@ -123,6 +123,7 @@
 
     <section class="sequencer" id="sequencer" aria-label="16-step sequencer" hidden>
       <div class="section-label"><span>02 / BEAT MAKER</span><span>1/4 · 1/8 · 1/16 GRID · ALL PADS CAN PLAY TOGETHER</span></div>
+      <label class="beat-pad-choice">EDITING PAD<select id="beat-pad-select" aria-label="Pad to edit in the beat grid"></select></label>
       <div class="sequencer-head"><div><h2>Make it a loop.</h2><p>Edit one pad or arrange the whole kit in a multi-track grid.</p></div><div class="seq-buttons"><button class="pill-button" id="track-view" aria-pressed="false">ALL TRACKS</button><button class="pill-button" id="auto-beat">SURPRISE ME</button><button class="pill-button" id="clear-steps">CLEAR SELECTED</button><label class="pattern-setting">GRID<select id="grid-division" aria-label="Sequencer grid division"><option value="1/4">QUARTER · 4 STEPS</option><option value="1/8">EIGHTH · 8 STEPS</option><option value="1/16">SIXTEENTH · 16 STEPS</option></select></label><label class="pattern-setting">TAKE<select id="pattern-take-mode"><option value="overdub">OVERDUB</option><option value="replace">REPLACE</option></select></label><label class="pattern-setting">QUANTISE<select id="pattern-quantize"><option value="nearest">NEAREST GRID</option><option value="off">FREE</option></select></label><button class="pill-button record-pattern-button" id="record-pattern" aria-pressed="false">● RECORD PATTERN</button><button class="pill-button" id="undo-pattern" disabled>UNDO TAKE</button><label class="pattern-setting">SCENE<select id="scene-select" aria-label="Select scene"><option value="" disabled selected>No saved scenes</option></select></label><input id="scene-name" class="scene-name-input" maxlength="32" placeholder="Scene name" aria-label="Scene name"><button class="pill-button" id="save-scene" disabled>SAVE NEW</button><button class="pill-button" id="update-scene" disabled>UPDATE</button><button class="pill-button" id="launch-scene" disabled>LOAD SCENE</button><button class="pill-button" id="delete-scene" disabled>DELETE</button><button class="play-button" id="play-seq">▶ PLAY</button></div></div>
       <p id="scene-status" class="pattern-record-status" role="status" aria-live="polite">Save the current pattern as a named scene.</p>
       <p id="pattern-record-status" class="pattern-record-status" role="status" aria-live="polite">Ready to record pad taps into the 16-step loop. Coarser grids hide finer steps but keep them saved.</p>
@@ -147,9 +148,9 @@
       <div class="section-label"><span>03 / VOICE LAB</span><span>WORDS · MELODY · BARS</span></div>
       <h2 id="voice-lab-title">Turn a voice into a track.</h2>
       <p class="voice-intro">Transcribe local clips, shape words into phrases, write melodies and rap bars. Continue to Overdub to record vocal layers. Your audio and writing stay on this device.</p>
-      <nav class="voice-jump" aria-label="Voice Lab tools"><button type="button" data-voice-jump="transcript-title">Speech & words</button><button type="button" data-voice-jump="melody-title">Melody & tuning</button><button type="button" data-voice-jump="rap-title">Rap & flow</button></nav>
+      <div class="voice-jump" role="group" aria-label="Choose a Voice Lab tool"><button type="button" data-voice-jump="transcript-title" aria-controls="voice-speech-tool" aria-pressed="true">Speech & words</button><button type="button" data-voice-jump="melody-title" aria-controls="voice-melody-tool" aria-pressed="false">Melody & tuning</button><button type="button" data-voice-jump="rap-title" aria-controls="voice-rap-tool" aria-pressed="false">Rap & flow</button></div>
       <div class="voice-columns">
-        <section class="voice-card" aria-labelledby="transcript-title">
+        <section class="voice-card" id="voice-speech-tool" aria-labelledby="transcript-title">
           <h3 id="transcript-title">Speech transcription</h3>
           <label class="voice-label">LOCAL AUDIO / VIDEO SOURCE<select id="voice-source-pad"></select></label>
           <p class="voice-note">English, on device. First use downloads about 65 MB total: the speech model and audio runtime. Audio is not uploaded. Word confidence is not supplied by this model, so review every word and timestamp.</p>
@@ -171,7 +172,7 @@
           <p class="voice-note" id="voice-map-help">Map a phrase into separate local WAV pads and a one-bar pattern at the current tempo. Existing samples and patterns stay untouched; the layout needs enough empty pads with unused patterns.</p>
         </section>
 
-        <section class="voice-card" aria-labelledby="melody-title">
+        <section class="voice-card" id="voice-melody-tool" aria-labelledby="melody-title" hidden>
           <h3 id="melody-title">Melody writing</h3>
           <p class="voice-note">Build a note sequence with pitch, step, and length. The default tuning reference is A4 = 440 Hz; a custom reference changes local tone previews. MIDI export follows the standard A4 = 440 Hz tuning. Assign phrase words to notes as pitched vocal sample cues, or add a semitone-shifted harmony line and edit it note by note. Word cues support MIDI pitches 48–72; harmony cues outside that range are skipped.</p>
           <label class="voice-label">TUNING REFERENCE (A4)<input id="melody-tuning" type="number" min="400" max="480" step="1" value="440"> Hz</label>
@@ -188,7 +189,7 @@
           <div id="melody-notes" class="melody-notes" role="group" aria-label="Melody notes"></div>
         </section>
 
-        <section class="voice-card" aria-labelledby="rap-title">
+        <section class="voice-card" id="voice-rap-tool" aria-labelledby="rap-title" hidden>
           <h3 id="rap-title">Rap writing</h3>
           <p class="voice-note">Draft 16 bars against the session tempo. Syllable counts and end-word rhymes are rough spelling-based hints; read and perform the lines to check the flow.</p>
           <p class="voice-note">Open FLOW on a bar to place syllable starts on the 16-step grid. Audition the click rhythm locally, then export the lyrics with your flow map.</p>
