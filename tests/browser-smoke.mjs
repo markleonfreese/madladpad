@@ -314,6 +314,17 @@ try {
     const mixPath=await mix.path();
     assert.ok(mixPath&& (await readFile(mixPath)).length>100,'audio-only export should contain encoded media');
     await page.locator('#export-audio-preview').waitFor({state:'visible'});
+    const wavDownload=page.waitForEvent('download',{timeout:10000});
+    await page.locator('#export-audio-wav').click();
+    const wavTake=await wavDownload;
+    assert.match(wavTake.suggestedFilename(),/\.wav$/i,'short mix should offer a local WAV copy');
+    const wavBytes=await readFile(await wavTake.path());
+    assert.equal(wavBytes.toString('ascii',0,4),'RIFF');
+    assert.equal(wavBytes.toString('ascii',8,12),'WAVE');
+    assert.equal(wavBytes.readUInt16LE(20),1,'WAV mix should use PCM encoding');
+    assert.equal(wavBytes.readUInt16LE(34),16,'WAV mix should use 16-bit samples');
+    assert.ok(wavBytes.length>44&&wavBytes.length<=12*1024*1024,'WAV copy should stay within the mobile memory/output bound');
+    assert.match(await page.locator('#export-audio-wav-status').textContent(),/Local WAV copy ready/);
     checkpoint('audio-only mix export');
   }else{
     console.log('Skipped audio-only mix export: MediaRecorder or AudioContext is unavailable.');

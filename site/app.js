@@ -1,4 +1,4 @@
-import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, directedPads, makeProject, normaliseProject, normaliseRegion, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, CaptureSession, suggestActiveRegion, isPadAudible, captureStepPosition, stepTriggerTime, nextBarTime, videoVisualDurationMs } from './core.js';
+import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, directedPads, makeProject, normaliseProject, normaliseRegion, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, suggestActiveRegion, isPadAudible, captureStepPosition, stepTriggerTime, nextBarTime, videoVisualDurationMs } from './core.js';
 import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, collectVoiceMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
 import { pickFromDrive, pickFromPhotos } from './google.js';
@@ -55,6 +55,9 @@ const visualUntil = new Map();
 const keys = new Set();
 const STUDIO_SCREENS = new Set(['sounds','beats','voice','overdub','export']);
 const lastTakes = { video:null, audio:null };
+const MAX_WAV_TAKE_SECONDS = 30;
+const MAX_WAV_SOURCE_BYTES = 16 * 1024 * 1024;
+const MAX_WAV_OUTPUT_BYTES = 12 * 1024 * 1024;
 let directorEditStep=0;
 let directorPlayingStep=null;
 let latestDetectedNote=null;
@@ -87,19 +90,20 @@ function updateTransportButton() {
   $('studio-play').classList.toggle('active',playing);
 }
 
-function rememberTake(kind,blob) {
+function rememberTake(kind,blob,durationSeconds=null) {
   const previous = lastTakes[kind];
   if(previous)URL.revokeObjectURL(previous.url);
   const type=kind==='video'?'video':'audio';
-  lastTakes[kind]={blob,url:URL.createObjectURL(blob),name:`madladpad-${kind}-${Date.now()}.${kind==='video'?extensionForMime(blob.type):extensionForAudioMime(blob.type)}`};
+  lastTakes[kind]={blob,durationSeconds:Number.isFinite(durationSeconds)?durationSeconds:null,url:URL.createObjectURL(blob),name:`madladpad-${kind}-${Date.now()}.${kind==='video'?extensionForMime(blob.type):extensionForAudioMime(blob.type)}`};
   const player=$(`export-${type}-preview`);
   player.src=lastTakes[kind].url;
   player.hidden=false;
   $(`export-${type}-empty`).hidden=true;
   $(`export-${type}-download`).disabled=false;
+  if(kind==='audio')$('export-audio-wav').disabled=false;
   $('export-record-status').textContent=`${type==='video'?'Video':'Audio'} take ready. Review it here or download it again.`;
   if(blob.size<=120*1024*1024){
-    putValue(`render:${kind}`,{blob,name:lastTakes[kind].name}).catch(error=>notify(`Your take downloaded, but local render storage failed: ${error.message}`));
+    putValue(`render:${kind}`,{blob,name:lastTakes[kind].name,durationSeconds:lastTakes[kind].durationSeconds}).catch(error=>notify(`Your take downloaded, but local render storage failed: ${error.message}`));
   } else notify('This take exceeds the 120 MB local render-cache limit. Keep the downloaded file.');
 }
 
@@ -108,7 +112,7 @@ async function restoreSavedTakes(){
     try{
       const previous=await getValue(`render:${kind}`);
       if(previous?.blob instanceof Blob&&previous.blob.size){
-        rememberTake(kind,previous.blob);
+        rememberTake(kind,previous.blob,previous.durationSeconds);
         lastTakes[kind].name=previous.name||lastTakes[kind].name;
       }
     }catch(error){console.warn('Local render restore unavailable',error);}
@@ -860,6 +864,41 @@ function download(blob,name) {
   setTimeout(()=>URL.revokeObjectURL(url),60000);
 }
 
+async function downloadAudioWavCopy() {
+  const take=lastTakes.audio,button=$('export-audio-wav'),status=$('export-audio-wav-status');
+  if(!take)return;
+  button.disabled=true;status.textContent='Checking the audio take locally…';
+  let url=null,media=null,timer=null;
+  try{
+    if(take.blob.size>MAX_WAV_SOURCE_BYTES)throw new Error('This take is too large for a phone-friendly WAV conversion. Download the original audio instead.');
+    let duration=take.durationSeconds;
+    if(!Number.isFinite(duration)){
+      media=new Audio();media.preload='metadata';url=URL.createObjectURL(take.blob);
+      duration=await new Promise((resolve,reject)=>{
+        const fail=()=>reject(new Error('This browser could not read the take duration. The original audio remains available.'));
+        media.onloadedmetadata=()=>Number.isFinite(media.duration)?resolve(media.duration):fail();
+        media.onerror=fail;timer=setTimeout(fail,5000);media.src=url;media.load();
+      });
+      clearTimeout(timer);timer=null;
+    }
+    if(duration>MAX_WAV_TAKE_SECONDS)throw new Error(`WAV copy is limited to ${MAX_WAV_TAKE_SECONDS} seconds. Download the original audio for longer takes.`);
+    const decoded=await audio.context.decodeAudioData(await take.blob.arrayBuffer());
+    if(decoded.duration>MAX_WAV_TAKE_SECONDS)throw new Error(`WAV copy is limited to ${MAX_WAV_TAKE_SECONDS} seconds. Download the original audio for longer takes.`);
+    if(44+decoded.length*Math.min(decoded.numberOfChannels,2)*2>MAX_WAV_OUTPUT_BYTES)throw new Error('The WAV copy would be too large for a phone-friendly download. The original audio remains available.');
+    const wav=audioBufferToWav(decoded);
+    if(wav.size>MAX_WAV_OUTPUT_BYTES)throw new Error('The WAV copy would be too large for a phone-friendly download. The original audio remains available.');
+    download(wav,take.name.replace(/\.[^.]+$/,'.wav'));
+    const channels=decoded.numberOfChannels===1?1:2;
+    status.textContent=`Local WAV copy ready · ${decoded.duration.toFixed(1)} s · ${Math.round(decoded.sampleRate/1000)} kHz · ${channels} channel${channels===1?'':'s'}.`;
+  }catch(error){status.textContent=error?.message||'WAV conversion is unavailable in this browser. The original audio remains available.';}
+  finally{
+    clearTimeout(timer);
+    if(media){media.pause();media.removeAttribute('src');media.load();}
+    if(url)URL.revokeObjectURL(url);
+    button.disabled=!lastTakes.audio;
+  }
+}
+
 function recorderMime(kind){
   const requested=$(kind==='video'?'record-video-format':'record-audio-format').value;
   if(requested==='auto')return kind==='video'?findRecorderMime():findAudioRecorderMime();
@@ -919,10 +958,11 @@ async function toggleAudioRecording() {
     const recorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined),chunks=[];
     recorder.ondataavailable=event=>{if(event.data.size)chunks.push(event.data);};
     recorder.onerror=event=>notify(`Audio recording failed: ${event.error?.message||'unknown error'}`);
+    const startedAt=performance.now();
     recorder.onstop=()=>{
       const type=recorder.mimeType||mime||'audio/webm';
       const blob=new Blob(chunks,{type});
-      if(blob.size){rememberTake('audio',blob);download(blob,lastTakes.audio.name);}
+      if(blob.size){rememberTake('audio',blob,(performance.now()-startedAt)/1000);download(blob,lastTakes.audio.name);}
       else notify('The browser did not capture audio.');
       audioRecording=null;
       $('record-audio').classList.remove('recording');$('record-audio').textContent='♪ RECORD AUDIO MIX';
@@ -1178,6 +1218,7 @@ function bindControls() {
   $('export-pack-action').addEventListener('click',()=>$('export-button').click());
   $('export-video-download').addEventListener('click',()=>{if(lastTakes.video)download(lastTakes.video.blob,lastTakes.video.name);});
   $('export-audio-download').addEventListener('click',()=>{if(lastTakes.audio)download(lastTakes.audio.blob,lastTakes.audio.name);});
+  $('export-audio-wav').addEventListener('click',downloadAudioWavCopy);
   const preview=$('region-preview');
   const regionTimeline=$('region-timeline');
   let draggedBoundary=null;

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, midiFrequency, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, midiFrequency, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs } from '../site/core.js';
 
 test('initial layout has 12 visible pads and 16 backing slots', () => {
   const project = makeProject();
@@ -179,4 +179,21 @@ test('MIDI ends an adjacent repeated pitch before retriggering it at the same ti
     events.push({tick,status,pitch,velocity});
   }
   assert.deepEqual(events.filter(event=>event.tick===480&&event.pitch===69).map(event=>event.status),[0x80,0x90]);
+});
+test('WAV encoder writes bounded little-endian 16-bit PCM for mono and stereo buffers',async()=>{
+  const stereo={sampleRate:44100,numberOfChannels:2,length:2,getChannelData:channel=>channel===0?Float32Array.from([-1,.5]):Float32Array.from([1,-.5])};
+  const file=audioBufferToWav(stereo),bytes=new Uint8Array(await file.arrayBuffer()),view=new DataView(bytes.buffer);
+  assert.equal(file.type,'audio/wav');
+  assert.equal(new TextDecoder().decode(bytes.slice(0,4)),'RIFF');
+  assert.equal(new TextDecoder().decode(bytes.slice(8,12)),'WAVE');
+  assert.equal(view.getUint32(4,true),bytes.length-8);
+  assert.equal(view.getUint16(20,true),1);
+  assert.equal(view.getUint16(22,true),2);
+  assert.equal(view.getUint32(24,true),44100);
+  assert.equal(view.getUint16(34,true),16);
+  assert.deepEqual([view.getInt16(44,true),view.getInt16(46,true),view.getInt16(48,true),view.getInt16(50,true)],[-32768,32767,16384,-16384]);
+  const mono=audioBufferToWav({sampleRate:16000,numberOfChannels:1,length:1,getChannelData:()=>Float32Array.from([.25])});
+  const monoBytes=new Uint8Array(await mono.arrayBuffer());
+  assert.equal(new DataView(monoBytes.buffer).getUint16(22,true),1);
+  assert.equal(new DataView(monoBytes.buffer).getInt16(44,true),8192);
 });

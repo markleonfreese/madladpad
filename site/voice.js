@@ -1,4 +1,4 @@
-import { clamp, midiFrequency, midiFile, estimateSyllables, HARMONY_INTERVALS, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, findAudioRecorderMime, extensionForAudioMime } from './core.js';
+import { clamp, midiFrequency, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, findAudioRecorderMime, extensionForAudioMime } from './core.js';
 import { getValue, saveVoiceLayer, deleteVoiceLayer } from './storage.js';
 import { detectPitch } from './tuner.js';
 
@@ -67,22 +67,6 @@ async function renderPhraseBuffer(phrase, audio) {
     node.connect(gain).connect(offline.destination); node.start(clip.at, clip.start, clip.duration); node.stop(stop + .002);
   }
   return offline.startRendering();
-}
-
-function audioBufferToWav(rendered) {
-  const sampleRate = rendered.sampleRate, channels = 2, dataBytes = rendered.length * channels * 2;
-  const bytes = new ArrayBuffer(44 + dataBytes), view = new DataView(bytes);
-  const ascii = (offset, text) => [...text].forEach((character, index) => view.setUint8(offset + index, character.charCodeAt(0)));
-  ascii(0, 'RIFF'); view.setUint32(4, 36 + dataBytes, true); ascii(8, 'WAVE'); ascii(12, 'fmt ');
-  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, channels, true);
-  view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * channels * 2, true);
-  view.setUint16(32, channels * 2, true); view.setUint16(34, 16, true); ascii(36, 'data'); view.setUint32(40, dataBytes, true);
-  const left = rendered.getChannelData(0), right = rendered.getChannelData(1);
-  for (let frame = 0; frame < rendered.length; frame++) {
-    view.setInt16(44 + frame * 4, Math.round(clamp(left[frame], -1, 1) * 32767), true);
-    view.setInt16(46 + frame * 4, Math.round(clamp(right[frame], -1, 1) * 32767), true);
-  }
-  return new Blob([bytes], { type: 'audio/wav' });
 }
 
 async function renderPhraseWav(phrase, audio) {
