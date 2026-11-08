@@ -14,6 +14,7 @@
 .camera-dialog{max-height:90vh;overflow:auto}.camera-dialog select{display:block;margin-top:6px;background:#101710;border:1px solid var(--line);border-radius:8px;padding:10px;color:var(--ink)}.camera-dialog section{display:grid;gap:10px}.camera-dialog section input{width:100%;accent-color:var(--acid)}.camera-dialog output{float:right;color:var(--acid)}
 #pitch-note{grid-column:1/-1;margin:-8px 0 0;color:var(--muted);font-size:11px;line-height:1.4}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+@media(max-width:740px){.edit-pad::after{content:"";position:absolute;inset:-18px -11px -22px}}
 .sample-timeline{position:relative;min-height:66px;margin:11px 0 8px;border:1px solid #354638;border-radius:7px;background:#121a14;overflow:hidden}
 .sample-timeline[hidden]{display:none}
 .sample-timeline-track{position:absolute;top:14px;left:10px;right:10px;height:4px;border-radius:4px;background:#425545}

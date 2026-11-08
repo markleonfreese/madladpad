@@ -911,6 +911,14 @@ try {
   await openScreen('voice');
   const mobileLayout=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('body *')].filter(el=>el.getBoundingClientRect().right>innerWidth+1).slice(0,12).map(el=>({tag:el.tagName,id:el.id,className:typeof el.className==='string'?el.className:'',right:el.getBoundingClientRect().right}))}));
   assert.equal(mobileLayout.scroll<=mobileLayout.width,true,`mobile layout should not overflow horizontally: ${JSON.stringify(mobileLayout)}`);
+  await openScreen('sounds');
+  const mobileEditTarget=await page.locator('.edit-pad').first().evaluate(button=>{
+    const rect=button.getBoundingClientRect(),points=[[rect.left-6,rect.top+rect.height/2],[rect.left+rect.width/2,rect.top-17]];
+    return {label:button.getAttribute('aria-label'),hits:points.map(([x,y])=>document.elementFromPoint(x,y)?.getAttribute('aria-label'))};
+  });
+  assert.deepEqual(mobileEditTarget.hits,[mobileEditTarget.label,mobileEditTarget.label],'mobile Edit Pad should accept taps just outside its visible chip');
+  assert.equal((await page.locator('#voice-lab .section-label').first().textContent()).trim().startsWith('03 /'),true,'Voice Lab workspace numbering should match its navigation step');
+  await openScreen('voice');
   const mobileRap=await page.locator('#rap-title').evaluate(title=>title.closest('.voice-card').getBoundingClientRect().width);
   assert.ok(mobileRap<mobileLayout.width,`mobile rap editor should stay within the single-column Voice Lab: ${mobileRap}px of ${mobileLayout.width}px`);
   assert.deepEqual(errors, []);
