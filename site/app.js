@@ -61,12 +61,17 @@ const MAX_WAV_OUTPUT_BYTES = 12 * 1024 * 1024;
 let directorEditStep=0;
 let directorPlayingStep=null;
 let latestDetectedNote=null;
+let activeVoiceTool='transcript-title';
 
 function showStudioScreen() {
   const requested = location.hash.slice(1);
   const screen = STUDIO_SCREENS.has(requested) ? requested : 'sounds';
   if (screen !== 'voice') voiceLab?.stopTuner?.('Voice Lab closed. Microphone is off.');
   document.body.dataset.screen = screen;
+  // Keep the sequencer first in reading and tab order on Beat Grid/Overdub.
+  const workspace=$('studio-workspace'),sequencer=$('sequencer');
+  if(screen==='beats'||screen==='overdub')workspace.before(sequencer);
+  else workspace.after(sequencer);
   for(const link of $('studio-nav').querySelectorAll('[data-studio-screen]')) {
     if(link.dataset.studioScreen===screen)link.setAttribute('aria-current','page');
     else link.removeAttribute('aria-current');
@@ -81,6 +86,25 @@ function showStudioScreen() {
   $('voice-lab').hidden = screen!=='voice';
   $('overdub-lab').hidden = screen!=='overdub';
   $('export-lab').hidden = screen!=='export';
+}
+
+function showVoiceTool(tool,{focus=false}={}) {
+  const allowed=['transcript-title','melody-title','rap-title'];
+  if(!allowed.includes(tool))return;
+  if(activeVoiceTool==='melody-title'&&tool!=='melody-title')voiceLab?.stopTuner?.('Melody tool closed. Microphone is off.');
+  activeVoiceTool=tool;
+  for(const button of document.querySelectorAll('[data-voice-jump]')){
+    button.setAttribute('aria-pressed',String(button.dataset.voiceJump===tool));
+  }
+  for(const card of document.querySelectorAll('#voice-lab .voice-card')){
+    card.hidden=card.querySelector('h3')?.id!==tool;
+  }
+  if(focus){
+    const heading=$(tool);
+    heading.tabIndex=-1;
+    heading.focus({preventScroll:true});
+    heading.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});
+  }
 }
 
 function updateTransportButton() {
@@ -219,6 +243,7 @@ function renderPad(id) {
   const hasMedia = mediaFiles.has(id);
   card.hidden = id >= PAD_COUNT[project.layout];
   card.classList.toggle('empty',!hasMedia);
+  card.classList.toggle('demo',audio.demoEnabled&&!hasMedia);
   card.classList.toggle('selected',selected===id);
   card.classList.toggle('editable',hasMedia);
   card.classList.toggle('playing', (activeUntil.get(id)||0)>performance.now());
@@ -232,6 +257,20 @@ function renderPad(id) {
 function renderGrid() {
   $('pad-grid').className = `pad-grid layout-${project.layout}`;
   for (let id=0;id<16;id++) renderPad(id);
+  renderBeatPadChoice();
+}
+
+function renderBeatPadChoice(){
+  const picker=$('beat-pad-select'),count=PAD_COUNT[project.layout];
+  if(!picker)return;
+  for(let id=0;id<count;id++){
+    let option=picker.options[id];
+    if(!option){option=document.createElement('option');picker.append(option);}
+    option.value=String(id);
+    option.textContent=`${String(id+1).padStart(2,'0')} · ${mediaFiles.has(id)?project.pads[id].name:audio.demoEnabled?'Demo synth':'Empty pad'}`;
+  }
+  while(picker.options.length>count)picker.remove(picker.options.length-1);
+  picker.value=String(selected);
 }
 
 function selectPad(id) {
@@ -412,7 +451,7 @@ function renderControls() {
   $('selected-number').textContent = `PAD ${String(selected+1).padStart(2,'0')}`;
   $('selected-circle').textContent = String(selected+1).padStart(2,'0');
   $('pad-name').value = config.name;
-  $('sample-info').textContent = mediaFiles.has(selected) ? `${config.fileName} · ${config.kind.toUpperCase()} · stored on this device` : 'No media loaded. Add a clip to get started.';
+  $('sample-info').textContent = mediaFiles.has(selected) ? `${config.fileName} · ${config.kind.toUpperCase()} · stored on this device` : audio.demoEnabled ? 'Demo synth ready to play. No clip is loaded: import or record your own sound to edit its trim, speed and pitch.' : 'No media loaded. Add a clip to get started.';
   $('volume').value = config.volume*100;
   $('pitch').value = config.pitch;
   const pitchAvailable=audio.canPitch(selected);
@@ -1202,12 +1241,11 @@ async function importPack(file) {
 function bindControls() {
   window.addEventListener('hashchange',showStudioScreen);
   showStudioScreen();
+  showVoiceTool(activeVoiceTool);
   for(const button of document.querySelectorAll('[data-voice-jump]')){
-    button.addEventListener('click',()=>{
-      const target=$(button.dataset.voiceJump);
-      target?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});
-    });
+    button.addEventListener('click',()=>showVoiceTool(button.dataset.voiceJump,{focus:true}));
   }
+  $('beat-pad-select').addEventListener('change',event=>selectPad(Number(event.target.value)));
   $('studio-play').addEventListener('click',()=>transportTimer?stopSequencer():startSequencer());
   $('director-mode').addEventListener('change',event=>{
     const shot=project.video.shots[directorEditStep];shot.mode=event.target.value;

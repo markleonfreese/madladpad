@@ -47,6 +47,20 @@ body[data-screen="beats"] #video-director{order:1}
 
 /* Each stage uses the same in-memory session and audio transport. */
 [hidden]{display:none!important}
+
+/* Beat-making takes priority over the performance-pad gallery. */
+body[data-screen="beats"] #studio-workspace{margin-top:16px}
+body[data-screen="beats"] .pad{aspect-ratio:3;min-height:76px}
+body[data-screen="beats"] .pad-bg{font-size:18px}
+.pad.demo .pad-bg{font-size:0}
+.pad.demo .pad-bg::after{content:"▶";font-size:20px;color:#80957b}
+.beat-pad-choice{display:flex;align-items:center;gap:12px;margin:2px 0 16px;color:#c6d7c0;font:11px var(--mono)}
+.beat-pad-choice select{min-height:44px;min-width:180px;max-width:100%;padding:8px 11px;border:1px solid #536951;border-radius:8px;background:#101710;color:var(--ink);font:12px var(--mono)}
+
+/* Voice Lab: choose a task before showing its detailed controls. */
+.voice-columns{grid-template-columns:minmax(0,1fr);max-width:1000px}
+.voice-jump button[aria-pressed="true"],.voice-jump button[aria-pressed="true"]:hover{background:var(--acid);color:#172011;border-color:var(--acid)}
+@media(max-width:740px){body[data-screen="beats"] .pad{aspect-ratio:1.7;min-height:72px}.beat-pad-choice{align-items:stretch;flex-direction:column;gap:7px}.beat-pad-choice select{width:100%}}
 .rap-flow{grid-column:1/-1;margin:7px 0 3px;border:1px solid #3b4b3d;border-radius:8px;background:#19221b}
 .rap-flow>summary{min-height:42px;display:flex;align-items:center;padding:8px 11px;color:#c6d9c3;font:10px var(--mono);letter-spacing:.04em;cursor:pointer}
 .rap-flow[open]>summary{border-bottom:1px solid #354437;color:var(--acid)}
