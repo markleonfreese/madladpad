@@ -143,6 +143,10 @@ try {
   assert.match(await page.locator('#director-status').textContent(),/show pads 1, 2/);
   await page.locator('#track-view').click();
   assert.equal(await page.locator('#track-grid .track-row').count(),12,'all-tracks view should expose each lane in the 12-pad layout');
+  await page.locator('.track-row[data-pad="2"] .track-edit').click();
+  await page.waitForFunction(()=>document.body.dataset.screen==='sounds');
+  assert.equal(await page.locator('.pad[data-id="2"]').evaluate(pad=>pad.classList.contains('selected')),true,'Beat Grid Edit should select the correct pad in Sounds');
+  await openScreen('beats');
   for (const [layout,count] of [['2x2',4],['4x4',16],['3x4',12]]) {
     await page.locator('#layout-select').selectOption(layout);
     assert.equal(await page.locator('#track-grid .track-row').count(),count,`all-tracks view should refresh to ${count} lanes for ${layout}`);
