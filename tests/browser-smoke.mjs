@@ -921,10 +921,11 @@ try {
   await openScreen('sounds');
   const mobileEditTarget=await page.locator('.edit-pad').first().evaluate(button=>{
     const rect=button.getBoundingClientRect(),points=[[rect.left+2,rect.top+20],[rect.left+22,rect.top+5]];
-    return {label:button.getAttribute('aria-label'),width:rect.width,height:rect.height,hits:points.map(([x,y])=>document.elementFromPoint(x,y)?.closest('button')?.getAttribute('aria-label'))};
+    const describe=(x,y)=>{const hit=document.elementFromPoint(x,y);return {label:hit?.closest('button')?.getAttribute('aria-label'),tag:hit?.tagName,className:typeof hit?.className==='string'?hit.className:'',stack:document.elementsFromPoint(x,y).slice(0,4).map(node=>({tag:node.tagName,className:typeof node.className==='string'?node.className:'',label:node.getAttribute('aria-label')}))};};
+    return {label:button.getAttribute('aria-label'),width:rect.width,height:rect.height,visibility:getComputedStyle(button).visibility,pointerEvents:getComputedStyle(button).pointerEvents,hits:points.map(([x,y])=>describe(x,y))};
   });
   assert.ok(mobileEditTarget.width>=44&&mobileEditTarget.height>=44,'mobile Edit Pad should expose a 44px hit area');
-  assert.deepEqual(mobileEditTarget.hits,[mobileEditTarget.label,mobileEditTarget.label],'mobile Edit Pad should accept taps just outside its visible chip');
+  assert.ok(mobileEditTarget.hits.every(hit=>hit.label===mobileEditTarget.label),`mobile Edit Pad should accept taps just outside its visible chip: ${JSON.stringify(mobileEditTarget)}`);
   assert.equal((await page.locator('#voice-lab .section-label').first().textContent()).trim().startsWith('03 /'),true,'Voice Lab workspace numbering should match its navigation step');
   await openScreen('voice');
   const mobileRap=await page.locator('#rap-title').evaluate(title=>title.closest('.voice-card').getBoundingClientRect().width);
