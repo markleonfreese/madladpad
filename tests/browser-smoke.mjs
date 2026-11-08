@@ -126,6 +126,10 @@ try {
     await page.setViewportSize({width,height:844});
     for(const screen of ['sounds','beats','voice','overdub','export']){
       await openScreen(screen);
+      if(screen==='beats'){
+        const beatOrder=await page.evaluate(()=>({controls:document.querySelector('.transport-panel').getBoundingClientRect().top,sequencer:document.querySelector('#sequencer').getBoundingClientRect().top,pads:document.querySelector('.performance-area').getBoundingClientRect().top}));
+        assert.ok(beatOrder.controls<beatOrder.sequencer&&beatOrder.sequencer<beatOrder.pads,`Beat Grid should show its sequencer before the pad grid at ${width}px: ${JSON.stringify(beatOrder)}`);
+      }
       const stageAudit=await page.evaluate(async()=>axe.run(document));
       assert.deepEqual(stageAudit.violations.map(violation=>violation.id),[],`${screen} at ${width}px should pass axe checks: ${JSON.stringify(stageAudit.violations.map(({id,nodes})=>({id,nodes:nodes.map(node=>({target:node.target,summary:node.failureSummary}))})))}`);
       assert.equal(await page.getByRole('main').count(),1,'every studio screen should retain one primary-content landmark');
@@ -146,6 +150,8 @@ try {
   assert.equal(await page.locator('#sequencer').isVisible(),true,'Beat Grid should expose sequencer');
   assert.equal(await page.locator('#video-director').isVisible(),true,'Beat Grid should expose Video Director');
   assert.equal(await page.locator('#director-steps button').count(),16,'video direction should have one shot per sequencer step');
+  const desktopBeatOrder=await page.evaluate(()=>({sequencer:document.querySelector('#sequencer').getBoundingClientRect().top,pads:document.querySelector('.performance-area').getBoundingClientRect().top}));
+  assert.ok(desktopBeatOrder.sequencer<desktopBeatOrder.pads,`Beat Grid should place the sequencer before the pad grid on desktop: ${JSON.stringify(desktopBeatOrder)}`);
   await page.locator('.pad[data-id="2"]').hover();
   await page.locator('.pad[data-id="2"] .edit-pad').click();
   await page.waitForFunction(()=>document.body.dataset.screen==='sounds');
