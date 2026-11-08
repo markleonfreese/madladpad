@@ -416,6 +416,7 @@ try {
   assert.equal(await page.locator(`.track-row[data-pad="${mappedPadIds[1]}"] [data-step="2"]`).getAttribute('aria-pressed'),'true','second phrase word should overlap the first word at the saved crossfade timing');
   assert.match(await page.locator('#toast').textContent(),/word samples mapped to pads and the 16-step pattern/);
   await openScreen('voice');
+  await page.locator('[data-voice-jump="melody-title"]').click();
   const tunerBrowserResult=await page.evaluate(async()=>{
     const {detectPitch}=await import('/tuner.js');
     const samples=Float32Array.from({length:4096},(_,index)=>.25*Math.sin(2*Math.PI*440*index/48000));
@@ -440,6 +441,7 @@ try {
   assert.ok(await page.evaluate(()=>window.__tunerStreams.length===1&&window.__tunerStreams[0].getTracks().every(track=>track.readyState==='ended')),'stopping the tuner should release its only microphone stream');
   assert.match(await page.locator('#tuner-status').textContent(),/Tuner stopped/);
   checkpoint('tuner opens and releases exactly one microphone stream per tap');
+  await page.locator('[data-voice-jump="transcript-title"]').click();
   await page.locator('#voice-consent').uncheck();
   await page.locator('#voice-manual-text').fill('by hand');
   await page.locator('#voice-manual-start').fill('0.05');
