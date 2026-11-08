@@ -434,6 +434,7 @@ try {
       const stream=await native(...args); window.__tunerStreams.push(stream); return stream;
     }});
   });
+  await page.locator('[data-voice-jump="melody-title"]').click();
   await page.locator('#tuner-start').click();
   await page.waitForFunction(()=>document.querySelector('#tuner-status').textContent.includes('Listening locally'));
   await page.locator('#tuner-stop').click();
@@ -441,6 +442,7 @@ try {
   assert.ok(await page.evaluate(()=>window.__tunerStreams.length===1&&window.__tunerStreams[0].getTracks().every(track=>track.readyState==='ended')),'stopping the tuner should release its only microphone stream');
   assert.match(await page.locator('#tuner-status').textContent(),/Tuner stopped/);
   checkpoint('tuner opens and releases exactly one microphone stream per tap');
+  await page.locator('[data-voice-jump="speech-title"]').click();
   await page.locator('[data-voice-jump="transcript-title"]').click();
   await page.locator('#voice-consent').uncheck();
   await page.locator('#voice-manual-text').fill('by hand');
