@@ -364,6 +364,7 @@ function padIsAudible(id){return isPadAudible(project.pads.slice(0,PAD_COUNT[pro
 function renderControls() {
   const config = project.pads[selected];
   $('sample-inspector').classList.toggle('has-media',mediaFiles.has(selected));
+  $('sample-inspector').classList.toggle('demo-enabled',audio.demoEnabled&&!mediaFiles.has(selected));
   $('selected-number').textContent = `PAD ${String(selected+1).padStart(2,'0')}`;
   $('selected-circle').textContent = String(selected+1).padStart(2,'0');
   $('pad-name').value = config.name;
@@ -1286,7 +1287,7 @@ function bindControls() {
   $('demo-button').addEventListener('click',()=>{
     audio.demoEnabled=!audio.demoEnabled;
     for(const button of [$('demo-button'),$('quick-demo')]){button.classList.toggle('active',audio.demoEnabled);button.setAttribute('aria-pressed',String(audio.demoEnabled));}
-    renderGrid();renderTrackGrid();notify(audio.demoEnabled?'Demo synth sounds enabled on empty pads.':'Demo sounds off.');
+    renderGrid();renderTrackGrid();renderControls();notify(audio.demoEnabled?'Demo synth sounds enabled on empty pads.':'Demo sounds off.');
   });
   $('play-seq').addEventListener('click',()=>transportTimer?stopSequencer():startSequencer());
   $('auto-beat').addEventListener('click',surpriseBeat);

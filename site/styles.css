@@ -94,7 +94,8 @@
 .workspace{align-items:start}
 .edit-pad{min-width:44px;min-height:44px;display:grid;place-items:center;padding:0}
 .editor-empty-hint{margin:13px 0 0;padding:12px 13px;border:1px solid #405341;border-radius:9px;background:#243026;color:#c1d3bc;font-size:12px;line-height:1.5}
-.inspector:not(.has-media) .region-editor,.inspector:not(.has-media) .sliders{display:none}
+.inspector:not(.has-media) .region-editor,.inspector:not(.has-media):not(.demo-enabled) .sliders{display:none}
+.inspector.demo-enabled:not(.has-media) .sliders>:not(:first-child){display:none}
 .inspector.has-media .editor-empty-hint{display:none}
 .voice-jump{display:flex;gap:9px;flex-wrap:wrap;margin:16px 0 6px}
 .voice-jump button{min-height:44px;padding:10px 13px;border-radius:9px;border:1px solid #4b6450;background:#253427;color:#e1ecd9;font-size:12px;font-weight:700}

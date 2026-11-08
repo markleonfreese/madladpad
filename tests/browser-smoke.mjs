@@ -87,8 +87,11 @@ try {
   assert.equal(await page.locator('#quick-demo').isVisible(),true,'the demo should be the primary first-run action');
   await page.locator('#quick-demo').click();
   assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'true','quick-start demo should use the existing demo toggle');
+  assert.equal(await page.locator('#volume').isVisible(),true,'demo pads should keep their volume control in Sounds');
+  assert.equal(await page.locator('#speed').isVisible(),false,'media-only controls should stay hidden for demo pads');
   await page.locator('#quick-demo').click();
   assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'false','quick-start demo should stay synchronized when switched off');
+  assert.equal(await page.locator('#volume').isVisible(),false,'empty pads should keep advanced controls hidden when demo is off');
   assert.equal(await page.locator('#quick-import').isVisible(),true,'quick import should be available from the first-run actions');
   assert.equal(await page.locator('#quick-record').isVisible(),true,'quick recording should be available from the first-run actions');
   const openScreen=async screen=>{
