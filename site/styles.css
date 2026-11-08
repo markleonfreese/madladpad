@@ -87,3 +87,32 @@
 .region-timeline-start-time{left:0}.region-timeline-end-time{right:0}
 .region-timeline-handle{position:absolute;top:19px;transform:translateX(-50%);width:44px;height:44px;padding:0;border:2px solid #142016;border-radius:50%;background:var(--acid);box-shadow:0 0 0 1px var(--acid);touch-action:none;cursor:ew-resize;z-index:1}
 .region-timeline-handle:hover{background:#eaff98}.region-timeline-handle:focus-visible{outline:3px solid var(--coral);outline-offset:3px}
+
+/* First-use, mobile touch targets, and progressive sample editing. */
+.intro-start{display:grid;gap:12px;max-width:360px}
+.intro-start>p{margin:0;color:#b0c1b1;font-size:14px;line-height:1.6}
+.quick-start{display:flex;flex-wrap:wrap;gap:9px;align-items:center}
+.quick-action{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 15px;border-radius:9px;background:var(--acid);color:#182216;text-decoration:none;font-size:12px;font-weight:800}
+.quick-action:hover{background:#e7ff93}
+.quick-action:focus-visible,.voice-jump button:focus-visible{outline:2px solid var(--acid);outline-offset:3px}
+.quick-start .pill-button{min-height:44px}
+.workspace{align-items:start}
+.edit-pad{min-width:44px;min-height:44px;display:grid;place-items:center;padding:0}
+.editor-empty-hint{margin:13px 0 0;padding:12px 13px;border:1px solid #405341;border-radius:9px;background:#243026;color:#c1d3bc;font-size:12px;line-height:1.5}
+.inspector:not(.has-media) .region-editor,.inspector:not(.has-media) .sliders{display:none}
+.inspector.has-media .editor-empty-hint{display:none}
+.voice-jump{display:flex;gap:9px;flex-wrap:wrap;margin:16px 0 6px}
+.voice-jump button{min-height:44px;padding:10px 13px;border-radius:9px;border:1px solid #4b6450;background:#253427;color:#e1ecd9;font-size:12px;font-weight:700}
+.voice-jump button:hover{border-color:var(--acid);color:var(--acid)}
+@media(max-width:740px){
+  .studio-nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;overflow:visible;margin:0 0 14px;padding:12px 0;border-bottom:0}
+  .studio-nav a{min-width:0;min-height:48px;padding:8px 5px;justify-content:center;gap:5px;text-align:center;white-space:normal;font-size:11px;line-height:1.25;border:1px solid #3b4b3d;border-bottom:3px solid #3b4b3d;border-radius:9px}
+  .intro{margin:14px 0 17px;gap:12px}
+  .intro h2{font-size:clamp(29px,8vw,40px);margin-top:6px}
+  .intro-start{gap:9px;margin-top:12px}
+  .intro-start>p{font-size:12px}
+  .quick-start{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .quick-action,.quick-start .pill-button{min-width:0;white-space:normal;text-align:center;font-size:10px;padding:9px}
+  .edit-pad{right:2px;bottom:2px;min-width:44px;min-height:44px}
+  .pad-bottom p{font-size:12px}
+}
