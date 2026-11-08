@@ -919,6 +919,7 @@ try {
   const mobileLayout=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('body *')].filter(el=>el.getBoundingClientRect().right>innerWidth+1).slice(0,12).map(el=>({tag:el.tagName,id:el.id,className:typeof el.className==='string'?el.className:'',right:el.getBoundingClientRect().right}))}));
   assert.equal(mobileLayout.scroll<=mobileLayout.width,true,`mobile layout should not overflow horizontally: ${JSON.stringify(mobileLayout)}`);
   await openScreen('sounds');
+  await page.locator('.pad:not([hidden]) .edit-pad').first().scrollIntoViewIfNeeded();
   const mobileEditTarget=await page.locator('.edit-pad').first().evaluate(button=>{
     const rect=button.getBoundingClientRect(),points=[[rect.left+2,rect.top+20],[rect.left+22,rect.top+5]];
     const describe=(x,y)=>{const hit=document.elementFromPoint(x,y);return {label:hit?.closest('button')?.getAttribute('aria-label'),tag:hit?.tagName,className:typeof hit?.className==='string'?hit.className:'',stack:document.elementsFromPoint(x,y).slice(0,4).map(node=>({tag:node.tagName,className:typeof node.className==='string'?node.className:'',label:node.getAttribute('aria-label')}))};};
