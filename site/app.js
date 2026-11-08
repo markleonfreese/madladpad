@@ -195,7 +195,7 @@ function buildGrid() {
       if (!mediaFiles.has(id) && !audio.demoEnabled) { sourcePad=id; $('pad-source-title').textContent=`Add a sample to pad ${id+1}`; $('pad-source-dialog').showModal(); }
       else playPad(id);
     });
-    card.querySelector('.edit-pad').addEventListener('click', () => selectPad(id));
+    card.querySelector('.edit-pad').addEventListener('click', () => {selectPad(id);if(location.hash!=='#sounds')location.hash='#sounds';});
     card.addEventListener('dragover', event => { event.preventDefault(); });
     card.addEventListener('drop', async event => {
       event.preventDefault(); selectPad(id);
