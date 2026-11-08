@@ -14,6 +14,12 @@
 .camera-dialog{max-height:90vh;overflow:auto}.camera-dialog select{display:block;margin-top:6px;background:#101710;border:1px solid var(--line);border-radius:8px;padding:10px;color:var(--ink)}.camera-dialog section{display:grid;gap:10px}.camera-dialog section input{width:100%;accent-color:var(--acid)}.camera-dialog output{float:right;color:var(--acid)}
 #pitch-note{grid-column:1/-1;margin:-8px 0 0;color:var(--muted);font-size:11px;line-height:1.4}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+body[data-screen="beats"] #studio-main{display:flex;flex-direction:column}
+body[data-screen="beats"] .transport-panel{order:-2}
+body[data-screen="beats"] #sequencer{order:-1;margin-top:0}
+body[data-screen="beats"] #studio-workspace{order:0}
+body[data-screen="beats"] #video-director{order:1}
 @media(max-width:740px){.edit-pad{z-index:4;width:44px;height:44px;right:0;bottom:0;padding:0;display:flex;align-items:flex-end;justify-content:flex-end;background:transparent;border:0;pointer-events:auto}.edit-pad span{margin:0 4px 4px 0;padding:3px;border:1px solid #71856a;border-radius:6px;background:#0d120fdb;color:var(--acid);font:11px var(--mono)}}
 .sample-timeline{position:relative;min-height:66px;margin:11px 0 8px;border:1px solid #354638;border-radius:7px;background:#121a14;overflow:hidden}
 .sample-timeline[hidden]{display:none}
