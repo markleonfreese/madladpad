@@ -4,10 +4,18 @@ const API = 'https://photospicker.googleapis.com/v1';
 
 function config() {
   const c = window.MADLADPAD_GOOGLE || {};
-  if (!c.clientId || !c.apiKey || !c.appId || c.clientId.startsWith('YOUR_')) {
+  if (!isGooglePickerConfigured()) {
     throw new Error('Google pickers need a configured OAuth client ID, restricted API key and Google Cloud project number. See README.');
   }
   return c;
+}
+
+export function isGooglePickerConfigured() {
+  const c = window.MADLADPAD_GOOGLE || {};
+  return [c.clientId,c.apiKey,c.appId].every(value=>{
+    const text=String(value ?? '').trim();
+    return Boolean(text) && !text.startsWith('YOUR_');
+  });
 }
 
 function loadScript(url, ready) {

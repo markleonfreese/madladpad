@@ -128,3 +128,6 @@ body[data-screen="beats"] .pad-bg{font-size:18px}
   .edit-pad{right:2px;bottom:2px;min-width:44px;min-height:44px}
   .pad-bottom p{font-size:12px}
 }
+.source-button:disabled,.quiet-button:disabled{opacity:.58;cursor:not-allowed}
+.source-button:disabled:hover,.quiet-button:disabled:hover{border-color:var(--line)}
+.camera-dialog .quiet-button small{display:block;margin-top:4px;color:var(--muted);font-size:10px;font-weight:400}

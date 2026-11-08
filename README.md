@@ -47,6 +47,8 @@ Use the [physical-device and listening acceptance checklist](docs/DEVICE-ACCEPTA
 3. Copy `site/google-config.example.js` to `site/google-config.js` and enter the public OAuth client ID, restricted browser key and numeric Cloud project ID. Never put an OAuth client secret in the site.
 4. The checked-in `google-config.js` has empty values. Configure and test Google imports on a real deployed HTTPS origin only if you want those optional providers.
 
+When any required identifier is missing or still a placeholder, Drive and Photos buttons stay disabled and say **Setup required**. Device / Files and local recording remain available without a Google account.
+
 Google Photos uses a Picker session and reads only approved selections; video downloads can take time. Drive uses the `drive.file` scope; Photos uses `photospicker.mediaitems.readonly`. iCloud Drive is available through the system Files picker on compatible Apple devices; Apple does not provide an equivalent generic iCloud Drive web picker.
 
 ## Browser and media boundaries
