@@ -120,11 +120,30 @@ try {
   assert.equal(await page.locator('#editor-empty-hint').isVisible(),true,'empty sample should explain when editing tools appear');
   assert.equal(await page.locator('#sample-inspector .region-editor').isHidden(),true,'unused trimming controls should not overwhelm first-time users');
   assert.equal(await page.locator('#sample-inspector .sliders').isHidden(),true,'unused pitch and tuning controls should not overwhelm first-time users');
+  for(const id of ['google-drive','google-photos']){
+    assert.equal(await page.locator(`#${id}`).isDisabled(),true,`${id} should be disabled until the optional Google integration is configured`);
+    assert.match(await page.locator(`#${id}`).locator('small').textContent(),/Setup required/);
+    assert.match(await page.locator(`#${id}`).getAttribute('aria-label'),/Use Device \/ Files or Record on Pad/);
+  }
   await page.locator('.pad-hit').first().click();
   assert.equal(await page.locator('#pad-source-dialog').isVisible(),true,'empty pads should offer a source picker');
   assert.equal(await page.locator('#pad-google-drive').isVisible(),true,'Drive should be available in the source picker');
   assert.equal(await page.locator('#pad-google-photos').isVisible(),true,'Photos should be available in the source picker');
+  assert.equal(await page.locator('#pad-google-drive').isDisabled(),true,'the pad source picker must not offer a dead Google Drive action');
+  assert.equal(await page.locator('#pad-google-photos').isDisabled(),true,'the pad source picker must not offer a dead Google Photos action');
   await page.locator('#pad-source-cancel').click();
+  const configuredPage=await context.newPage();
+  await configuredPage.addInitScript(()=>{
+    const configured={clientId:'smoke-test.apps.googleusercontent.com',apiKey:'smoke-test-key',appId:'123456789'};
+    Object.defineProperty(window,'MADLADPAD_GOOGLE',{configurable:true,get:()=>configured,set:()=>{}});
+  });
+  await configuredPage.goto(origin);
+  await wait(configuredPage,'.pad-hit');
+  for(const [id,label] of [['google-drive','Choose files'],['google-photos','Choose clips'],['pad-google-drive','Choose files'],['pad-google-photos','Choose clips']]){
+    assert.equal(await configuredPage.locator(`#${id}`).isEnabled(),true,`${id} should be available when all public Google identifiers are configured`);
+    assert.equal((await configuredPage.locator(`#${id}`).locator('small').textContent()).trim(),label,`${id} should restore its action label when configured`);
+  }
+  await configuredPage.close();
   checkpoint('initial load');
   assert.equal(await page.locator('.pad:not([hidden])').count(), 12);
   await page.addScriptTag({path:axePath});

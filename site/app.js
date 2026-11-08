@@ -1,7 +1,7 @@
 import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, directedPads, makeProject, normaliseProject, normaliseRegion, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, suggestActiveRegion, isPadAudible, captureStepPosition, stepTriggerTime, nextBarTime, videoVisualDurationMs } from './core.js';
 import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, collectVoiceMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
-import { pickFromDrive, pickFromPhotos } from './google.js';
+import { isGooglePickerConfigured, pickFromDrive, pickFromPhotos } from './google.js';
 import { initVoiceLab } from './voice.js';
 import { detectPitch } from './tuning.js';
 
@@ -1238,7 +1238,27 @@ async function importPack(file) {
   } catch(error){notify(`Import failed: ${error.message}`);}
 }
 
+function configureGoogleSources(){
+  const configured=isGooglePickerConfigured();
+  const sources=[
+    ['google-drive','Google Drive','Choose files'],
+    ['google-photos','Google Photos','Choose clips'],
+    ['pad-google-drive','Google Drive','Choose files'],
+    ['pad-google-photos','Google Photos','Choose clips']
+  ];
+  for(const [id,name,action] of sources){
+    const button=$(id);
+    button.disabled=!configured;
+    const status=button.querySelector('small');
+    if(status)status.textContent=configured?action:'Setup required';
+    if(configured)button.removeAttribute('aria-label');
+    else button.setAttribute('aria-label',`${name} import unavailable: optional setup required. Use Device / Files or Record on Pad.`);
+    button.title=configured?`${name}: ${action}`:`${name} import is optional and not configured. Use Device / Files or Record on Pad.`;
+  }
+}
+
 function bindControls() {
+  configureGoogleSources();
   window.addEventListener('hashchange',showStudioScreen);
   showStudioScreen();
   showVoiceTool(activeVoiceTool);
