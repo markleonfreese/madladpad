@@ -707,14 +707,15 @@ try {
         await page.locator('.pad-hit').nth(1).click();
         await page.waitForFunction(()=>{const video=document.querySelectorAll('.pad video')[1];return video?.readyState>=2&&Number.isFinite(video.duration)&&video.duration>1.5;},null,{timeout:10000});
         await page.locator('.pad video').nth(1).evaluate(video=>{video.pause();video.currentTime=0;});
+        const videoSourceDuration=await page.locator('.pad video').nth(1).evaluate(video=>video.duration);
         await setRange('#pitch',4);await setRange('#speed',1);
         const videoOne=await analyzeMix(await recordPitchMix(1,2300));
         assert.ok(Math.abs(videoOne.frequency-554.4)<10,`video Pitch +4 at Speed 1× should export near 554 Hz, got ${JSON.stringify(videoOne)}`);
-        assert.ok(Math.abs(videoOne.activeDuration-2)<.3,`video should play for about two seconds at Speed 1×, got ${videoOne.activeDuration.toFixed(2)} s`);
+        assert.ok(Math.abs(videoOne.activeDuration-videoSourceDuration)<.3,`video at Speed 1× should retain its measured ${videoSourceDuration.toFixed(2)} s duration, got ${videoOne.activeDuration.toFixed(2)} s`);
         await setRange('#speed',2);
         const videoTwo=await analyzeMix(await recordPitchMix(1,2300));
         assert.ok(Math.abs(videoTwo.frequency-554.4)<10,`video Pitch +4 at Speed 2× should stay near 554 Hz, got ${JSON.stringify(videoTwo)}`);
-        assert.ok(Math.abs(videoTwo.activeDuration-1)<.25,`video should play for about one second at Speed 2×, got ${videoTwo.activeDuration.toFixed(2)} s`);
+        assert.ok(Math.abs(videoTwo.activeDuration-videoSourceDuration/2)<.25,`video at Speed 2× should play for half its measured duration of ${videoSourceDuration.toFixed(2)} s, got ${videoTwo.activeDuration.toFixed(2)} s`);
         assert.ok(Math.abs(videoOne.frequency-videoTwo.frequency)<10,`video Pitch should stay stable across Speed values, got ${videoOne.frequency.toFixed(1)} Hz at 1× and ${videoTwo.frequency.toFixed(1)} Hz at 2×`);
         checkpoint(`video-element Pitch export (${videoOne.frequency.toFixed(1)} Hz at 1× and ${videoTwo.frequency.toFixed(1)} Hz at 2×)`);
       }else{
