@@ -155,3 +155,28 @@ test('melody uses A4 tuning and exports a MIDI track; rap syllable counts remain
   assert.ok(new TextDecoder().decode(bytes).includes('MTrk'));
   assert.ok(bytes.includes(0x90)&&bytes.includes(0x80));
 });
+test('MIDI ends an adjacent repeated pitch before retriggering it at the same tick',async()=>{
+  const bytes=new Uint8Array(await midiFile([
+    {midi:69,step:4,duration:4},
+    {midi:69,step:0,duration:4}
+  ],120).arrayBuffer());
+  let offset=22,tick=0;
+  const events=[];
+  while(offset<bytes.length){
+    let delta=0,byte;
+    do{byte=bytes[offset++];delta=(delta<<7)|(byte&0x7f);}while(byte&0x80);
+    tick+=delta;
+    const status=bytes[offset++];
+    if(status===0xff){
+      const type=bytes[offset++];
+      let length=0,next;
+      do{next=bytes[offset++];length=(length<<7)|(next&0x7f);}while(next&0x80);
+      if(type===0x2f)break;
+      offset+=length;
+      continue;
+    }
+    const pitch=bytes[offset++],velocity=bytes[offset++];
+    events.push({tick,status,pitch,velocity});
+  }
+  assert.deepEqual(events.filter(event=>event.tick===480&&event.pitch===69).map(event=>event.status),[0x80,0x90]);
+});
