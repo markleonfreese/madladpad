@@ -363,6 +363,7 @@ function padIsAudible(id){return isPadAudible(project.pads.slice(0,PAD_COUNT[pro
 
 function renderControls() {
   const config = project.pads[selected];
+  $('sample-inspector').classList.toggle('has-media',mediaFiles.has(selected));
   $('selected-number').textContent = `PAD ${String(selected+1).padStart(2,'0')}`;
   $('selected-circle').textContent = String(selected+1).padStart(2,'0');
   $('pad-name').value = config.name;
@@ -1119,6 +1120,12 @@ async function importPack(file) {
 function bindControls() {
   window.addEventListener('hashchange',showStudioScreen);
   showStudioScreen();
+  for(const button of document.querySelectorAll('[data-voice-jump]')){
+    button.addEventListener('click',()=>{
+      const target=$(button.dataset.voiceJump);
+      target?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});
+    });
+  }
   $('studio-play').addEventListener('click',()=>transportTimer?stopSequencer():startSequencer());
   $('director-mode').addEventListener('change',event=>{
     const shot=project.video.shots[directorEditStep];shot.mode=event.target.value;
@@ -1253,6 +1260,9 @@ function bindControls() {
   $('camera-length').addEventListener('change',updateCameraLengthSummary);
   $('pad-record').addEventListener('click',()=>{const target=sourcePad;$('pad-source-dialog').close();if(target!==null)openCamera(target);});
   $('pad-files').addEventListener('click',()=>{fileTarget=sourcePad;$('pad-source-dialog').close();$('media-input').click();});
+  for(const [button,picker] of [['pad-google-drive','google-drive'],['pad-google-photos','google-photos']]){
+    $(button).addEventListener('click',()=>{$('pad-source-dialog').close();$(picker).click();});
+  }
   $('pad-source-cancel').addEventListener('click',()=>$('pad-source-dialog').close());
   $('capture-target-replace').addEventListener('click',()=>finishCaptureTarget(captureTargetOrigin));
   $('capture-target-new').addEventListener('click',()=>finishCaptureTarget(Number($('capture-target-select').value)));

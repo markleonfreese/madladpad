@@ -88,6 +88,7 @@ try {
   await page.locator('#quick-demo').click();
   assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'true','quick-start demo should use the existing demo toggle');
   await page.locator('#quick-demo').click();
+  assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'false','quick-start demo should stay synchronized when switched off');
   assert.equal(await page.locator('#quick-import').isVisible(),true,'quick import should be available from the first-run actions');
   assert.equal(await page.locator('#quick-record').isVisible(),true,'quick recording should be available from the first-run actions');
   const openScreen=async screen=>{
@@ -103,6 +104,14 @@ try {
   assert.match(await page.locator('#sample-inspector').textContent(),/manual file handoff/i,'Flow Music use should be explained as a manual import, not an account integration');
   assert.equal(await page.locator('#voice-lab').isHidden(),true,'Voice Lab should be a separate screen');
   assert.equal(await page.locator('#sample-inspector').isVisible(),true,'Sound discovery should expose sample editing');
+  assert.equal(await page.locator('#editor-empty-hint').isVisible(),true,'empty sample should explain when editing tools appear');
+  assert.equal(await page.locator('#sample-inspector .region-editor').isHidden(),true,'unused trimming controls should not overwhelm first-time users');
+  assert.equal(await page.locator('#sample-inspector .sliders').isHidden(),true,'unused pitch and tuning controls should not overwhelm first-time users');
+  await page.locator('.pad-hit').first().click();
+  assert.equal(await page.locator('#pad-source-dialog').isVisible(),true,'empty pads should offer a source picker');
+  assert.equal(await page.locator('#pad-google-drive').isVisible(),true,'Drive should be available in the source picker');
+  assert.equal(await page.locator('#pad-google-photos').isVisible(),true,'Photos should be available in the source picker');
+  await page.locator('#pad-source-cancel').click();
   checkpoint('initial load');
   assert.equal(await page.locator('.pad:not([hidden])').count(), 12);
   await page.addScriptTag({path:axePath});
@@ -292,6 +301,8 @@ try {
   await openScreen('sounds');
   await page.locator('#media-input').setInputFiles({name:'synthetic.wav',mimeType:'audio/wav',buffer:wav});
   await page.getByText(/synthetic.wav.*stored on this device/).waitFor();
+  assert.equal(await page.locator('#sample-inspector .region-editor').isVisible(),true,'editing tools should appear once a sample is loaded');
+  assert.equal(await page.locator('#editor-empty-hint').isHidden(),true,'first-use hint should disappear after a sample loads');
   await page.locator('#project-title').fill('Smoke pack');
   await page.waitForTimeout(700); // App's 300ms debounced save must complete before reload.
   await page.reload();
@@ -918,8 +929,17 @@ try {
   await openScreen('voice');
   const mobileLayout=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('body *')].filter(el=>el.getBoundingClientRect().right>innerWidth+1).slice(0,12).map(el=>({tag:el.tagName,id:el.id,className:typeof el.className==='string'?el.className:'',right:el.getBoundingClientRect().right}))}));
   assert.equal(mobileLayout.scroll<=mobileLayout.width,true,`mobile layout should not overflow horizontally: ${JSON.stringify(mobileLayout)}`);
+  const mobileTabs=await page.locator('#studio-nav a').evaluateAll(links=>links.map(link=>({left:link.getBoundingClientRect().left,right:link.getBoundingClientRect().right,visible:link.getBoundingClientRect().width>0})));
+  assert.equal(mobileTabs.length,5,'all five studio stages should be discoverable');
+  assert.ok(mobileTabs.every(tab=>tab.visible&&tab.left>=0&&tab.right<=390),`all five studio stages should remain in view without horizontal scrolling: ${JSON.stringify(mobileTabs)}`);
+  const mobileRap=await page.locator('#rap-title').evaluate(title=>title.closest('.voice-card').getBoundingClientRect().width);
+  assert.ok(mobileRap<mobileLayout.width,`mobile rap editor should stay within the single-column Voice Lab: ${mobileRap}px of ${mobileLayout.width}px`);
+  await page.locator('[data-voice-jump="rap-title"]').click();
+  assert.equal(await page.locator('#voice-lab').isVisible(),true,'task jumps should keep the user within Voice Lab');
   await openScreen('sounds');
   await page.locator('.pad:not([hidden]) .edit-pad').first().scrollIntoViewIfNeeded();
+  const mobileEdit=await page.locator('.pad:not([hidden]) .edit-pad').first().boundingBox();
+  assert.ok(mobileEdit.width>=44&&mobileEdit.height>=44,`mobile Edit pad hit area should be at least 44 × 44px: ${JSON.stringify(mobileEdit)}`);
   const mobileEditTarget=await page.locator('.edit-pad').first().evaluate(button=>{
     const rect=button.getBoundingClientRect(),points=[[rect.left+2,rect.top+20],[rect.left+22,rect.top+5]];
     const describe=(x,y)=>{const hit=document.elementFromPoint(x,y);return {label:hit?.closest('button')?.getAttribute('aria-label'),tag:hit?.tagName,className:typeof hit?.className==='string'?hit.className:'',stack:document.elementsFromPoint(x,y).slice(0,4).map(node=>({tag:node.tagName,className:typeof node.className==='string'?node.className:'',label:node.getAttribute('aria-label')}))};};
@@ -928,10 +948,6 @@ try {
   assert.ok(mobileEditTarget.width>=44&&mobileEditTarget.height>=44,'mobile Edit Pad should expose a 44px hit area');
   assert.ok(mobileEditTarget.hits.every(hit=>hit.label===mobileEditTarget.label),`mobile Edit Pad should accept taps just outside its visible chip: ${JSON.stringify(mobileEditTarget)}`);
   assert.equal((await page.locator('#voice-lab .section-label').first().textContent()).trim().startsWith('03 /'),true,'Voice Lab workspace numbering should match its navigation step');
-  await openScreen('voice');
-  const mobileRap=await page.locator('#rap-title').evaluate(title=>title.closest('.voice-card').getBoundingClientRect().width);
-  assert.ok(mobileRap<mobileLayout.width,`mobile rap editor should stay within the single-column Voice Lab: ${mobileRap}px of ${mobileLayout.width}px`);
-  await openScreen('sounds');
   await page.evaluate(()=>{
     const input=document.querySelector('#media-input');
     window.quickImportOpened=false;
