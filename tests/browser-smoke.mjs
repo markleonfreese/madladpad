@@ -84,6 +84,12 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(origin);
   await wait(page, '.pad-hit');
+  assert.equal(await page.locator('#quick-demo').isVisible(),true,'the demo should be the primary first-run action');
+  await page.locator('#quick-demo').click();
+  assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'true','quick-start demo should use the existing demo toggle');
+  await page.locator('#quick-demo').click();
+  assert.equal(await page.locator('#quick-import').isVisible(),true,'quick import should be available from the first-run actions');
+  assert.equal(await page.locator('#quick-record').isVisible(),true,'quick recording should be available from the first-run actions');
   const openScreen=async screen=>{
     await page.locator(`[data-studio-screen="${screen}"]`).click();
     await page.waitForFunction(value=>document.body.dataset.screen===value,screen);
@@ -921,6 +927,19 @@ try {
   await openScreen('voice');
   const mobileRap=await page.locator('#rap-title').evaluate(title=>title.closest('.voice-card').getBoundingClientRect().width);
   assert.ok(mobileRap<mobileLayout.width,`mobile rap editor should stay within the single-column Voice Lab: ${mobileRap}px of ${mobileLayout.width}px`);
+  await openScreen('sounds');
+  await page.evaluate(()=>{
+    const input=document.querySelector('#media-input');
+    window.quickImportOpened=false;
+    input.click=()=>{window.quickImportOpened=true;};
+    const camera=document.querySelector('#camera-button');
+    window.quickRecordOpened=false;
+    camera.click=()=>{window.quickRecordOpened=true;};
+  });
+  await page.locator('#quick-import').click();
+  assert.equal(await page.evaluate(()=>window.quickImportOpened),true,'quick import should invoke the existing device/file picker');
+  await page.locator('#quick-record').click();
+  assert.equal(await page.evaluate(()=>window.quickRecordOpened),true,'quick record should invoke the existing camera/microphone path');
   assert.deepEqual(errors, []);
   console.log('Browser smoke passed: layouts, demo/keyboard, live patterns/scenes, integrated Pitch/Speed audio exports, audio/video recording, adaptive one-to-three-clip composition, local media, pack round-trip, offline reopen and mobile overflow.');
 } finally {

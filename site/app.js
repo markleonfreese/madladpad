@@ -1243,6 +1243,9 @@ function bindControls() {
   }
   $('media-input').addEventListener('change',async event=>{const target=fileTarget??selected;fileTarget=null;await placeFiles([...event.target.files],target);event.target.value='';});
   $('project-input').addEventListener('change',async event=>{if(event.target.files?.[0])await importPack(event.target.files[0]);event.target.value='';});
+  $('quick-demo').addEventListener('click',()=>$('demo-button').click());
+  $('quick-import').addEventListener('click',()=>$('add-file').click());
+  $('quick-record').addEventListener('click',()=>$('camera-button').click());
   $('add-file').addEventListener('click',()=>{fileTarget=selected;$('media-input').click();});
   $('import-project-button').addEventListener('click',()=>$('project-input').click());
   $('export-button').addEventListener('click',exportPack);
@@ -1272,8 +1275,7 @@ function bindControls() {
   });
   $('demo-button').addEventListener('click',()=>{
     audio.demoEnabled=!audio.demoEnabled;
-    $('demo-button').classList.toggle('active',audio.demoEnabled);
-    $('demo-button').setAttribute('aria-pressed',String(audio.demoEnabled));
+    for(const button of [$('demo-button'),$('quick-demo')]){button.classList.toggle('active',audio.demoEnabled);button.setAttribute('aria-pressed',String(audio.demoEnabled));}
     renderGrid();renderTrackGrid();notify(audio.demoEnabled?'Demo synth sounds enabled on empty pads.':'Demo sounds off.');
   });
   $('play-seq').addEventListener('click',()=>transportTimer?stopSequencer():startSequencer());
