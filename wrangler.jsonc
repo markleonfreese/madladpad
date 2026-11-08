@@ -3,6 +3,7 @@
   "name": "madladpad",
   "account_id": "aa47e1616d2696f07fc0565d19ed96a8",
   "compatibility_date": "2026-11-04",
+  "previews": {},
   "assets": {
     "directory": "./site",
     "not_found_handling": "single-page-application"

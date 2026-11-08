@@ -146,6 +146,11 @@ try {
   assert.equal(await page.locator('#sequencer').isVisible(),true,'Beat Grid should expose sequencer');
   assert.equal(await page.locator('#video-director').isVisible(),true,'Beat Grid should expose Video Director');
   assert.equal(await page.locator('#director-steps button').count(),16,'video direction should have one shot per sequencer step');
+  await page.locator('.pad[data-id="2"]').hover();
+  await page.locator('.pad[data-id="2"] .edit-pad').click();
+  await page.waitForFunction(()=>document.body.dataset.screen==='sounds');
+  assert.equal(await page.locator('.pad[data-id="2"]').evaluate(pad=>pad.classList.contains('selected')),true,'pad-card Edit from Beat Grid should open Sounds with that pad selected');
+  await openScreen('beats');
   await page.locator('#director-mode').selectOption('solo');
   await page.locator('#director-pads input[value="0"]').check();
   assert.match(await page.locator('#director-status').textContent(),/show pad 1/);
