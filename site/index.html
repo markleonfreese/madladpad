@@ -34,6 +34,7 @@
       <a href="#export" data-studio-screen="export"><span>05</span> Finish & Export</a>
     </nav>
 
+    <main id="studio-main">
     <section class="intro" id="studio-intro" aria-label="Introduction">
       <div><p class="overline"><span class="live-dot"></span> THE WORLD IS YOUR INSTRUMENT</p><h2>Collect the moment.<br><em>Play the unexpected.</em></h2></div>
       <div class="intro-action-block">
@@ -56,7 +57,7 @@
       </div>
     </section>
 
-    <main class="workspace" id="studio-workspace">
+    <div class="workspace" id="studio-workspace">
       <section class="performance-area" aria-label="Sampler grid">
         <div class="section-label"><span id="grid-section-label">01 / SOUND PADS</span><span>TOUCH · KEYS · MIDI</span></div>
         <div id="pad-grid" class="pad-grid layout-3x4" role="group" aria-label="Playable sample pads"></div>
@@ -118,7 +119,7 @@
         <div class="inspector-actions"><button id="clear-pad" class="text-button">Clear sample</button><button id="connect-midi" class="text-button">Connect MIDI</button></div>
         <div class="info-note"><strong>PRIVATE BY DEFAULT</strong><p>Your clips are saved locally on this device. Export a pack to back them up or share them.</p></div>
       </aside>
-    </main>
+    </div>
 
     <section class="sequencer" id="sequencer" aria-label="16-step sequencer" hidden>
       <div class="section-label"><span>02 / BEAT MAKER</span><span>1/4 · 1/8 · 1/16 GRID · ALL PADS CAN PLAY TOGETHER</span></div>
@@ -235,6 +236,7 @@
       </div>
       <p class="voice-note">The most recent completed video and audio renders are stored locally for later review when browser storage permits. Download a copy for reliable backup. Formats depend on the browser's MediaRecorder support; the app does not transcode unsupported formats.</p>
     </section>
+    </main>
     <footer><span>DESIGNED FOR PEOPLE WHO HEAR MUSIC EVERYWHERE.</span><span>V0.1 · LOCAL-FIRST PWA · <a href="https://github.com/markleonfreese/madladpad" target="_blank" rel="noopener">SOURCE</a></span></footer>
   </div>
 
