@@ -97,6 +97,18 @@ try {
   assert.match(await page.locator('#sample-inspector').textContent(),/manual file handoff/i,'Flow Music use should be explained as a manual import, not an account integration');
   assert.equal(await page.locator('#voice-lab').isHidden(),true,'Voice Lab should be a separate screen');
   assert.equal(await page.locator('#sample-inspector').isVisible(),true,'Sound discovery should expose sample editing');
+  assert.equal(await page.locator('#editor-empty-hint').isVisible(),true,'empty sample should explain when editing tools appear');
+  assert.equal(await page.locator('#sample-inspector .region-editor').isHidden(),true,'unused trimming controls should not overwhelm first-time users');
+  assert.equal(await page.locator('#sample-inspector .sliders').isHidden(),true,'unused pitch and tuning controls should not overwhelm first-time users');
+  await page.locator('.pad-hit').first().click();
+  assert.equal(await page.locator('#pad-source-dialog').isVisible(),true,'empty pads should offer a source picker');
+  assert.equal(await page.locator('#pad-google-drive').isVisible(),true,'Drive should be available in the source picker');
+  assert.equal(await page.locator('#pad-google-photos').isVisible(),true,'Photos should be available in the source picker');
+  await page.locator('#pad-source-cancel').click();
+  await page.locator('#quick-demo-button').click();
+  assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'true','first-use demo action and pad demo state should agree');
+  await page.locator('#quick-demo-button').click();
+  assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'false','demo should be reversible from first-use controls');
   checkpoint('initial load');
   assert.equal(await page.locator('.pad:not([hidden])').count(), 12);
   await page.addScriptTag({path:axePath});
@@ -286,6 +298,8 @@ try {
   await openScreen('sounds');
   await page.locator('#media-input').setInputFiles({name:'synthetic.wav',mimeType:'audio/wav',buffer:wav});
   await page.getByText(/synthetic.wav.*stored on this device/).waitFor();
+  assert.equal(await page.locator('#sample-inspector .region-editor').isVisible(),true,'editing tools should appear once a sample is loaded');
+  assert.equal(await page.locator('#editor-empty-hint').isHidden(),true,'first-use hint should disappear after a sample loads');
   await page.locator('#project-title').fill('Smoke pack');
   await page.waitForTimeout(700); // App's 300ms debounced save must complete before reload.
   await page.reload();
@@ -911,8 +925,16 @@ try {
   await openScreen('voice');
   const mobileLayout=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('body *')].filter(el=>el.getBoundingClientRect().right>innerWidth+1).slice(0,12).map(el=>({tag:el.tagName,id:el.id,className:typeof el.className==='string'?el.className:'',right:el.getBoundingClientRect().right}))}));
   assert.equal(mobileLayout.scroll<=mobileLayout.width,true,`mobile layout should not overflow horizontally: ${JSON.stringify(mobileLayout)}`);
+  const mobileTabs=await page.locator('#studio-nav a').evaluateAll(links=>links.map(link=>({left:link.getBoundingClientRect().left,right:link.getBoundingClientRect().right,visible:link.getBoundingClientRect().width>0})));
+  assert.equal(mobileTabs.length,5,'all five studio stages should be discoverable');
+  assert.ok(mobileTabs.every(tab=>tab.visible&&tab.left>=0&&tab.right<=390),`all five studio stages should remain in view without horizontal scrolling: ${JSON.stringify(mobileTabs)}`);
   const mobileRap=await page.locator('#rap-title').evaluate(title=>title.closest('.voice-card').getBoundingClientRect().width);
   assert.ok(mobileRap<mobileLayout.width,`mobile rap editor should stay within the single-column Voice Lab: ${mobileRap}px of ${mobileLayout.width}px`);
+  await page.locator('[data-voice-jump="rap-title"]').click();
+  assert.equal(await page.locator('#voice-lab').isVisible(),true,'task jumps should keep the user within Voice Lab');
+  await openScreen('sounds');
+  const mobileEdit=await page.locator('.pad:not([hidden]) .edit-pad').first().boundingBox();
+  assert.ok(mobileEdit.width>=44&&mobileEdit.height>=44,`mobile Edit pad hit area should be at least 44 × 44px: ${JSON.stringify(mobileEdit)}`);
   assert.deepEqual(errors, []);
   console.log('Browser smoke passed: layouts, demo/keyboard, live patterns/scenes, integrated Pitch/Speed audio exports, audio/video recording, adaptive one-to-three-clip composition, local media, pack round-trip, offline reopen and mobile overflow.');
 } finally {
