@@ -36,6 +36,7 @@ npx wrangler dev
 ```
 
 The browser smoke uses synthetic media and Chromium's fake camera/microphone. It checks the UI, persistence, exports and offline shell; it does not replace real Android/iOS camera, codec, touch, listening or accessibility acceptance. `test:workers-runtime` launches Wrangler locally and checks the configured static assets, canonical `/index.html` redirect and SPA navigation fallback without contacting Cloudflare.
+Use the [physical-device and listening acceptance checklist](docs/DEVICE-ACCEPTANCE.md) for Android/iOS capture, offline, accessibility, speech, melody, rap, and human audio review. The checklist distinguishes these results from synthetic browser coverage.
 
 `npm run build` is the canonical build entry point for the whole app. It currently bundles the Voice Lab audio processor and copies its WebAssembly runtime into `site/`; the other screens are already static assets in that directory. Cloudflare Workers Static Assets serves the complete `site/` directory. `wrangler.jsonc` pins the project to the personal Cloudflare account that owns the public Worker. Read [RELEASE.md](RELEASE.md) before publishing or rolling back production.
 
