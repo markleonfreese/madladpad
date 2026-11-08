@@ -920,9 +920,10 @@ try {
   assert.equal(mobileLayout.scroll<=mobileLayout.width,true,`mobile layout should not overflow horizontally: ${JSON.stringify(mobileLayout)}`);
   await openScreen('sounds');
   const mobileEditTarget=await page.locator('.edit-pad').first().evaluate(button=>{
-    const rect=button.getBoundingClientRect(),points=[[rect.left-6,rect.top+rect.height/2],[rect.left+rect.width/2,rect.top-17]];
-    return {label:button.getAttribute('aria-label'),hits:points.map(([x,y])=>document.elementFromPoint(x,y)?.getAttribute('aria-label'))};
+    const rect=button.getBoundingClientRect(),points=[[rect.left+2,rect.top+20],[rect.left+22,rect.top+5]];
+    return {label:button.getAttribute('aria-label'),width:rect.width,height:rect.height,hits:points.map(([x,y])=>document.elementFromPoint(x,y)?.closest('button')?.getAttribute('aria-label'))};
   });
+  assert.ok(mobileEditTarget.width>=44&&mobileEditTarget.height>=44,'mobile Edit Pad should expose a 44px hit area');
   assert.deepEqual(mobileEditTarget.hits,[mobileEditTarget.label,mobileEditTarget.label],'mobile Edit Pad should accept taps just outside its visible chip');
   assert.equal((await page.locator('#voice-lab .section-label').first().textContent()).trim().startsWith('03 /'),true,'Voice Lab workspace numbering should match its navigation step');
   await openScreen('voice');

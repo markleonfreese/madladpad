@@ -144,7 +144,7 @@ function buildGrid() {
       <button type="button" class="pad-hit" aria-label="Play or load pad ${id+1}"></button>
       <div class="pad-top"><span class="key-tag">${HOTKEYS[id]}</span><span class="pad-index">${String(id+1).padStart(2,'0')}</span></div>
       <div class="pad-bottom-line"><span class="pad-title"></span></div>
-      <button type="button" class="edit-pad" aria-label="Edit pad ${id+1}">EDIT</button>`;
+      <button type="button" class="edit-pad" aria-label="Edit pad ${id+1}"><span>EDIT</span></button>`;
     card.prepend(video,image);
     card.querySelector('.pad-hit').addEventListener('click', () => {
       selectPad(id);
