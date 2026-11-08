@@ -34,6 +34,9 @@ let cameraRegion = {start:0,end:0};
 let cameraMeterTimer = null;
 let cameraMeterSource = null;
 let saveTimer;
+const PROJECT_RECOVERY_KEY = 'madladpad-project-recovery-v1';
+let saveRevision = 0;
+let pendingProjectSnapshot = null;
 let toastTimer;
 let drawing = false;
 let previewUrl = null;
@@ -122,10 +125,47 @@ function notify(message) {
 
 function replaceProjectState(next) { Object.assign(project, next); }
 
-function queueSave() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => putValue('project', project).catch(error => notify(`Could not save project: ${error.message}`)), 300);
+function persistProject(revision, snapshot) {
+  return putValue('project', snapshot).then(() => {
+    if (revision === saveRevision) localStorage.removeItem(PROJECT_RECOVERY_KEY);
+  }).catch(error => notify(`Could not save project: ${error.message}`));
 }
+
+function discardPendingProjectSave() {
+  clearTimeout(saveTimer);
+  saveTimer = undefined;
+  saveRevision++;
+  pendingProjectSnapshot = null;
+  localStorage.removeItem(PROJECT_RECOVERY_KEY);
+}
+
+function flushSave() {
+  if (saveTimer === undefined) return;
+  clearTimeout(saveTimer);
+  saveTimer = undefined;
+  const revision = saveRevision;
+  persistProject(revision, pendingProjectSnapshot);
+}
+
+function queueSave() {
+  const revision = ++saveRevision;
+  try {
+    const serialized = JSON.stringify(project);
+    pendingProjectSnapshot = JSON.parse(serialized);
+    localStorage.setItem(PROJECT_RECOVERY_KEY, serialized);
+  }
+  catch (error) { notify(`Could not prepare project recovery: ${error.message}`); }
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = undefined;
+    persistProject(revision, pendingProjectSnapshot || project);
+  }, 300);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushSave();
+});
+window.addEventListener('pagehide', flushSave);
 
 function buildGrid() {
   const grid = $('pad-grid');
@@ -1098,7 +1138,7 @@ async function importPack(file) {
     if(!confirm('Replace your current local project? Export it first if you want a backup.')) return;
     patternRecording=null;patternUndoSnapshot=null;renderPatternRecordingState();
     // A single IndexedDB transaction prevents a partial replacement on quota or write failure.
-    clearTimeout(saveTimer);
+    discardPendingProjectSave();
     try { await replaceProjectMedia(incoming,files,incoming.voice.layers.map((layer,index)=>({id:layer.id,file:voiceFiles[index]}))); }
     catch(error) { queueSave(); throw error; }
     stopSequencer();
@@ -1337,6 +1377,10 @@ async function initialise() {
     buildGrid();bindControls();
     const saved=await getValue('project');
     if(saved)replaceProjectState(normaliseProject(saved));
+    try {
+      const recovery=localStorage.getItem(PROJECT_RECOVERY_KEY);
+      if(recovery){replaceProjectState(normaliseProject(JSON.parse(recovery)));queueSave();}
+    } catch(error) { console.warn('Project recovery snapshot could not be restored',error); }
     renderSession();
     $('video-aspect').value=project.video.aspect;
     renderPatternRecordingState();
