@@ -232,9 +232,9 @@
       <canvas id="capture-canvas" class="export-live-preview" width="960" height="720" aria-label="Live performance composition" hidden></canvas>
       <div class="export-previews">
         <div><h3>Video performance</h3><video id="export-video-preview" controls playsinline preload="metadata" hidden></video><p id="export-video-empty" class="voice-note">No recorded video in this session yet.</p><button id="export-video-download" class="pill-button" disabled>DOWNLOAD VIDEO AGAIN</button></div>
-        <div><h3>Audio mix</h3><audio id="export-audio-preview" controls preload="metadata" hidden></audio><p id="export-audio-empty" class="voice-note">No recorded audio in this session yet.</p><button id="export-audio-download" class="pill-button" disabled>DOWNLOAD AUDIO AGAIN</button></div>
+        <div><h3>Audio mix</h3><audio id="export-audio-preview" controls preload="metadata" hidden></audio><p id="export-audio-empty" class="voice-note">No recorded audio in this session yet.</p><button id="export-audio-download" class="pill-button" disabled>DOWNLOAD AUDIO AGAIN</button><button id="export-audio-wav" class="pill-button" disabled>MAKE WAV COPY · UP TO 30 SEC</button><p id="export-audio-wav-status" class="voice-note" role="status">A short mix can be converted locally to a 16-bit PCM WAV.</p></div>
       </div>
-      <p class="voice-note">The most recent completed video and audio renders are stored locally for later review when browser storage permits. Download a copy for reliable backup. Formats depend on the browser's MediaRecorder support; the app does not transcode unsupported formats.</p>
+      <p class="voice-note">The most recent completed video and audio renders are stored locally for later review when browser storage permits. Download a copy for reliable backup. Audio mixes can also be converted on this device to a 16-bit PCM WAV for takes up to 30 seconds. Longer takes remain available in their original browser-supported format.</p>
     </section>
     </main>
     <footer><span>DESIGNED FOR PEOPLE WHO HEAR MUSIC EVERYWHERE.</span><span>V0.1 · LOCAL-FIRST PWA · <a href="https://github.com/markleonfreese/madladpad" target="_blank" rel="noopener">SOURCE</a></span></footer>

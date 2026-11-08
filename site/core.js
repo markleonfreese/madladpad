@@ -172,6 +172,23 @@ export function normaliseProject(value) {
 
 export const midiFrequency = (note, tuning = 440) => clamp(tuning, 400, 480) * 2 ** ((clamp(note, 24, 108) - 69) / 12);
 
+export function audioBufferToWav(rendered) {
+  const sampleRate = Math.round(rendered.sampleRate), channels = rendered.numberOfChannels === 1 ? 1 : 2;
+  const dataBytes = rendered.length * channels * 2;
+  const bytes = new ArrayBuffer(44 + dataBytes), view = new DataView(bytes);
+  const ascii = (offset, text) => [...text].forEach((character, index) => view.setUint8(offset + index, character.charCodeAt(0)));
+  ascii(0, 'RIFF'); view.setUint32(4, 36 + dataBytes, true); ascii(8, 'WAVE'); ascii(12, 'fmt ');
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * channels * 2, true);
+  view.setUint16(32, channels * 2, true); view.setUint16(34, 16, true); ascii(36, 'data'); view.setUint32(40, dataBytes, true);
+  const source = Array.from({length:channels},(_,channel)=>rendered.getChannelData(Math.min(channel,rendered.numberOfChannels-1)));
+  for (let frame = 0; frame < rendered.length; frame++) for (let channel = 0; channel < channels; channel++) {
+    const value = clamp(source[channel][frame], -1, 1), sample = Math.round(value < 0 ? value * 32768 : value * 32767);
+    view.setInt16(44 + (frame * channels + channel) * 2, sample, true);
+  }
+  return new Blob([bytes], { type: 'audio/wav' });
+}
+
 export function estimateSyllables(text) {
   const words = String(text || '').toLowerCase().match(/[a-z]+/g) || [];
   return words.reduce((total, word) => {
