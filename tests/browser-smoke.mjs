@@ -315,6 +315,12 @@ try {
   await page.reload();
   await page.getByText(/synthetic.wav.*stored on this device/).waitFor();
   assert.equal(await page.locator('#project-title').inputValue(), 'Smoke pack');
+  await page.locator('#project-title').fill('Rapid save pack');
+  await page.reload();
+  await page.getByText(/synthetic.wav.*stored on this device/).waitFor();
+  assert.equal(await page.locator('#project-title').inputValue(), 'Rapid save pack','leaving the page inside the save debounce should preserve the latest project edit');
+  await page.locator('#project-title').fill('Smoke pack');
+  await page.waitForTimeout(500);
   assert.equal(await page.locator('#scene-select option').count(),1,'named scenes should persist across reload');
   assert.ok(await page.locator('#steps .step.on').count()>0,'scene pattern should persist across reload');
   await openScreen('beats');
