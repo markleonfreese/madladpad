@@ -143,6 +143,10 @@ try {
   assert.match(await page.locator('#director-status').textContent(),/show pads 1, 2/);
   await page.locator('#track-view').click();
   assert.equal(await page.locator('#track-grid .track-row').count(),12,'all-tracks view should expose each lane in the 12-pad layout');
+  await page.locator('.track-row[data-pad="2"] .track-edit').click();
+  await page.waitForFunction(()=>document.body.dataset.screen==='sounds');
+  assert.equal(await page.locator('.pad[data-id="2"]').evaluate(pad=>pad.classList.contains('selected')),true,'Beat Grid Edit should select the correct pad in Sounds');
+  await openScreen('beats');
   for (const [layout,count] of [['2x2',4],['4x4',16],['3x4',12]]) {
     await page.locator('#layout-select').selectOption(layout);
     assert.equal(await page.locator('#track-grid .track-row').count(),count,`all-tracks view should refresh to ${count} lanes for ${layout}`);
@@ -932,6 +936,11 @@ try {
   await openScreen('voice');
   const mobileLayout=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('body *')].filter(el=>el.getBoundingClientRect().right>innerWidth+1).slice(0,12).map(el=>({tag:el.tagName,id:el.id,className:typeof el.className==='string'?el.className:'',right:el.getBoundingClientRect().right}))}));
   assert.equal(mobileLayout.scroll<=mobileLayout.width,true,`mobile layout should not overflow horizontally: ${JSON.stringify(mobileLayout)}`);
+  await openScreen('beats');
+  if(await page.locator('#track-grid').isHidden())await page.locator('#track-view').click();
+  const laneGeometry=await page.locator('.track-row').first().evaluate(row=>{const head=row.querySelector('.track-head'),headRect=head.getBoundingClientRect(),steps=row.querySelector('.track-steps').getBoundingClientRect(),edit=head.querySelector('.track-edit').getBoundingClientRect(),gain=head.querySelector('.track-gain'),gainRect=gain.getBoundingClientRect();return {headRight:headRect.right,headWidth:headRect.width,columns:getComputedStyle(head).gridTemplateColumns,stepsLeft:steps.left,editRight:edit.right,gainRight:gainRect.right,gainWidth:gainRect.width,gainCell:gain.parentElement.getBoundingClientRect().toJSON(),gainMinWidth:getComputedStyle(gain).minWidth};});
+  assert.ok(laneGeometry.editRight<=laneGeometry.headRight+.5&&laneGeometry.gainRight<=laneGeometry.stepsLeft&&laneGeometry.headRight<=laneGeometry.stepsLeft,`mobile lane controls should fit before the step grid: ${JSON.stringify(laneGeometry)}`);
+  await openScreen('voice');
   const mobileTabs=await page.locator('#studio-nav a').evaluateAll(links=>links.map(link=>({left:link.getBoundingClientRect().left,right:link.getBoundingClientRect().right,visible:link.getBoundingClientRect().width>0})));
   assert.equal(mobileTabs.length,5,'all five studio stages should be discoverable');
   assert.ok(mobileTabs.every(tab=>tab.visible&&tab.left>=0&&tab.right<=390),`all five studio stages should remain in view without horizontal scrolling: ${JSON.stringify(mobileTabs)}`);
