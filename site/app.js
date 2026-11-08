@@ -144,7 +144,7 @@ function buildGrid() {
       <button type="button" class="pad-hit" aria-label="Play or load pad ${id+1}"></button>
       <div class="pad-top"><span class="key-tag">${HOTKEYS[id]}</span><span class="pad-index">${String(id+1).padStart(2,'0')}</span></div>
       <div class="pad-bottom-line"><span class="pad-title"></span></div>
-      <button type="button" class="edit-pad" aria-label="Edit pad ${id+1}">EDIT</button>`;
+      <button type="button" class="edit-pad" aria-label="Edit pad ${id+1}"><span>EDIT</span></button>`;
     card.prepend(video,image);
     card.querySelector('.pad-hit').addEventListener('click', () => {
       selectPad(id);
@@ -363,6 +363,8 @@ function padIsAudible(id){return isPadAudible(project.pads.slice(0,PAD_COUNT[pro
 
 function renderControls() {
   const config = project.pads[selected];
+  $('sample-inspector').classList.toggle('has-media',mediaFiles.has(selected));
+  $('sample-inspector').classList.toggle('demo-enabled',audio.demoEnabled&&!mediaFiles.has(selected));
   $('selected-number').textContent = `PAD ${String(selected+1).padStart(2,'0')}`;
   $('selected-circle').textContent = String(selected+1).padStart(2,'0');
   $('pad-name').value = config.name;
@@ -1119,6 +1121,12 @@ async function importPack(file) {
 function bindControls() {
   window.addEventListener('hashchange',showStudioScreen);
   showStudioScreen();
+  for(const button of document.querySelectorAll('[data-voice-jump]')){
+    button.addEventListener('click',()=>{
+      const target=$(button.dataset.voiceJump);
+      target?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});
+    });
+  }
   $('studio-play').addEventListener('click',()=>transportTimer?stopSequencer():startSequencer());
   $('director-mode').addEventListener('change',event=>{
     const shot=project.video.shots[directorEditStep];shot.mode=event.target.value;
@@ -1243,6 +1251,9 @@ function bindControls() {
   }
   $('media-input').addEventListener('change',async event=>{const target=fileTarget??selected;fileTarget=null;await placeFiles([...event.target.files],target);event.target.value='';});
   $('project-input').addEventListener('change',async event=>{if(event.target.files?.[0])await importPack(event.target.files[0]);event.target.value='';});
+  $('quick-demo').addEventListener('click',()=>$('demo-button').click());
+  $('quick-import').addEventListener('click',()=>$('add-file').click());
+  $('quick-record').addEventListener('click',()=>$('camera-button').click());
   $('add-file').addEventListener('click',()=>{fileTarget=selected;$('media-input').click();});
   $('import-project-button').addEventListener('click',()=>$('project-input').click());
   $('export-button').addEventListener('click',exportPack);
@@ -1250,6 +1261,9 @@ function bindControls() {
   $('camera-length').addEventListener('change',updateCameraLengthSummary);
   $('pad-record').addEventListener('click',()=>{const target=sourcePad;$('pad-source-dialog').close();if(target!==null)openCamera(target);});
   $('pad-files').addEventListener('click',()=>{fileTarget=sourcePad;$('pad-source-dialog').close();$('media-input').click();});
+  for(const [button,picker] of [['pad-google-drive','google-drive'],['pad-google-photos','google-photos']]){
+    $(button).addEventListener('click',()=>{$('pad-source-dialog').close();$(picker).click();});
+  }
   $('pad-source-cancel').addEventListener('click',()=>$('pad-source-dialog').close());
   $('capture-target-replace').addEventListener('click',()=>finishCaptureTarget(captureTargetOrigin));
   $('capture-target-new').addEventListener('click',()=>finishCaptureTarget(Number($('capture-target-select').value)));
@@ -1272,9 +1286,8 @@ function bindControls() {
   });
   $('demo-button').addEventListener('click',()=>{
     audio.demoEnabled=!audio.demoEnabled;
-    $('demo-button').classList.toggle('active',audio.demoEnabled);
-    $('demo-button').setAttribute('aria-pressed',String(audio.demoEnabled));
-    renderGrid();renderTrackGrid();notify(audio.demoEnabled?'Demo synth sounds enabled on empty pads.':'Demo sounds off.');
+    for(const button of [$('demo-button'),$('quick-demo')]){button.classList.toggle('active',audio.demoEnabled);button.setAttribute('aria-pressed',String(audio.demoEnabled));}
+    renderGrid();renderTrackGrid();renderControls();notify(audio.demoEnabled?'Demo synth sounds enabled on empty pads.':'Demo sounds off.');
   });
   $('play-seq').addEventListener('click',()=>transportTimer?stopSequencer():startSequencer());
   $('auto-beat').addEventListener('click',surpriseBeat);

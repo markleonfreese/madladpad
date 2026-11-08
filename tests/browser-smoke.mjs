@@ -84,6 +84,16 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(origin);
   await wait(page, '.pad-hit');
+  assert.equal(await page.locator('#quick-demo').isVisible(),true,'the demo should be the primary first-run action');
+  await page.locator('#quick-demo').click();
+  assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'true','quick-start demo should use the existing demo toggle');
+  assert.equal(await page.locator('#volume').isVisible(),true,'demo pads should keep their volume control in Sounds');
+  assert.equal(await page.locator('#speed').isVisible(),false,'media-only controls should stay hidden for demo pads');
+  await page.locator('#quick-demo').click();
+  assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'false','quick-start demo should stay synchronized when switched off');
+  assert.equal(await page.locator('#volume').isVisible(),false,'empty pads should keep advanced controls hidden when demo is off');
+  assert.equal(await page.locator('#quick-import').isVisible(),true,'quick import should be available from the first-run actions');
+  assert.equal(await page.locator('#quick-record').isVisible(),true,'quick recording should be available from the first-run actions');
   const openScreen=async screen=>{
     await page.locator(`[data-studio-screen="${screen}"]`).click();
     await page.waitForFunction(value=>document.body.dataset.screen===value,screen);
@@ -97,6 +107,14 @@ try {
   assert.match(await page.locator('#sample-inspector').textContent(),/manual file handoff/i,'Flow Music use should be explained as a manual import, not an account integration');
   assert.equal(await page.locator('#voice-lab').isHidden(),true,'Voice Lab should be a separate screen');
   assert.equal(await page.locator('#sample-inspector').isVisible(),true,'Sound discovery should expose sample editing');
+  assert.equal(await page.locator('#editor-empty-hint').isVisible(),true,'empty sample should explain when editing tools appear');
+  assert.equal(await page.locator('#sample-inspector .region-editor').isHidden(),true,'unused trimming controls should not overwhelm first-time users');
+  assert.equal(await page.locator('#sample-inspector .sliders').isHidden(),true,'unused pitch and tuning controls should not overwhelm first-time users');
+  await page.locator('.pad-hit').first().click();
+  assert.equal(await page.locator('#pad-source-dialog').isVisible(),true,'empty pads should offer a source picker');
+  assert.equal(await page.locator('#pad-google-drive').isVisible(),true,'Drive should be available in the source picker');
+  assert.equal(await page.locator('#pad-google-photos').isVisible(),true,'Photos should be available in the source picker');
+  await page.locator('#pad-source-cancel').click();
   checkpoint('initial load');
   assert.equal(await page.locator('.pad:not([hidden])').count(), 12);
   await page.addScriptTag({path:axePath});
@@ -286,6 +304,8 @@ try {
   await openScreen('sounds');
   await page.locator('#media-input').setInputFiles({name:'synthetic.wav',mimeType:'audio/wav',buffer:wav});
   await page.getByText(/synthetic.wav.*stored on this device/).waitFor();
+  assert.equal(await page.locator('#sample-inspector .region-editor').isVisible(),true,'editing tools should appear once a sample is loaded');
+  assert.equal(await page.locator('#editor-empty-hint').isHidden(),true,'first-use hint should disappear after a sample loads');
   await page.locator('#project-title').fill('Smoke pack');
   await page.waitForTimeout(700); // App's 300ms debounced save must complete before reload.
   await page.reload();
@@ -701,14 +721,15 @@ try {
         await page.locator('.pad-hit').nth(1).click();
         await page.waitForFunction(()=>{const video=document.querySelectorAll('.pad video')[1];return video?.readyState>=2&&Number.isFinite(video.duration)&&video.duration>1.5;},null,{timeout:10000});
         await page.locator('.pad video').nth(1).evaluate(video=>{video.pause();video.currentTime=0;});
+        const videoSourceDuration=await page.locator('.pad video').nth(1).evaluate(video=>video.duration);
         await setRange('#pitch',4);await setRange('#speed',1);
         const videoOne=await analyzeMix(await recordPitchMix(1,2300));
         assert.ok(Math.abs(videoOne.frequency-554.4)<10,`video Pitch +4 at Speed 1× should export near 554 Hz, got ${JSON.stringify(videoOne)}`);
-        assert.ok(Math.abs(videoOne.activeDuration-2)<.3,`video should play for about two seconds at Speed 1×, got ${videoOne.activeDuration.toFixed(2)} s`);
+        assert.ok(Math.abs(videoOne.activeDuration-videoSourceDuration)<.3,`video at Speed 1× should retain its measured ${videoSourceDuration.toFixed(2)} s duration, got ${videoOne.activeDuration.toFixed(2)} s`);
         await setRange('#speed',2);
         const videoTwo=await analyzeMix(await recordPitchMix(1,2300));
         assert.ok(Math.abs(videoTwo.frequency-554.4)<10,`video Pitch +4 at Speed 2× should stay near 554 Hz, got ${JSON.stringify(videoTwo)}`);
-        assert.ok(Math.abs(videoTwo.activeDuration-1)<.25,`video should play for about one second at Speed 2×, got ${videoTwo.activeDuration.toFixed(2)} s`);
+        assert.ok(Math.abs(videoTwo.activeDuration-videoSourceDuration/2)<.25,`video at Speed 2× should play for half its measured duration of ${videoSourceDuration.toFixed(2)} s, got ${videoTwo.activeDuration.toFixed(2)} s`);
         assert.ok(Math.abs(videoOne.frequency-videoTwo.frequency)<10,`video Pitch should stay stable across Speed values, got ${videoOne.frequency.toFixed(1)} Hz at 1× and ${videoTwo.frequency.toFixed(1)} Hz at 2×`);
         checkpoint(`video-element Pitch export (${videoOne.frequency.toFixed(1)} Hz at 1× and ${videoTwo.frequency.toFixed(1)} Hz at 2×)`);
       }else{
@@ -911,16 +932,37 @@ try {
   await openScreen('voice');
   const mobileLayout=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('body *')].filter(el=>el.getBoundingClientRect().right>innerWidth+1).slice(0,12).map(el=>({tag:el.tagName,id:el.id,className:typeof el.className==='string'?el.className:'',right:el.getBoundingClientRect().right}))}));
   assert.equal(mobileLayout.scroll<=mobileLayout.width,true,`mobile layout should not overflow horizontally: ${JSON.stringify(mobileLayout)}`);
-  await openScreen('sounds');
-  const mobileEditTarget=await page.locator('.edit-pad').first().evaluate(button=>{
-    const rect=button.getBoundingClientRect(),points=[[rect.left-6,rect.top+rect.height/2],[rect.left+rect.width/2,rect.top-17]];
-    return {label:button.getAttribute('aria-label'),hits:points.map(([x,y])=>document.elementFromPoint(x,y)?.getAttribute('aria-label'))};
-  });
-  assert.deepEqual(mobileEditTarget.hits,[mobileEditTarget.label,mobileEditTarget.label],'mobile Edit Pad should accept taps just outside its visible chip');
-  assert.equal((await page.locator('#voice-lab .section-label').first().textContent()).trim().startsWith('03 /'),true,'Voice Lab workspace numbering should match its navigation step');
-  await openScreen('voice');
+  const mobileTabs=await page.locator('#studio-nav a').evaluateAll(links=>links.map(link=>({left:link.getBoundingClientRect().left,right:link.getBoundingClientRect().right,visible:link.getBoundingClientRect().width>0})));
+  assert.equal(mobileTabs.length,5,'all five studio stages should be discoverable');
+  assert.ok(mobileTabs.every(tab=>tab.visible&&tab.left>=0&&tab.right<=390),`all five studio stages should remain in view without horizontal scrolling: ${JSON.stringify(mobileTabs)}`);
   const mobileRap=await page.locator('#rap-title').evaluate(title=>title.closest('.voice-card').getBoundingClientRect().width);
   assert.ok(mobileRap<mobileLayout.width,`mobile rap editor should stay within the single-column Voice Lab: ${mobileRap}px of ${mobileLayout.width}px`);
+  await page.locator('[data-voice-jump="rap-title"]').click();
+  assert.equal(await page.locator('#voice-lab').isVisible(),true,'task jumps should keep the user within Voice Lab');
+  await openScreen('sounds');
+  await page.locator('.pad:not([hidden]) .edit-pad').first().scrollIntoViewIfNeeded();
+  const mobileEdit=await page.locator('.pad:not([hidden]) .edit-pad').first().boundingBox();
+  assert.ok(mobileEdit.width>=44&&mobileEdit.height>=44,`mobile Edit pad hit area should be at least 44 × 44px: ${JSON.stringify(mobileEdit)}`);
+  const mobileEditTarget=await page.locator('.edit-pad').first().evaluate(button=>{
+    const rect=button.getBoundingClientRect(),points=[[rect.left+2,rect.top+20],[rect.left+22,rect.top+5]];
+    const describe=(x,y)=>{const hit=document.elementFromPoint(x,y);return {label:hit?.closest('button')?.getAttribute('aria-label'),tag:hit?.tagName,className:typeof hit?.className==='string'?hit.className:'',stack:document.elementsFromPoint(x,y).slice(0,4).map(node=>({tag:node.tagName,className:typeof node.className==='string'?node.className:'',label:node.getAttribute('aria-label')}))};};
+    return {label:button.getAttribute('aria-label'),width:rect.width,height:rect.height,visibility:getComputedStyle(button).visibility,pointerEvents:getComputedStyle(button).pointerEvents,hits:points.map(([x,y])=>describe(x,y))};
+  });
+  assert.ok(mobileEditTarget.width>=44&&mobileEditTarget.height>=44,'mobile Edit Pad should expose a 44px hit area');
+  assert.ok(mobileEditTarget.hits.every(hit=>hit.label===mobileEditTarget.label),`mobile Edit Pad should accept taps just outside its visible chip: ${JSON.stringify(mobileEditTarget)}`);
+  assert.equal((await page.locator('#voice-lab .section-label').first().textContent()).trim().startsWith('03 /'),true,'Voice Lab workspace numbering should match its navigation step');
+  await page.evaluate(()=>{
+    const input=document.querySelector('#media-input');
+    window.quickImportOpened=false;
+    input.click=()=>{window.quickImportOpened=true;};
+    const camera=document.querySelector('#camera-button');
+    window.quickRecordOpened=false;
+    camera.click=()=>{window.quickRecordOpened=true;};
+  });
+  await page.locator('#quick-import').click();
+  assert.equal(await page.evaluate(()=>window.quickImportOpened),true,'quick import should invoke the existing device/file picker');
+  await page.locator('#quick-record').click();
+  assert.equal(await page.evaluate(()=>window.quickRecordOpened),true,'quick record should invoke the existing camera/microphone path');
   assert.deepEqual(errors, []);
   console.log('Browser smoke passed: layouts, demo/keyboard, live patterns/scenes, integrated Pitch/Speed audio exports, audio/video recording, adaptive one-to-three-clip composition, local media, pack round-trip, offline reopen and mobile overflow.');
 } finally {
