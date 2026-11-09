@@ -561,7 +561,7 @@ function renderTrackGrid(){
   }
   if(window.matchMedia('(max-width:740px)').matches){
     const activeSteps=focused?.pad!==undefined?holder.querySelector(`.track-row[data-pad="${focused.pad}"] .track-steps`):null;
-    const scrollLeft=activeSteps?activeSteps.scrollLeft:previousScroll;
+    const scrollLeft=focused?.step!==undefined&&activeSteps?activeSteps.scrollLeft:previousScroll;
     for(const lane of holder.querySelectorAll('.track-steps'))lane.scrollLeft=scrollLeft;
   }
 }

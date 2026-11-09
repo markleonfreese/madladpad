@@ -1118,6 +1118,9 @@ try {
     await page.locator('.track-row[data-pad="0"] [data-step="15"]').click();
     const syncedScroll=await page.locator('.track-row').evaluateAll(rows=>rows.map(row=>row.querySelector('.track-steps').scrollLeft));
     assert.ok(syncedScroll[0]>0&&syncedScroll.every(left=>left===syncedScroll[0]),`all mobile lanes should stay aligned after scrolling and editing a later step: ${JSON.stringify(syncedScroll)}`);
+    await page.locator('.track-row[data-pad="0"] [data-control="muted"]').click();
+    const headerFocusScroll=await page.locator('.track-row').evaluateAll(rows=>rows.map(row=>row.querySelector('.track-steps').scrollLeft));
+    assert.ok(headerFocusScroll[0]===syncedScroll[0]&&headerFocusScroll.every(left=>left===headerFocusScroll[0]),`header actions should retain the current mobile step position: ${JSON.stringify(headerFocusScroll)}`);
   }
   await page.setViewportSize({width:390,height:844});
   await openScreen('voice');
