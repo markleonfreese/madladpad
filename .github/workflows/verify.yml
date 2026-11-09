@@ -29,11 +29,13 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci --ignore-scripts
-      - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+      - name: Install Playwright Chromium and WebKit
+        run: npx playwright install --with-deps chromium webkit
       - name: Run unit tests
         run: npm test
       - name: Run browser smoke and accessibility checks
         run: npm run test:browser
+      - name: Run WebKit mobile-adjacent smoke
+        run: npm run test:webkit
       - name: Run native Workers Static Assets runtime smoke
         run: npm run test:workers-runtime
