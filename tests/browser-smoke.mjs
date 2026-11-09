@@ -60,6 +60,10 @@ try {
   });
   const page = await context.newPage();
   await page.addInitScript(() => {
+    const NativeAudioContext=window.AudioContext;
+    window.AudioContext=class extends NativeAudioContext {
+      constructor(...args){super(...args);window.__madladpadAppAudioContext??=this;}
+    };
     window.forceWebmDecodeFailure=false;
     const decodeAudioData=AudioContext.prototype.decodeAudioData;
     AudioContext.prototype.decodeAudioData=function(data,...args){
@@ -250,13 +254,32 @@ try {
   await page.locator('.pad-hit').first().click();
   await page.waitForTimeout(250);
   checkpoint('multi-track grid edits three independent lanes');
+  await page.evaluate(async()=>{
+    const context=window.__madladpadAppAudioContext;
+    if(!context)throw new Error('app audio context was not exposed to the smoke harness');
+    if(context.state==='running')await context.suspend();
+    context.__nativeResume=context.resume;
+    context.resume=()=>new Promise(resolve=>{window.__finishPendingAudioUnlock=resolve;});
+  });
+  await page.locator('#play-seq').click();
+  await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('CANCEL'));
+  assert.equal(await page.locator('#play-seq').getAttribute('aria-pressed'),'true','pending transport start should expose pressed state');
+  await page.locator('#play-seq').click();
+  await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('PLAY'));
+  assert.equal(await page.locator('#play-seq').getAttribute('aria-pressed'),'false','canceling pending transport start should restore its idle state');
+  await page.evaluate(()=>{window.__finishPendingAudioUnlock();window.__madladpadAppAudioContext.resume=window.__madladpadAppAudioContext.__nativeResume;});
+  await page.waitForTimeout(50);
+  assert.equal(await page.locator('#play-seq').getAttribute('aria-pressed'),'false','late audio unlock must not restart a canceled transport');
+  checkpoint('canceling a pending audio unlock leaves transport idle');
   await page.locator('#play-seq').click();
   checkpoint('layouts, demo and sequencer');
   await page.waitForFunction(() => document.querySelector('#play-seq').textContent.includes('STOP'));
+  assert.equal(await page.locator('#play-seq').getAttribute('aria-pressed'),'true','running transport should expose pressed state');
   await page.locator('#grid-division').selectOption('1/4');
   await page.locator('#steps .step.current[data-step="8"]').waitFor({timeout:4000});
   assert.equal(await page.locator('#steps .step.current').getAttribute('data-step'),'8','coarse-grid playhead should track the mapped sixteenth-step position');
   await page.locator('#play-seq').click();
+  assert.equal(await page.locator('#play-seq').getAttribute('aria-pressed'),'false','stopping transport should restore idle pressed state');
   await page.locator('#grid-division').selectOption('1/16');
   await page.keyboard.press('q');
   assert.deepEqual(errors, [], 'keyboard-triggered demo pad should not produce a page error');

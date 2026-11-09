@@ -1,4 +1,4 @@
-import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, directedPads, makeProject, normaliseProject, normaliseRegion, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, suggestActiveRegion, isPadAudible, captureStepPosition, stepTriggerTime, nextBarTime, videoVisualDurationMs } from './core.js';
+import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, directedPads, makeProject, normaliseProject, normaliseRegion, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, AsyncActivity, suggestActiveRegion, isPadAudible, captureStepPosition, stepTriggerTime, nextBarTime, videoVisualDurationMs } from './core.js';
 import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, collectVoiceMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
 import { isGooglePickerConfigured, pickFromDrive, pickFromPhotos } from './google.js';
@@ -12,9 +12,12 @@ let trackGridVisible = false;
 let audio;
 let voiceLab = null;
 let transportTimer = null;
+const transportActivity = new AsyncActivity();
 let nextStep = 0;
 let nextStepTime = 0;
 let recording = null;
+const takeActivity = new AsyncActivity();
+let takeKind = null;
 let patternRecording = null;
 let patternUndoSnapshot = null;
 let pendingScene = null;
@@ -108,10 +111,13 @@ function showVoiceTool(tool,{focus=false}={}) {
 }
 
 function updateTransportButton() {
-  const playing = Boolean(transportTimer);
-  $('studio-play').textContent = playing ? '■ STOP LOOP' : '▶ PLAY LOOP';
-  $('studio-play').setAttribute('aria-pressed',String(playing));
-  $('studio-play').classList.toggle('active',playing);
+  const running = transportActivity.phase!=='idle';
+  $('studio-play').textContent = transportActivity.phase==='starting' ? '■ CANCEL START' : running ? '■ STOP LOOP' : '▶ PLAY LOOP';
+  $('studio-play').setAttribute('aria-pressed',String(running));
+  $('studio-play').classList.toggle('active',running);
+  $('play-seq').textContent = transportActivity.phase==='starting' ? '■ CANCEL' : running ? '■ STOP' : '▶ PLAY';
+  $('play-seq').setAttribute('aria-pressed',String(running));
+  $('play-seq').classList.toggle('active',running);
 }
 
 function rememberTake(kind,blob,durationSeconds=null) {
@@ -784,8 +790,11 @@ async function placeFiles(files,start=selected) {
 }
 
 function startSequencer() {
-  if (transportTimer) return;
+  const token = transportActivity.begin();
+  if (token===null) return;
+  updateTransportButton();
   audio.unlock().then(() => {
+    if (!transportActivity.activate(token)) return;
     audio.setTransport(project.bpm,'off');
     const secondsPerStep=60/project.bpm/4;
     audio.setEpoch(audio.context.currentTime+.08);
@@ -803,7 +812,7 @@ function startSequencer() {
         const absoluteStep=nextStep;
         voiceLab?.scheduleMelodyStep(absoluteStep,time,project.bpm);
         setTimeout(()=>{
-          if(!transportTimer)return;
+          if(!transportActivity.current(token) || !transportTimer)return;
           showDirectorPlayingStep(step);
           voiceLab?.highlightRapBar(absoluteStep);
           updateBeatIndicator(Math.floor(step/stride));
@@ -815,10 +824,13 @@ function startSequencer() {
     transportTimer=setInterval(tick,25);
     voiceLab?.transportStarted(audio.transportEpoch,project.bpm);
     tick();
-    $('play-seq').textContent='■ STOP'; $('play-seq').classList.add('active');
     updateTransportButton();
     renderScenes();
-  }).catch(error=>notify(error.message));
+  }).catch(error=>{
+    if (!transportActivity.current(token)) return;
+    stopSequencer();
+    notify(`Could not start loop: ${error.message}`);
+  });
 }
 
 function updateBeatIndicator(step) {
@@ -828,13 +840,13 @@ function updateBeatIndicator(step) {
 }
 
 function stopSequencer() {
+  transportActivity.cancel();
   clearInterval(transportTimer); transportTimer=null;
   voiceLab?.transportStopped();
   directorPlayingStep=null;
   $('director-steps').querySelectorAll('.current').forEach(node=>node.classList.remove('current'));
   if(pendingScene){pendingScene=null;renderScenes();notify('Queued scene canceled because the sequencer stopped.');}
   else renderScenes();
-  $('play-seq').textContent='▶ PLAY'; $('play-seq').classList.remove('active');
   updateTransportButton();
   [...$('steps').children].forEach(el=>el.classList.remove('current'));
   $('track-grid').querySelectorAll('.current').forEach(el=>el.classList.remove('current'));
@@ -951,16 +963,28 @@ function recorderMime(kind){
 
 async function toggleSetRecording() {
   if (recording) { if(recording.state!=='inactive')recording.stop(); return; }
-  if(audioRecording)return notify('Stop the audio-only take before recording an audiovisual set.');
+  if (takeActivity.phase!=='idle') {
+    if (takeKind==='video' && takeActivity.phase==='starting') {
+      takeActivity.cancel(); takeKind=null;
+      $('start-record').classList.remove('recording');$('start-record').innerHTML='<span class="record-dot"></span> RECORD SET';
+      $('start-record').setAttribute('aria-pressed','false');
+      notify('Audiovisual recording start canceled.');
+    } else notify('Finish the current recording before starting an audiovisual set.');
+    return;
+  }
   if (!window.MediaRecorder || !$('capture-canvas').captureStream) return notify('Video recording is unavailable in this browser.');
+  const token=takeActivity.begin();takeKind='video';
+  $('start-record').textContent='■ CANCEL START';$('start-record').setAttribute('aria-pressed','true');
+  let canvasStream=null;
   try {
     await audio.unlock();
+    if(!takeActivity.activate(token))return;
     const mime=recorderMime('video');
     const canvas=$('capture-canvas');
     const [width,height]=VIDEO_ASPECTS[project.video.aspect];
     canvas.width=width;canvas.height=height;
-    const frames=canvas.captureStream(30);
-    const stream=new MediaStream([...frames.getVideoTracks(),...audio.recordOut.stream.getAudioTracks()]);
+    canvasStream=canvas.captureStream(30);
+    const stream=new MediaStream([...canvasStream.getVideoTracks(),...audio.recordOut.stream.getAudioTracks()]);
     const recorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
     const chunks=[];
     recorder.ondataavailable=event=>{ if(event.data.size)chunks.push(event.data); };
@@ -976,21 +1000,40 @@ async function toggleSetRecording() {
       recording=null;
       $('start-record').classList.remove('recording');$('start-record').innerHTML='<span class="record-dot"></span> RECORD SET';
       $('start-record').setAttribute('aria-pressed','false');
+      takeActivity.cancel();takeKind=null;
     };
     recording=recorder;drawing=true;$('capture-canvas').hidden=false;drawPerformanceFrame();recorder.start(200);
     $('start-record').classList.add('recording');$('start-record').textContent='■ STOP RECORDING';
     $('start-record').setAttribute('aria-pressed','true');
     $('start-record').blur();
     notify('Recording your audiovisual performance. Tap pads or start the beat maker.');
-  } catch(error) { drawing=false;recording=null;$('capture-canvas').hidden=true;notify(error.message); }
+  } catch(error) {
+    if(!takeActivity.current(token))return;
+    takeActivity.cancel();takeKind=null;
+    canvasStream?.getTracks().forEach(track=>track.stop());
+    drawing=false;recording=null;$('capture-canvas').hidden=true;
+    $('start-record').classList.remove('recording');$('start-record').innerHTML='<span class="record-dot"></span> RECORD SET';
+    $('start-record').setAttribute('aria-pressed','false');
+    notify(error.message);
+  }
 }
 
 async function toggleAudioRecording() {
   if(audioRecording){if(audioRecording.state!=='inactive')audioRecording.stop();return;}
-  if(recording)return notify('Stop the audiovisual set before recording an audio-only mix.');
+  if(takeActivity.phase!=='idle'){
+    if(takeKind==='audio' && takeActivity.phase==='starting'){
+      takeActivity.cancel();takeKind=null;
+      $('record-audio').textContent='♪ RECORD AUDIO MIX';$('record-audio').setAttribute('aria-pressed','false');
+      notify('Audio recording start canceled.');
+    } else notify('Finish the current recording before starting an audio-only mix.');
+    return;
+  }
   if(!window.MediaRecorder)return notify('Audio recording is unavailable in this browser.');
+  const token=takeActivity.begin();takeKind='audio';
+  $('record-audio').textContent='■ CANCEL START';$('record-audio').setAttribute('aria-pressed','true');
   try{
     await audio.unlock();
+    if(!takeActivity.activate(token))return;
     const stream=audio.recordOut.stream;
     if(!stream.getAudioTracks().length)throw new Error('The audio mix stream is unavailable.');
     const mime=recorderMime('audio');
@@ -1006,13 +1049,20 @@ async function toggleAudioRecording() {
       audioRecording=null;
       $('record-audio').classList.remove('recording');$('record-audio').textContent='♪ RECORD AUDIO MIX';
       $('record-audio').setAttribute('aria-pressed','false');
+      takeActivity.cancel();takeKind=null;
     };
     audioRecording=recorder;recorder.start(200);
     $('record-audio').classList.add('recording');$('record-audio').textContent='■ STOP AUDIO TAKE';
     $('record-audio').setAttribute('aria-pressed','true');
     $('record-audio').blur();
     notify('Recording the master audio mix. Stop to download the supported audio format.');
-  }catch(error){audioRecording=null;notify(error.message);}
+  }catch(error){
+    if(!takeActivity.current(token))return;
+    takeActivity.cancel();takeKind=null;audioRecording=null;
+    $('record-audio').classList.remove('recording');$('record-audio').textContent='♪ RECORD AUDIO MIX';
+    $('record-audio').setAttribute('aria-pressed','false');
+    notify(error.message);
+  }
 }
 
 function cameraReady() {
@@ -1097,6 +1147,7 @@ async function captureCamera() {
   $('camera-capture').disabled=true;
   try {
     await audio.unlock();
+    if(!cameraSession.current(token) || cameraSession.phase!=='recording')return;
     const mime=findRecorderMime();
     const recorder=new MediaRecorder(cameraStream,mime?{mimeType:mime}:undefined);
     cameraRecorder=recorder;
@@ -1266,7 +1317,7 @@ function bindControls() {
     button.addEventListener('click',()=>showVoiceTool(button.dataset.voiceJump,{focus:true}));
   }
   $('beat-pad-select').addEventListener('change',event=>selectPad(Number(event.target.value)));
-  $('studio-play').addEventListener('click',()=>transportTimer?stopSequencer():startSequencer());
+  $('studio-play').addEventListener('click',()=>transportActivity.phase!=='idle'?stopSequencer():startSequencer());
   $('director-mode').addEventListener('change',event=>{
     const shot=project.video.shots[directorEditStep];shot.mode=event.target.value;
     if(shot.mode==='solo'&&shot.pads.length>1)shot.pads=shot.pads.slice(0,1);
@@ -1429,7 +1480,7 @@ function bindControls() {
     for(const button of [$('demo-button'),$('quick-demo')]){button.classList.toggle('active',audio.demoEnabled);button.setAttribute('aria-pressed',String(audio.demoEnabled));}
     renderGrid();renderTrackGrid();renderControls();notify(audio.demoEnabled?'Demo synth sounds enabled on empty pads.':'Demo sounds off.');
   });
-  $('play-seq').addEventListener('click',()=>transportTimer?stopSequencer():startSequencer());
+  $('play-seq').addEventListener('click',()=>transportActivity.phase!=='idle'?stopSequencer():startSequencer());
   $('auto-beat').addEventListener('click',surpriseBeat);
   $('clear-steps').addEventListener('click',()=>{project.pads[selected].steps.fill(false);project.pads[selected].stepOffsets.fill(0);patternUndoSnapshot=null;renderSteps();renderPatternRecordingState();queueSave();});
   $('record-pattern').addEventListener('click',togglePatternRecording);
@@ -1449,7 +1500,7 @@ function bindControls() {
   document.addEventListener('keydown',event=>{
     if(event.repeat || event.metaKey || event.ctrlKey || event.altKey || $('camera-dialog').open || $('pad-source-dialog').open || $('capture-target-dialog').open || ['INPUT','SELECT','TEXTAREA','BUTTON'].includes(document.activeElement?.tagName)) return;
     const key=event.key.toUpperCase();
-    if(key===' '){event.preventDefault();transportTimer?stopSequencer():startSequencer();return;}
+    if(key===' '){event.preventDefault();transportActivity.phase!=='idle'?stopSequencer():startSequencer();return;}
     const id=HOTKEYS.indexOf(key);
     if(id>=0 && id<PAD_COUNT[project.layout]){event.preventDefault();playPad(id);keys.add(key);}
   });
