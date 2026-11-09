@@ -471,7 +471,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
           const label = data.state?.file || 'speech model';
           $('voice-status').textContent = data.state?.progress != null ? `Loading ${label}: ${Math.round(data.state.progress)}%… audio remains local.` : `Loading ${label} on this device…`;
         }
-        if (data.type === 'error') { $('voice-status').textContent = `Transcription unavailable: ${data.message}. Review the browser and model connection, then retry.`; worker.terminate(); worker = null; $('voice-cancel').hidden = true; updateConsentState(); }
+        if (data.type === 'error') { const message=String(data.message||'Local transcription failed.'); const fetchFailure=/failed to fetch|networkerror|network request failed/i.test(message); $('voice-status').textContent=fetchFailure?'Could not download the on-device speech model. Check your internet connection and retry, or add words and timestamps manually. Your audio was not uploaded.':`Transcription unavailable: ${message}. Review the browser and model connection, then retry.`; worker.terminate(); worker = null; $('voice-cancel').hidden = true; updateConsentState(); }
         if (data.type === 'result') {
           const words = data.words.slice(0, MAX_TRANSCRIPT_WORDS).map((word, index) => ({ ...word, id: `${Date.now()}-${index}`, selected: false, score: null }));
           project.voice.transcripts.push({ id: `${Date.now()}`, sourcePad: padId, words }); project.voice.transcripts = project.voice.transcripts.slice(-16);
