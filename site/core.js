@@ -269,14 +269,17 @@ export const extensionForAudioMime = mime => mime.startsWith('audio/mp4') ? 'm4a
 export const supportedMediaFile = file => file && /^(video|audio|image)\//.test(file.type);
 
 export function suggestActiveRegion(levels, duration) {
-  if (!Array.isArray(levels) || !levels.length || !Number.isFinite(duration) || duration <= 0) return {start:0,end:Math.max(.05,duration||.05)};
+  if (!Array.isArray(levels) || !levels.length || !Number.isFinite(duration) || duration <= 0) return {start:0,end:Math.max(.05,duration||.05),detected:false};
   const sorted=[...levels].sort((a,b)=>a-b);
   const floor=sorted[Math.floor((sorted.length-1)*.2)]||0;
   // Adapt to the quietest part of the take so low-gain speech can clear the
   // detector while sustained room noise still has to rise well above its floor.
   const gate=Math.max(.006,floor*2.5);
   const active=levels.map((level,index)=>level>=gate?index:-1).filter(index=>index>=0);
-  if(!active.length)return {start:0,end:duration};
+  if(!active.length)return {start:0,end:duration,detected:false};
   const frame=duration/levels.length;
-  return {start:Math.max(0,active[0]*frame-.08),end:Math.min(duration,(active.at(-1)+1)*frame+.12)};
+  return {start:Math.max(0,active[0]*frame-.08),end:Math.min(duration,(active.at(-1)+1)*frame+.12),detected:true};
 }
+export const captureRegionStatus = detected => detected
+  ? 'Sound detected. Suggested trim surrounds it; adjust, preview or keep.'
+  : 'No clear sound detected. The full take is selected; adjust manually, preview or keep.';
