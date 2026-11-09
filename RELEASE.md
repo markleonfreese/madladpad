@@ -36,7 +36,11 @@ The authenticated CLI must show `workers:write` and the target account ID in `wr
 
 ## Publish and verify
 
-`npm run deploy` runs the canonical `build` script before `wrangler deploy`. Wrangler's default deploy publishes a new version to 100% of production traffic, so run it only after the exact `main` commit and its checks are accepted. Until Workers Builds is verified, there is no configured staging Worker or preview hostname. When connecting Workers Builds, use `npm run build` for both main and previews, `npx wrangler versions upload` for the production-branch deploy command (uploads without promotion), and `npx wrangler preview` for other branches. Promote only an explicitly accepted version.
+`npm run deploy` runs the canonical `build` script before `wrangler deploy`. Wrangler's default deploy publishes a new version to 100% of production traffic, so run it only after the exact `main` commit and its checks are accepted.
+
+**Current evidence (9 Nov 2026):** The repository's GitHub Actions `Verify` workflow runs checks only. Cloudflare Workers Builds produced non-production branch previews for PRs #90 and #91 ([#90 checkpoint](https://github.com/markleonfreese/madladpad/issues/2#issuecomment-6733396526), [#91 checkpoint](https://github.com/markleonfreese/madladpad/issues/2#issuecomment-6733612687)). These confirm PR preview builds can run; they do not establish a persistent staging Worker, the account-side build/deploy commands, production equivalence, or device acceptance. The latest recorded production check still showed the older bundled release.
+
+Workers Builds settings live in Cloudflare rather than this repository. Before relying on that release path, verify the selected production branch and exact build, deploy and preview commands in the account. Cloudflare documents `npx wrangler versions upload` for uploading a production-branch version without promoting it, and `npx wrangler preview` for branch previews; promote only an explicitly accepted version. Confirm the configured preview model and isolation before use. See Cloudflare's [Build branches](https://developers.cloudflare.com/workers/ci-cd/builds/build-branches/) and [Build configuration](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/) documentation.
 
 After publishing:
 
