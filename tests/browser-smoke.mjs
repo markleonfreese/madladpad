@@ -77,13 +77,15 @@ try {
   });
   await page.addInitScript(() => {
     window.syntheticVoiceWorkerError = false;
+    window.syntheticVoiceWorkerDelay = 20;
     const NativeWorker = window.Worker;
     window.Worker = class extends NativeWorker {
       constructor(url, options) {
         if (String(url).includes('voice-inference-worker')) {
+          const delay = window.syntheticVoiceWorkerDelay;
           const source = window.syntheticVoiceWorkerError
-            ? `self.onmessage=event=>{if(event.data.type==='transcribe')setTimeout(()=>self.postMessage({type:'error',message:'Failed to fetch'}),20)};`
-            : `self.onmessage=event=>{if(event.data.type==='transcribe')setTimeout(()=>self.postMessage({type:'result',words:[{text:'Hello',start:0,end:.25},{text:'from',start:.3,end:.55},{text:'MadLadPad',start:.6,end:1}]}),20)};`;
+            ? `self.onmessage=event=>{if(event.data.type==='transcribe')setTimeout(()=>self.postMessage({type:'error',message:'Failed to fetch'}),${delay})};`
+            : `self.onmessage=event=>{if(event.data.type==='transcribe')setTimeout(()=>self.postMessage({type:'result',words:[{text:'Hello',start:0,end:.25},{text:'from',start:.3,end:.55},{text:'MadLadPad',start:.6,end:1}]}),${delay})};`;
           super(URL.createObjectURL(new Blob([source], {type:'text/javascript'})));
         } else super(url, options);
       }
@@ -526,6 +528,16 @@ try {
   assert.equal(await page.locator('#voice-transcribe').isDisabled(),false,'speech transcription should be retryable after a model download failure');
   assert.equal(await page.locator('#voice-word-list .voice-word').count(),0,'a failed model download should not create a transcript');
   await page.evaluate(()=>{window.syntheticVoiceWorkerError=false;});
+  await page.evaluate(()=>{window.syntheticVoiceWorkerDelay=250;});
+  await page.locator('#voice-transcribe').click();
+  await page.waitForFunction(()=>document.querySelector('#voice-status').textContent==='Loading the on-device speech model…');
+  await page.locator('#voice-consent').uncheck();
+  await page.waitForFunction(()=>document.querySelector('#voice-status').textContent.includes('Consent withdrawn. Transcription canceled.'));
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('#voice-word-list .voice-word').count(),0,'withdrawing consent during local inference must discard any late transcript result');
+  checkpoint('withdrawing transcription consent cancels inference and discards late results');
+  await page.locator('#voice-consent').check();
+  await page.evaluate(()=>{window.syntheticVoiceWorkerDelay=20;});
   await page.locator('#voice-transcribe').click();
   await page.waitForFunction(()=>document.querySelectorAll('#voice-word-list .voice-word').length===3);
   assert.match(await page.locator('#voice-status').textContent(),/Confidence is not provided/);
