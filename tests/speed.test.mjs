@@ -61,6 +61,27 @@ test('video playback reaches the selected end after delayed media startup', asyn
   assert.ok(element.lastPausedAt>=.1,`stop should follow media playback time, got ${element.lastPausedAt}`);
 });
 
+test('short trimmed media stops on media time without waiting for sparse timeupdate events', async () => {
+  const listeners=new Map();let startedAt=0,position=0,updates=null;
+  const element={
+    duration:10,playbackRate:1,preservesPitch:false,paused:true,
+    get currentTime(){return this.paused?position:position+(Date.now()-startedAt)/1000*this.playbackRate;},
+    set currentTime(value){position=value;startedAt=Date.now();},
+    addEventListener(type,listener){listeners.set(type,listener);},
+    removeEventListener(type,listener){if(listeners.get(type)===listener)listeners.delete(type);},
+    pause(){if(!this.paused)position=this.currentTime;this.paused=true;clearInterval(updates);},
+    play(){this.paused=false;startedAt=Date.now();updates=setInterval(()=>listeners.get('timeupdate')?.(),250);return Promise.resolve();}
+  };
+  const sampler=Object.create(SamplerAudio.prototype);
+  sampler.context={currentTime:0};
+  sampler.sources=new Map([[0,{file:{},element,gain:{gain:{value:1}}}]]);
+  sampler.demoEnabled=false;
+  sampler.trigger(0,{kind:'video',start:0,end:.05,speed:1,pitch:0,volume:1},()=>{},0);
+  await new Promise(resolve=>setTimeout(resolve,180));
+  assert.equal(element.paused,true,'the short selection should stop without a 250 ms timeupdate');
+  assert.ok(position>=.035&&position<=.12,`stop should stay close to the 50 ms trim boundary, got ${position}`);
+});
+
 test('decodable audio keeps low-latency polyphonic buffer playback at Speed only', () => {
   const nodes=[];
   const param=()=>({

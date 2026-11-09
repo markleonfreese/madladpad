@@ -270,6 +270,19 @@ export class SamplerAudio {
         const stopAtBoundary=()=>{
           if(element.ended||element.currentTime>=end-.015)stopPlayback();
         };
+        const scheduleBoundaryCheck=()=>{
+          if(finished)return;
+          const remaining=Math.max(0,end-element.currentTime);
+          if(remaining<=.015){stopPlayback();return;}
+          // `timeupdate` can be throttled for short trims. Recheck near the
+          // expected media-time boundary, then keep polling from media time
+          // if playback stalls instead of granting a fixed grace period.
+          stopTimer=setTimeout(()=>{
+            stopTimer=null;
+            stopAtBoundary();
+            if(!finished)scheduleBoundaryCheck();
+          },Math.max(10,Math.min(100,remaining/rate*1000)));
+        };
         source.stopPlayback=stopPlayback;
         element.addEventListener('timeupdate',stopAtBoundary);
         element.addEventListener('ended',stopAtBoundary);
@@ -277,10 +290,7 @@ export class SamplerAudio {
           Promise.resolve(element.play()).then(()=>{
             if(this.sources.get(id)?.file!==thisFile||source.stopPlayback!==stopPlayback){cleanup(false);return;}
             stopAtBoundary();
-            if(source.stopPlayback===stopPlayback){
-              const remaining=Math.max(0,(end-element.currentTime)/rate);
-              stopTimer=setTimeout(stopPlayback,remaining*1000+1000);
-            }
+            if(source.stopPlayback===stopPlayback)scheduleBoundaryCheck();
           },()=>cleanup(true));
         }catch{cleanup(true);}
       }, delay);
