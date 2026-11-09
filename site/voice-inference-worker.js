@@ -1,4 +1,7 @@
 import { env, pipeline } from '@huggingface/transformers';
+import { withModelReferrerPolicy } from './voice-model-fetch.js';
+
+env.fetch = withModelReferrerPolicy(env.fetch);
 
 let cancelled = false;
 

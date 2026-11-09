@@ -1,6 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { withModelReferrerPolicy } from '../site/voice-model-fetch.js';
 import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, midiFrequency, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs } from '../site/core.js';
+
+test('Whisper model fetch omits the app referrer only for Hugging Face assets', async () => {
+  const calls = [];
+  const fetchModel = withModelReferrerPolicy(async (input, init) => {
+    calls.push({ input, init });
+    return new Response('ok');
+  });
+  await fetchModel('https://huggingface.co/Xenova/whisper-tiny.en/resolve/main/config.json', { cache: 'no-store' });
+  await fetchModel('https://example.test/asset.json', { cache: 'no-store' });
+  assert.deepEqual(calls[0].init, { cache: 'no-store', referrerPolicy: 'no-referrer' });
+  assert.deepEqual(calls[1].init, { cache: 'no-store' });
+});
 
 test('initial layout has 12 visible pads and 16 backing slots', () => {
   const project = makeProject();
