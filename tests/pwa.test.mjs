@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
 
 const site = new URL('../site/', import.meta.url).pathname;
 const manifest = JSON.parse(readFileSync(join(site,'manifest.webmanifest'),'utf8'));
@@ -28,6 +29,31 @@ test('offline shell and all locally referenced ES modules exist', () => {
   assert.ok(shell[1].includes("'/tuning.js'"),'offline shell must include local note detection');
   assert.ok(sw.includes("caches.match('/')"),
     'offline navigation must fall back to the canonical root route used by Workers Static Assets');
+});
+
+test('service worker activation removes stale app shells without deleting the Whisper model cache', async () => {
+  const sw = readFileSync(join(site, 'sw.js'), 'utf8');
+  const handlers = new Map();
+  const cacheNames = ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13', 'transformers-cache', 'another-app-cache'];
+  const deleted = [];
+  const context = {
+    self: {
+      addEventListener: (name, handler) => handlers.set(name, handler),
+      skipWaiting: () => Promise.resolve(),
+      clients: { claim: () => Promise.resolve() },
+      location: { origin: 'https://madladpad.test' }
+    },
+    caches: {
+      keys: () => Promise.resolve(cacheNames),
+      delete: name => { deleted.push(name); return Promise.resolve(true); }
+    },
+    URL, Promise, fetch: () => Promise.resolve(new Response('ok')), Response
+  };
+  runInNewContext(sw, context);
+  let activation;
+  handlers.get('activate')({ waitUntil: promise => { activation = promise; } });
+  await activation;
+  assert.deepEqual(deleted, ['madladpad-shell-v11', 'madladpad-shell-v12']);
 });
 
 
