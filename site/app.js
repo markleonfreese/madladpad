@@ -4,6 +4,7 @@ import { getValue, putValue, deleteValue, collectProjectMedia, collectVoiceMedia
 import { isGooglePickerConfigured, pickFromDrive, pickFromPhotos } from './google.js';
 import { initVoiceLab } from './voice.js';
 import { detectPitch } from './tuning.js';
+import { processInputFiles } from './file-input.js';
 
 const $ = id => document.getElementById(id);
 let project = makeProject();
@@ -732,9 +733,20 @@ async function addMedia(id,file,persist=true) {
   if (file.size > MAX_MEDIA_BYTES) throw new Error(`${file.name} is over the 80 MB per-clip limit. Please trim it first.`);
   const config=project.pads[id];
   const kind=file.type.split('/')[0];
-  const source=await audio.load(id,file,kind==='image'?null:pads[id].video);
+  const previousFile=mediaFiles.get(id);
+  if (persist) await putValue(`media:${id}`,file);
+  let source;
+  try { source=await audio.load(id,file,kind==='image'?null:pads[id].video); }
+  catch(error) {
+    if(persist){
+      try { if(previousFile)await putValue(`media:${id}`,previousFile);else await deleteValue(`media:${id}`); }
+      catch(restoreError){console.warn('Could not restore the previous local sample after import failed',restoreError);}
+    }
+    if(previousFile){try{await audio.load(id,previousFile,pads[id].video);}catch{audio.unload(id);}}
+    else audio.unload(id);
+    throw error;
+  }
   mediaFiles.set(id,file);
-  window.dispatchEvent(new Event('madladpad-media-change'));
   config.kind=kind;
   config.fileName=file.name;
   config.name=file.name.replace(/\.[^/.]+$/,'').slice(0,45) || `Pad ${id+1}`;
@@ -742,7 +754,7 @@ async function addMedia(id,file,persist=true) {
   durations.delete(id);
   if (source.buffer) durations.set(id,source.buffer.duration);
   config.end=Math.max(.05,Math.min(2,durations.get(id)||2));
-  if (persist) await putValue(`media:${id}`,file);
+  window.dispatchEvent(new Event('madladpad-media-change'));
   renderPad(id);
   renderTrackGrid();
   queueSave();
@@ -813,10 +825,10 @@ async function placeFiles(files,start=selected) {
   let loaded=0;
   for (let i=0;i<destination.length;i++) {
     try { await addMedia(destination[i],accepted[i]); loaded++; }
-    catch(error) { notify(error.message); }
+    catch(error) { notify(`Could not add ${accepted[i]?.name||'sample'}: ${error?.message||'the browser could not store this media on this device.'}`); }
   }
   selectPad(start);
-  notify(`${loaded} sample${loaded===1?'':'s'} added. Tap a pad to play.`);
+  if(loaded)notify(`${loaded} sample${loaded===1?'':'s'} added and stored on this device. Tap a pad to play.`);
 }
 
 function startSequencer() {
@@ -1470,8 +1482,8 @@ function bindControls() {
       renderControls();queueSave();
     });
   }
-  $('media-input').addEventListener('change',async event=>{const target=fileTarget??selected;fileTarget=null;await placeFiles([...event.target.files],target);event.target.value='';});
-  $('project-input').addEventListener('change',async event=>{if(event.target.files?.[0])await importPack(event.target.files[0]);event.target.value='';});
+  $('media-input').addEventListener('change',event=>{const target=fileTarget??selected;fileTarget=null;return processInputFiles(event,files=>placeFiles(files,target));});
+  $('project-input').addEventListener('change',event=>processInputFiles(event,async files=>{if(files[0])await importPack(files[0]);}));
   $('quick-demo').addEventListener('click',startDemoBeat);
   $('quick-import').addEventListener('click',()=>$('add-file').click());
   $('quick-record').addEventListener('click',()=>$('camera-button').click());

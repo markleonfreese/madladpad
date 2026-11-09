@@ -448,6 +448,8 @@ try {
   await openScreen('sounds');
   await page.locator('#media-input').setInputFiles({name:'synthetic.wav',mimeType:'audio/wav',buffer:wav});
   await page.getByText(/synthetic.wav.*stored on this device/).waitFor();
+  const restoredMedia=await page.evaluate(async()=>{const {getValue}=await import('/storage.js');const file=await getValue('media:0');return {isFile:file instanceof File,name:file.name,type:file.type,size:file.size};});
+  assert.deepEqual(restoredMedia,{isFile:true,name:'synthetic.wav',type:'audio/wav',size:wav.length},'local storage should restore imported media as a named File');
   assert.equal(await page.locator('#sample-inspector .region-editor').isVisible(),true,'editing tools should appear once a sample is loaded');
   assert.equal(await page.locator('#editor-empty-hint').isHidden(),true,'first-use hint should disappear after a sample loads');
   await page.locator('#project-title').fill('Smoke pack');
@@ -631,14 +633,12 @@ try {
     await page.locator('#play-seq').click();
     const layerId=await vocalRow.getAttribute('data-layer');
     const rawTakeRms=await page.evaluate(async id=>{
-      const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('madladpad-local-v1');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
-      try {
-        const file=await new Promise((resolve,reject)=>{const request=db.transaction('items','readonly').objectStore('items').get(`voice-layer:${id}`);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
-        if(!file)throw new Error('Saved vocal raw take is missing from IndexedDB');
-        const context=new AudioContext();
-        try { const decoded=await context.decodeAudioData(await file.arrayBuffer());const samples=decoded.getChannelData(0);return Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length); }
-        finally { await context.close(); }
-      } finally { db.close(); }
+      const {getValue}=await import('/storage.js');
+      const file=await getValue(`voice-layer:${id}`);
+      if(!file)throw new Error('Saved vocal raw take is missing from IndexedDB');
+      const context=new AudioContext();
+      try { const decoded=await context.decodeAudioData(await file.arrayBuffer());const samples=decoded.getChannelData(0);return Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length); }
+      finally { await context.close(); }
     },layerId);
     assert.ok(rawTakeRms>.01,`the saved fake-microphone take should contain the fixture tone, got RMS ${rawTakeRms}`);
     const vocalMixDownload=page.waitForEvent('download',{timeout:8000});
