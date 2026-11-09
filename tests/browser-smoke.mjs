@@ -96,6 +96,7 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(origin);
   await wait(page, '.pad-hit');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   assert.equal(await page.locator('#quick-demo').isVisible(),true,'a demo beat should be the primary first-run action');
   assert.equal(await page.locator('#loop-settings').evaluate(element=>element.open),false,'advanced tempo and layout settings should start collapsed');
   await page.setViewportSize({width:320,height:720});
@@ -263,6 +264,7 @@ try {
         const beatOrder=await page.evaluate(()=>({controls:document.querySelector('.transport-panel').getBoundingClientRect().top,sequencer:document.querySelector('#sequencer').getBoundingClientRect().top,pads:document.querySelector('.performance-area').getBoundingClientRect().top}));
         assert.ok(beatOrder.controls<beatOrder.sequencer&&beatOrder.sequencer<beatOrder.pads,`Beat Grid should show its sequencer before the pad grid at ${width}px: ${JSON.stringify(beatOrder)}`);
       }
+      await page.waitForFunction(()=>{const toast=document.querySelector('#toast');return !toast.classList.contains('show')||Number(getComputedStyle(toast).opacity)>=.99;});
       const stageAudit=await page.evaluate(async()=>axe.run(document));
       assert.deepEqual(stageAudit.violations.map(violation=>violation.id),[],`${screen} at ${width}px should pass axe checks: ${JSON.stringify(stageAudit.violations.map(({id,nodes})=>({id,nodes:nodes.map(node=>({target:node.target,summary:node.failureSummary}))})))}`);
       assert.equal(await page.getByRole('main').count(),1,'every studio screen should retain one primary-content landmark');
@@ -520,6 +522,7 @@ try {
   await openScreen('beats');
   await page.locator('#grid-division').selectOption('1/16');
   await openScreen('voice');
+  assert.equal(await page.locator('#voice-model-credits').getAttribute('href'),'/credits.html','Voice Lab should provide an easy path to model and license credits');
   await page.locator('#voice-consent').check();
   await page.evaluate(()=>{window.syntheticVoiceWorkerError=true;});
   await page.locator('#voice-transcribe').click();
