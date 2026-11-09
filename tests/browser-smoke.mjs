@@ -1113,9 +1113,11 @@ try {
     assert.ok(laneGeometry.rowWidth<=laneGeometry.gridWidth&&laneGeometry.headRight<=width&&laneGeometry.headBottom<=laneGeometry.stepsTop,`each mobile lane should retain its visible name and controls above its scrollable steps: ${JSON.stringify(laneGeometry)}`);
     assert.ok(laneGeometry.stepsScrollWidth>laneGeometry.stepsWidth&&laneGeometry.stepWidth>=44&&laneGeometry.stepHeight>=44,`mobile step cells should scroll within their lane and keep 44px touch targets: ${JSON.stringify(laneGeometry)}`);
     assert.match(laneGeometry.laneName,/Pattern lane 1:/,`screen readers should identify each lane: ${JSON.stringify(laneGeometry)}`);
+    await page.locator('.track-row[data-pad="0"] .track-steps').evaluate(el=>{el.scrollLeft=el.scrollWidth;});
+    await page.waitForFunction(()=>{const offsets=[...document.querySelectorAll('.track-row .track-steps')].map(lane=>lane.scrollLeft);return offsets[0]>0&&offsets.every(left=>left===offsets[0]);});
     await page.locator('.track-row[data-pad="0"] [data-step="15"]').click();
     const syncedScroll=await page.locator('.track-row').evaluateAll(rows=>rows.map(row=>row.querySelector('.track-steps').scrollLeft));
-    assert.ok(syncedScroll[0]>0&&syncedScroll.every(left=>left===syncedScroll[0]),`all mobile lanes should stay aligned when scrolling to later steps: ${JSON.stringify(syncedScroll)}`);
+    assert.ok(syncedScroll[0]>0&&syncedScroll.every(left=>left===syncedScroll[0]),`all mobile lanes should stay aligned after scrolling and editing a later step: ${JSON.stringify(syncedScroll)}`);
   }
   await page.setViewportSize({width:390,height:844});
   await openScreen('voice');
