@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isGooglePickerConfigured } from '../site/google.js';
+import { isGooglePickerConfigured, waitForPhotosSelection } from '../site/google.js';
 
 test('Google pickers require every non-placeholder public browser identifier',()=>{
   const descriptor=Object.getOwnPropertyDescriptor(globalThis,'window');
@@ -27,4 +27,28 @@ test('Google pickers require every non-placeholder public browser identifier',()
     if(descriptor)Object.defineProperty(globalThis,'window',descriptor);
     else delete globalThis.window;
   }
+});
+
+test('Google Photos polling respects the server timeout instead of waiting for the app cap',async()=>{
+  let elapsed=0,requests=0;
+  const session=await waitForPhotosSelection(
+    {mediaItemsSet:false,pollingConfig:{pollInterval:'3s',timeoutIn:'2s'}},
+    async()=>{requests++;return {mediaItemsSet:false,pollingConfig:{pollInterval:'3s',timeoutIn:'2s'}};},
+    {now:()=>elapsed,sleep:async ms=>{elapsed+=ms;}}
+  );
+  assert.equal(session.mediaItemsSet,false);
+  assert.equal(requests,1);
+  assert.equal(elapsed,2000);
+});
+
+test('Google Photos polling stops on selection and does not make another status request',async()=>{
+  let requests=0,elapsed=0;
+  const session=await waitForPhotosSelection(
+    {mediaItemsSet:false,pollingConfig:{pollInterval:'1s',timeoutIn:'20s'}},
+    async()=>{requests++;return {mediaItemsSet:true};},
+    {now:()=>elapsed,sleep:async ms=>{elapsed+=ms;}}
+  );
+  assert.equal(session.mediaItemsSet,true);
+  assert.equal(requests,1);
+  assert.equal(elapsed,1000);
 });

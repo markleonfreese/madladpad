@@ -18,6 +18,22 @@ export function isGooglePickerConfigured() {
   });
 }
 
+export async function waitForPhotosSelection(session, getSession, {now=Date.now,sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)),maxWaitMs=5*60*1000}={}) {
+  const seconds = Number.parseFloat(session.pollingConfig?.timeoutIn || '300s');
+  if (!Number.isFinite(seconds) || seconds <= 0) return session;
+  const deadline = now() + Math.min(seconds * 1000, maxWaitMs);
+  let current = session;
+  while (!current.mediaItemsSet) {
+    const remaining = deadline - now();
+    if (remaining <= 0) break;
+    const interval = Number.parseFloat(current.pollingConfig?.pollInterval || '3s');
+    const delay = Math.min(Math.max(1000, (Number.isFinite(interval) ? interval : 3) * 1000), remaining);
+    await sleep(delay);
+    current = await getSession();
+  }
+  return current;
+}
+
 function loadScript(url, ready) {
   if (ready()) return Promise.resolve();
   return new Promise((resolve, reject) => {
@@ -91,15 +107,8 @@ export async function pickFromPhotos(onFiles, onStatus=()=>{}) {
     const pickerUrl=new URL(session.pickerUri);
     if(pickerUrl.protocol!=='https:' || pickerUrl.hostname!=='photos.google.com') throw new Error('Invalid Google Photos picker address');
     pickerTab.location.href = `${session.pickerUri.replace(/\/$/,'')}/autoclose`;
-  const deadline = Date.now() + 5*60*1000;
-    let current = session;
-    while (!current.mediaItemsSet && Date.now() < deadline) {
-      const seconds = Number.parseFloat(current.pollingConfig?.pollInterval || '3s');
-      const timeout = Number.parseFloat(current.pollingConfig?.timeoutIn || '300s');
-      if (timeout <= 0) break;
-      await new Promise(resolve => setTimeout(resolve, Math.max(1000,seconds*1000)));
-      current = await (await fetchAuthorised(`${endpoint}/${encodeURIComponent(session.id)}`,token)).json();
-    }
+    const current = await waitForPhotosSelection(session,async()=>
+      (await fetchAuthorised(`${endpoint}/${encodeURIComponent(session.id)}`,token)).json());
     if (!current.mediaItemsSet) throw new Error('Google Photos selection timed out or was cancelled.');
     const files = [];
     let pageToken = '';
