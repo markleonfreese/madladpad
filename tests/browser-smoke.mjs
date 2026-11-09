@@ -1106,8 +1106,23 @@ try {
   assert.equal(mobileLayout.scroll<=mobileLayout.width,true,`mobile layout should not overflow horizontally: ${JSON.stringify(mobileLayout)}`);
   await openScreen('beats');
   if(await page.locator('#track-grid').isHidden())await page.locator('#track-view').click();
-  const laneGeometry=await page.locator('.track-row').first().evaluate(row=>{const head=row.querySelector('.track-head'),headRect=head.getBoundingClientRect(),steps=row.querySelector('.track-steps').getBoundingClientRect(),edit=head.querySelector('.track-edit').getBoundingClientRect(),gain=head.querySelector('.track-gain'),gainRect=gain.getBoundingClientRect();return {headRight:headRect.right,headWidth:headRect.width,columns:getComputedStyle(head).gridTemplateColumns,stepsLeft:steps.left,editRight:edit.right,gainRight:gainRect.right,gainWidth:gainRect.width,gainCell:gain.parentElement.getBoundingClientRect().toJSON(),gainMinWidth:getComputedStyle(gain).minWidth};});
-  assert.ok(laneGeometry.editRight<=laneGeometry.headRight+.5&&laneGeometry.gainRight<=laneGeometry.stepsLeft&&laneGeometry.headRight<=laneGeometry.stepsLeft,`mobile lane controls should fit before the step grid: ${JSON.stringify(laneGeometry)}`);
+  for(const width of [390,320]){
+    await page.setViewportSize({width,height:844});
+    const laneGeometry=await page.locator('.track-row').first().evaluate(row=>{const head=row.querySelector('.track-head'),headRect=head.getBoundingClientRect(),steps=row.querySelector('.track-steps'),stepsRect=steps.getBoundingClientRect(),step=steps.querySelector('.step'),stepRect=step.getBoundingClientRect();return {viewport:innerWidth,documentWidth:document.documentElement.scrollWidth,gridWidth:document.querySelector('#track-grid').clientWidth,rowWidth:row.getBoundingClientRect().width,headRight:headRect.right,headBottom:headRect.bottom,stepsLeft:stepsRect.left,stepsTop:stepsRect.top,stepsWidth:steps.clientWidth,stepsScrollWidth:steps.scrollWidth,stepWidth:stepRect.width,stepHeight:stepRect.height,laneName:row.getAttribute('aria-label')};});
+    assert.equal(laneGeometry.documentWidth,width,`all-tracks mobile layout should not overflow at ${width}px: ${JSON.stringify(laneGeometry)}`);
+    assert.ok(laneGeometry.rowWidth<=laneGeometry.gridWidth&&laneGeometry.headRight<=width&&laneGeometry.headBottom<=laneGeometry.stepsTop,`each mobile lane should retain its visible name and controls above its scrollable steps: ${JSON.stringify(laneGeometry)}`);
+    assert.ok(laneGeometry.stepsScrollWidth>laneGeometry.stepsWidth&&laneGeometry.stepWidth>=44&&laneGeometry.stepHeight>=44,`mobile step cells should scroll within their lane and keep 44px touch targets: ${JSON.stringify(laneGeometry)}`);
+    assert.match(laneGeometry.laneName,/Pattern lane 1:/,`screen readers should identify each lane: ${JSON.stringify(laneGeometry)}`);
+    await page.locator('.track-row[data-pad="0"] .track-steps').evaluate(el=>{el.scrollLeft=el.scrollWidth;});
+    await page.waitForFunction(()=>{const offsets=[...document.querySelectorAll('.track-row .track-steps')].map(lane=>lane.scrollLeft);return offsets[0]>0&&offsets.every(left=>left===offsets[0]);});
+    await page.locator('.track-row[data-pad="0"] [data-step="15"]').click();
+    const syncedScroll=await page.locator('.track-row').evaluateAll(rows=>rows.map(row=>row.querySelector('.track-steps').scrollLeft));
+    assert.ok(syncedScroll[0]>0&&syncedScroll.every(left=>left===syncedScroll[0]),`all mobile lanes should stay aligned after scrolling and editing a later step: ${JSON.stringify(syncedScroll)}`);
+    await page.locator('.track-row[data-pad="0"] [data-control="muted"]').click();
+    const headerFocusScroll=await page.locator('.track-row').evaluateAll(rows=>rows.map(row=>row.querySelector('.track-steps').scrollLeft));
+    assert.ok(headerFocusScroll[0]===syncedScroll[0]&&headerFocusScroll.every(left=>left===headerFocusScroll[0]),`header actions should retain the current mobile step position: ${JSON.stringify(headerFocusScroll)}`);
+  }
+  await page.setViewportSize({width:390,height:844});
   await openScreen('voice');
   const mobileTabs=await page.locator('#studio-nav > a').evaluateAll(links=>links.map(link=>({left:link.getBoundingClientRect().left,right:link.getBoundingClientRect().right,visible:link.getBoundingClientRect().width>0})));
   assert.equal(mobileTabs.length,3,'the three core studio destinations should be primary');
