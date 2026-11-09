@@ -600,6 +600,9 @@ try {
   await page.locator('#rap-bars textarea').nth(2).fill('We take the flight');
   assert.match(await page.locator('#rap-bars .rap-bar').nth(2).locator('small').textContent(),/A rhyme.*match bar 1 “light”/,'ABAB should link bars 1 and 3 by their ending words');
   assert.match(await page.locator('#rap-bars .rap-bar').nth(2).locator('small').textContent(),/rhyme ideas: night, bright, flight/,'a rhyme-linked bar should keep showing local ideas for its anchor word');
+  await page.locator('#rap-bars textarea').nth(0).fill('I found a cat');
+  await page.locator('#rap-bars textarea').nth(2).fill('wearing a hat');
+  assert.match(await page.locator('#rap-bars .rap-bar').nth(2).locator('small').textContent(),/rhyme ideas: bat, flat, hat/,'common rhyme families outside the original starter set should receive local ideas');
   await page.locator('#rap-scheme').selectOption('AABB');
   assert.match(await page.locator('#rap-bars .rap-bar').nth(2).locator('small').textContent(),/B rhyme/,'AABB should regroup bars 3 and 4');
   await page.locator('#rap-bars textarea').nth(0).fill('Hello from the other side');
