@@ -69,11 +69,14 @@ try {
     };
   });
   await page.addInitScript(() => {
+    window.syntheticVoiceWorkerError = false;
     const NativeWorker = window.Worker;
     window.Worker = class extends NativeWorker {
       constructor(url, options) {
         if (String(url).includes('voice-inference-worker')) {
-          const source = `self.onmessage=event=>{if(event.data.type==='transcribe')setTimeout(()=>self.postMessage({type:'result',words:[{text:'Hello',start:0,end:.25},{text:'from',start:.3,end:.55},{text:'MadLadPad',start:.6,end:1}]}),20)};`;
+          const source = window.syntheticVoiceWorkerError
+            ? `self.onmessage=event=>{if(event.data.type==='transcribe')setTimeout(()=>self.postMessage({type:'error',message:'Failed to fetch'}),20)};`
+            : `self.onmessage=event=>{if(event.data.type==='transcribe')setTimeout(()=>self.postMessage({type:'result',words:[{text:'Hello',start:0,end:.25},{text:'from',start:.3,end:.55},{text:'MadLadPad',start:.6,end:1}]}),20)};`;
           super(URL.createObjectURL(new Blob([source], {type:'text/javascript'})));
         } else super(url, options);
       }
@@ -396,6 +399,13 @@ try {
   await page.locator('#grid-division').selectOption('1/16');
   await openScreen('voice');
   await page.locator('#voice-consent').check();
+  await page.evaluate(()=>{window.syntheticVoiceWorkerError=true;});
+  await page.locator('#voice-transcribe').click();
+  await page.waitForFunction(()=>document.querySelector('#voice-status').textContent.includes('Could not download the on-device speech model'));
+  assert.match(await page.locator('#voice-status').textContent(),/check your internet connection and retry.*add words and timestamps manually.*audio was not uploaded/i,'a model network error should explain retry, manual fallback and local privacy');
+  assert.equal(await page.locator('#voice-transcribe').isDisabled(),false,'speech transcription should be retryable after a model download failure');
+  assert.equal(await page.locator('#voice-word-list .voice-word').count(),0,'a failed model download should not create a transcript');
+  await page.evaluate(()=>{window.syntheticVoiceWorkerError=false;});
   await page.locator('#voice-transcribe').click();
   await page.waitForFunction(()=>document.querySelectorAll('#voice-word-list .voice-word').length===3);
   assert.match(await page.locator('#voice-status').textContent(),/Confidence is not provided/);
