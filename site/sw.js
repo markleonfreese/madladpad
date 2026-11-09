@@ -1,10 +1,10 @@
-const CACHE = 'madladpad-shell-v12';
+const CACHE = 'madladpad-shell-v13';
 const SHELL = ['/', '/styles.css', '/app.js', '/core.js', '/file-input.js', '/audio.js', '/pitch-dsp.js', '/pitch-shifter.js', '/tuning.js', '/storage.js', '/google.js', '/onsets.js', '/onsets-worker.js', '/voice.js', '/tuner.js', '/google-config.js', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', event => {
-  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('madladpad-shell-') && k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 self.addEventListener('fetch', event => {
   const request = event.request;
