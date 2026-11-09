@@ -170,6 +170,15 @@ try {
   assert.equal(await page.locator('[data-voice-jump="rap-title"]').getAttribute('aria-pressed'),'true','the selected Voice Lab tool should be announced');
   const rapLayout=await page.locator('#voice-rap-tool').evaluate(card=>({rap:card.getBoundingClientRect().width,container:card.parentElement.getBoundingClientRect().width}));
   assert.ok(rapLayout.rap>rapLayout.container*.9,`focused rap writing should use the available width: ${JSON.stringify(rapLayout)}`);
+  await openScreen('overdub');
+  for(const width of [390,320]){
+    await page.setViewportSize({width,height:720});
+    const overdubLayout=await page.evaluate(()=>({viewport:document.documentElement.clientWidth,document:document.documentElement.scrollWidth,buttonRight:document.querySelector('#vocal-add-harmony').getBoundingClientRect().right}));
+    assert.equal(overdubLayout.document,width,`Overdub should not overflow at ${width}px: ${JSON.stringify(overdubLayout)}`);
+    assert.ok(overdubLayout.buttonRight<=width,`the vocal harmony action should fit at ${width}px: ${JSON.stringify(overdubLayout)}`);
+    assert.equal(await page.locator('#studio-more-tools > summary').getAttribute('aria-current'),'page','the selected Overdub destination should remain identifiable after its menu closes');
+  }
+  await page.setViewportSize({width:1280,height:900});
   await openScreen('sounds');
   assert.equal(await page.locator('#source-advanced').evaluate(element=>element.open),false,'optional sources should stay behind a disclosure');
   await page.locator('#source-advanced > summary').click();
