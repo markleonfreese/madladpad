@@ -540,22 +540,30 @@ function renderSteps() {
 }
 
 function renderTrackGrid(){
-  const holder=$('track-grid'),focused=holder.contains(document.activeElement)?{pad:document.activeElement.closest('.track-row')?.dataset.pad,step:document.activeElement.dataset.step,control:document.activeElement.dataset.control}:null;holder.replaceChildren();
+  const holder=$('track-grid'),focused=holder.contains(document.activeElement)?{pad:document.activeElement.closest('.track-row')?.dataset.pad,step:document.activeElement.dataset.step,control:document.activeElement.dataset.control}:null,previousScroll=holder.querySelector('.track-steps')?.scrollLeft||0;holder.replaceChildren();
   const count=PAD_COUNT[project.layout],hasSolo=project.pads.slice(0,count).some(pad=>pad.solo);
   const stride=gridStride(),positions=Array.from({length:16/stride},(_,index)=>index*stride);
   for(let id=0;id<count;id++){
-    const pad=project.pads[id],row=document.createElement('div');row.className=`track-row${pad.muted?' muted':''}${pad.solo?' solo':''}`;row.dataset.pad=id;
+    const pad=project.pads[id],row=document.createElement('div');row.className=`track-row${pad.muted?' muted':''}${pad.solo?' solo':''}`;row.dataset.pad=id;row.setAttribute('role','group');
     const head=document.createElement('div');head.className='track-head';
-    const trackLabel=mediaFiles.has(id)?pad.name:(audio.demoEnabled?`Demo synth ${String(id+1).padStart(2,'0')}`:'Empty pad');
+    const trackLabel=mediaFiles.has(id)?pad.name:(audio.demoEnabled?`Demo synth ${String(id+1).padStart(2,'0')}`:'Empty pad');row.setAttribute('aria-label',`Pattern lane ${id+1}: ${trackLabel}`);
     const name=document.createElement('button');name.type='button';name.className='track-name';name.textContent=`${String(id+1).padStart(2,'0')} · ${trackLabel}`;name.setAttribute('aria-label',`Select pad ${id+1}, ${trackLabel}`);name.addEventListener('click',()=>selectPad(id));head.append(name);
     const edit=document.createElement('button');edit.type='button';edit.dataset.control='edit';edit.className='track-edit';edit.textContent='EDIT';edit.setAttribute('aria-label',`Edit pad ${id+1} in Sounds`);edit.addEventListener('click',()=>{selectPad(id);if(location.hash!=='#sounds')location.hash='#sounds';});head.append(edit);
     for(const [key,label] of [['muted','M'],['solo','S']]){const button=document.createElement('button');button.type='button';button.dataset.control=key;button.className=`track-toggle${pad[key]?' active':''}`;button.textContent=label;button.setAttribute('aria-label',`${pad[key]?'Disable':'Enable'} ${key} for pad ${id+1}`);button.setAttribute('aria-pressed',String(pad[key]));button.addEventListener('click',()=>{pad[key]=!pad[key];renderTrackGrid();queueSave();});head.append(button);}
     const gain=document.createElement('input');gain.type='range';gain.min='0';gain.max='150';gain.value=String(Math.round(pad.volume*100));gain.className='track-gain';gain.setAttribute('aria-label',`Volume for pad ${id+1}`);gain.addEventListener('input',()=>{pad.volume=Number(gain.value)/100;if(selected===id){$('volume').value=gain.value;$('volume-out').textContent=`${gain.value}%`;}queueSave();});head.append(gain);row.append(head);
-    const cells=document.createElement('div');cells.className='track-steps';cells.style.gridTemplateColumns=`repeat(${positions.length},minmax(24px,1fr))`;
+    const cells=document.createElement('div');cells.className='track-steps';cells.style.setProperty('--track-step-count',String(positions.length));cells.addEventListener('scroll',()=>{for(const other of holder.querySelectorAll('.track-steps'))if(other!==cells&&other.scrollLeft!==cells.scrollLeft)other.scrollLeft=cells.scrollLeft;},{passive:true});
     positions.forEach(index=>{const enabled=pad.steps[index],button=document.createElement('button');button.type='button';button.dataset.step=String(index);button.className=`step${enabled?' on':''}`;button.textContent=String(index+1).padStart(2,'0');button.setAttribute('aria-label',`Pad ${id+1}, step ${index+1} ${enabled?'on':'off'} at ${project.gridDivision} grid`);button.setAttribute('aria-pressed',String(enabled));button.disabled=Boolean(patternRecording);button.addEventListener('click',()=>{if(patternRecording)return;patternUndoSnapshot=null;renderPatternRecordingState();pad.steps[index]=!pad.steps[index];pad.stepOffsets[index]=0;renderSteps();queueSave();});cells.append(button);});row.append(cells);
     if(hasSolo&&!pad.solo)row.classList.add('solo-muted');holder.append(row);
   }
-  if(focused?.pad!==undefined){const target=holder.querySelector(`.track-row[data-pad="${focused.pad}"] [${focused.control?`data-control="${focused.control}"`:`data-step="${focused.step}"`}]`);target?.focus();}
+  if(focused?.pad!==undefined){
+    const selector=focused.control?`data-control="${focused.control}"`:`data-step="${focused.step}"`;
+    holder.querySelector(`.track-row[data-pad="${focused.pad}"] [${selector}]`)?.focus();
+  }
+  if(window.matchMedia('(max-width:740px)').matches){
+    const activeSteps=focused?.pad!==undefined?holder.querySelector(`.track-row[data-pad="${focused.pad}"] .track-steps`):null;
+    const scrollLeft=activeSteps?activeSteps.scrollLeft:previousScroll;
+    for(const lane of holder.querySelectorAll('.track-steps'))lane.scrollLeft=scrollLeft;
+  }
 }
 
 function renderSession() {
