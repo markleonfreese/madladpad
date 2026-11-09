@@ -82,6 +82,7 @@ export class SamplerAudio {
 
   async load(id, file, mediaElement) {
     const previous = this.sources.get(id);
+    previous?.stopPlayback?.();
     previous?.element?.pause();
     if (previous?.url) URL.revokeObjectURL(previous.url);
     // Prefer AudioBuffer playback for decodable audio to retain low-latency,
@@ -119,6 +120,7 @@ export class SamplerAudio {
   unload(id) {
     const source = this.sources.get(id);
     if (!source) return;
+    source.stopPlayback?.();
     source.element?.pause();
     URL.revokeObjectURL(source.url);
     // Preserve media element routing to avoid a second createMediaElementSource on the same DOM node.
@@ -245,6 +247,7 @@ export class SamplerAudio {
       setTimeout(() => {
         if (this.sources.get(id)?.file !== source.file) return;
         const element = source.element;
+        source.stopPlayback?.();
         element.pause();
         element.currentTime = Math.min(start, Number.isFinite(element.duration) ? Math.max(0, element.duration-.01) : start);
         element.playbackRate = clamp(rate,.5,2);
@@ -253,9 +256,43 @@ export class SamplerAudio {
         else if(rate!==1&&(!this.pitchReady||source.pitchAvailable===false)&&typeof window!=='undefined')window.dispatchEvent(new CustomEvent('madladpad-error',{detail:'This browser may change perceived pitch when Speed changes because Pitch processing is unavailable.'}));
         element.muted = false;
         if (source.gain) source.gain.gain.value = clamp(pad.volume, 0, 1.5);
-        element.play().catch(() => {});
         const thisFile = source.file;
-        setTimeout(() => { if (this.sources.get(id)?.file === thisFile) element.pause(); }, ((end-start)/rate)*1000);
+        let finished=false,stopTimer=null;
+        const cleanup=pause=>{
+          if(finished)return;
+          finished=true;
+          element.removeEventListener('timeupdate',stopAtBoundary);
+          element.removeEventListener('ended',stopAtBoundary);
+          if(stopTimer!==null)clearTimeout(stopTimer);
+          if(source.stopPlayback===stopPlayback){source.stopPlayback=null;if(pause)element.pause();}
+        };
+        const stopPlayback=()=>cleanup(true);
+        const stopAtBoundary=()=>{
+          if(element.ended||element.currentTime>=end-.015)stopPlayback();
+        };
+        const scheduleBoundaryCheck=()=>{
+          if(finished)return;
+          const remaining=Math.max(0,end-element.currentTime);
+          if(remaining<=.015){stopPlayback();return;}
+          // `timeupdate` can be throttled for short trims. Recheck near the
+          // expected media-time boundary, then keep polling from media time
+          // if playback stalls instead of granting a fixed grace period.
+          stopTimer=setTimeout(()=>{
+            stopTimer=null;
+            stopAtBoundary();
+            if(!finished)scheduleBoundaryCheck();
+          },Math.max(10,Math.min(100,remaining/rate*1000)));
+        };
+        source.stopPlayback=stopPlayback;
+        element.addEventListener('timeupdate',stopAtBoundary);
+        element.addEventListener('ended',stopAtBoundary);
+        try{
+          Promise.resolve(element.play()).then(()=>{
+            if(this.sources.get(id)?.file!==thisFile||source.stopPlayback!==stopPlayback){cleanup(false);return;}
+            stopAtBoundary();
+            if(source.stopPlayback===stopPlayback)scheduleBoundaryCheck();
+          },()=>cleanup(true));
+        }catch{cleanup(true);}
       }, delay);
     }
     setTimeout(() => onVisual?.(id), delay);

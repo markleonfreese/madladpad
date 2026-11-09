@@ -78,6 +78,57 @@ try{
     return file instanceof File&&file.name==='webkit-synthetic.wav'&&file.size>44;
   });
   assert.equal(restored,true,'the imported local File should survive a WebKit page reload');
+
+  const videoFixture=await page.evaluate(async()=>{
+    if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream)return null;
+    const mime=['video/mp4','video/webm;codecs=vp8,opus','video/webm'].find(type=>MediaRecorder.isTypeSupported(type));
+    if(!mime)return null;
+    const audio=new AudioContext();await audio.resume();
+    const oscillator=audio.createOscillator(),gain=audio.createGain(),audioStream=audio.createMediaStreamDestination();
+    oscillator.frequency.value=440;gain.gain.value=.18;oscillator.connect(gain).connect(audioStream);oscillator.start();
+    const canvas=document.createElement('canvas');canvas.width=160;canvas.height=90;
+    const paint=canvas.getContext('2d');let frame=0;
+    const timer=setInterval(()=>{paint.fillStyle=frame++%2?'#193b25':'#487b30';paint.fillRect(0,0,canvas.width,canvas.height);},33);
+    const videoStream=canvas.captureStream(30),stream=new MediaStream([...videoStream.getVideoTracks(),...audioStream.stream.getAudioTracks()]);
+    const recorder=new MediaRecorder(stream,{mimeType:mime}),chunks=[];
+    recorder.ondataavailable=event=>{if(event.data.size)chunks.push(event.data);};
+    const stopped=new Promise(resolve=>recorder.onstop=()=>resolve(new Blob(chunks,{type:recorder.mimeType||mime})));
+    recorder.start(100);await new Promise(resolve=>setTimeout(resolve,2000));recorder.stop();
+    const blob=await stopped;clearInterval(timer);oscillator.stop();stream.getTracks().forEach(track=>track.stop());await audio.close();
+    const bytes=new Uint8Array(await blob.arrayBuffer());let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);
+    return {mime:blob.type,size:bytes.length,base64:btoa(binary)};
+  });
+  if(videoFixture){
+    assert.ok(videoFixture.size>100,'WebKit should produce a playable synthetic video fixture');
+    await page.locator('.pad').nth(1).hover();
+    await page.locator('.pad .edit-pad').nth(1).click();
+    page.once('dialog',dialog=>dialog.accept());
+    const extension=videoFixture.mime.includes('mp4')?'mp4':'webm';
+    await page.locator('#media-input').setInputFiles({name:`webkit-playback.${extension}`,mimeType:videoFixture.mime,buffer:Buffer.from(videoFixture.base64,'base64')});
+    await page.getByText(new RegExp(`webkit-playback\\.${extension}.*stored on this device`,'i')).waitFor({timeout:15000});
+    await page.waitForFunction(()=>{const video=document.querySelectorAll('.pad video')[1];return video?.readyState>=2&&Number.isFinite(video.duration)&&video.duration>=1.5;},{timeout:15000});
+    const video=page.locator('.pad video').nth(1);
+    await page.evaluate(()=>{
+      const nativePlay=HTMLMediaElement.prototype.play;
+      HTMLMediaElement.prototype.play=function(...args){
+        if(!this.closest('.pad'))return nativePlay.apply(this,args);
+        return new Promise((resolve,reject)=>setTimeout(()=>nativePlay.apply(this,args).then(resolve,reject),500));
+      };
+    });
+    if(!await page.locator('#sample-advanced').evaluate(element=>element.open))await page.locator('#sample-advanced > summary').click();
+    const playback=[];
+    for(const speed of [1,2]){
+      await page.locator('#speed').evaluate((element,value)=>{element.value=String(value);element.dispatchEvent(new Event('input',{bubbles:true}));},speed);
+      await video.evaluate(element=>{element.pause();element.currentTime=0;});
+      await page.locator('.pad-hit').nth(1).click();
+      await page.waitForFunction(()=>{const element=document.querySelectorAll('.pad video')[1];return element?.paused&&element.currentTime>.1;},null,{timeout:7000});
+      const result=await video.evaluate(element=>({duration:element.duration,currentTime:element.currentTime,playbackRate:element.playbackRate,paused:element.paused}));
+      assert.ok(result.currentTime>=result.duration-.12,`WebKit video should play the selected region to its end at Speed ${speed}×, got ${JSON.stringify(result)}`);
+      playback.push({speed,...result});
+    }
+    console.log(`WebKit media stop boundary passed: ${JSON.stringify(playback)}.`);
+  }else console.log('Skipped WebKit video stop-boundary check: MediaRecorder or canvas captureStream is unavailable.');
+
   assert.deepEqual(errors,[],'the tested WebKit journeys should not produce uncaught page errors');
   console.log('WebKit smoke passed: 320/390px overflow, secondary navigation state, Rap focus, WAV import and IndexedDB File reload.');
 }finally{
