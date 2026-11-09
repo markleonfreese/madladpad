@@ -21,8 +21,8 @@ const wordKey = text => String(text).toLowerCase().replace(/[^a-z']/g, '').repla
 function rhymeHints(line) {
   const word = wordKey(line.trim().split(/\s+/).at(-1));
   if (!word) return [];
-  for (const [key, values] of Object.entries(rhymes)) if (word === key || values.includes(word)) return [key, ...values].filter(value => value !== word).slice(0, 3);
-  return Object.entries(rhymes).flatMap(([key, values]) => [key, ...values].filter(value => value.endsWith(word.slice(-2)) && value !== word)).slice(0, 3);
+  for (const [key, values] of Object.entries(rhymes)) if (word === key || values.includes(word)) return [key, ...values].filter(value => value !== word).slice(0, 4);
+  return Object.entries(rhymes).flatMap(([key, values]) => [key, ...values].filter(value => value.endsWith(word.slice(-2)) && value !== word)).slice(0, 4);
 }
 function rhymeGroup(index, scheme) {
   const position = index % 4;
@@ -248,7 +248,8 @@ function renderRap(project, save, audio, notify) {
         if (wordKey(candidate)) { anchor = { word: candidate, index: earlier }; break; }
       }
       const target = anchor?.word || line.trim().split(/\s+/).at(-1) || '';
-      const hints = rhymeHints(target);
+      const currentEnding = wordKey(line.trim().split(/\s+/).at(-1));
+      const hints = rhymeHints(target).filter(word => word !== currentEnding).slice(0, 3);
       const cues = [];
       if (anchor) cues.push(`match bar ${anchor.index + 1} “${anchor.word}”`);
       if (hints.length) cues.push(`rhyme ideas: ${hints.join(', ')}`);
