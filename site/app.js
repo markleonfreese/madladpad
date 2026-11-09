@@ -116,6 +116,7 @@ function updateTransportButton() {
   $('studio-play').setAttribute('aria-pressed',String(running));
   $('studio-play').classList.toggle('active',running);
   $('play-seq').textContent = transportActivity.phase==='starting' ? '■ CANCEL' : running ? '■ STOP' : '▶ PLAY';
+  $('play-seq').setAttribute('aria-pressed',String(running));
   $('play-seq').classList.toggle('active',running);
 }
 
