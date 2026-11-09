@@ -16,6 +16,7 @@ Review checklist (see [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md) for detailed 
 - [ ] After opening Voice Lab or Overdub from More tools, confirm the selected destination remains identifiable to keyboard/screen-reader users when the disclosure closes. Check the core flow one-handed in portrait.
 - [ ] At 320px and 390px, open Overdub and verify the vocal harmony action wraps within the viewport without horizontal page scrolling.
 - [ ] Test microphone/camera prompts, offline reopen, local persistence/backup, export, and human listening.
+- [ ] On an existing installed PWA upgraded from shell v13 to v14, confirm the current project/media and downloaded speech model remain available; then reopen offline, transcribe locally, and open the model/runtime credits and license page.
 - [ ] Record preview URL, source commit, device/OS/browser, results, and failures without attaching private clips or token values. Synthetic desktop and hosted CI results do not count as phone or listening acceptance.
 
 Production remains on an older shell (`v4`; current `main` is `v14`). The latest read-only checks returned HTTP 200 but did not reproduce or explain the earlier intermittent 503. Keep production unchanged until account spend is verified within A$5/month and a supported production write route is available. Preview URLs may be publicly accessible.
