@@ -21,6 +21,11 @@ test('initial layout has 12 visible pads and 16 backing slots', () => {
   assert.equal(project.pads.length, 16);
   assert.equal(project.pads[0].steps.length, 16);
   assert.equal(project.gridDivision,'1/16');
+  assert.equal(project.demoEnabled,false);
+});
+test('demo sound mode survives project normalisation and older projects default it off',()=>{
+  assert.equal(normaliseProject({demoEnabled:true}).demoEnabled,true);
+  assert.equal(normaliseProject({}).demoEnabled,false);
 });
 test('malformed project metadata is bounded and cannot inject extra pads', () => {
   const project = normaliseProject({layout: '100x100', bpm: 999, pads: [{pitch: -500, volume: 9, steps: [1,0]}]});

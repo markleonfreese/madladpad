@@ -105,13 +105,14 @@ function showStudioScreen() {
 function startDemoBeat(){
   const hasPattern=project.pads.some(pad=>pad.steps.some(Boolean));
   audio.demoEnabled=true;
+  project.demoEnabled=true;
   if(!hasPattern){
     const [kick,snare,hat]=project.pads;
     for(const step of [0,8])kick.steps[step]=true;
     for(const step of [4,12])snare.steps[step]=true;
     for(let step=0;step<16;step+=2)hat.steps[step]=true;
-    queueSave();
   }
+  queueSave();
   for(const button of [$('demo-button'),$('quick-demo')]){
     button.classList.add('active');
     button.setAttribute('aria-pressed','true');
@@ -575,6 +576,11 @@ function renderSession() {
   $('quantize-select').value = project.quantize;
   $('grid-division').value=project.gridDivision;
   $('video-aspect').value = project.video.aspect;
+  audio.demoEnabled=Boolean(project.demoEnabled);
+  for(const button of [$('demo-button'),$('quick-demo')]){
+    button.classList.toggle('active',audio.demoEnabled);
+    button.setAttribute('aria-pressed',String(audio.demoEnabled));
+  }
   renderGrid(); renderControls(); renderSteps(); renderScenes(); renderVideoDirector();
   audio.setTransport(project.bpm,project.quantize);
   syncRegionPreview();
@@ -1529,6 +1535,8 @@ function bindControls() {
   });
   $('demo-button').addEventListener('click',()=>{
     audio.demoEnabled=!audio.demoEnabled;
+    project.demoEnabled=audio.demoEnabled;
+    queueSave();
     for(const button of [$('demo-button'),$('quick-demo')]){button.classList.toggle('active',audio.demoEnabled);button.setAttribute('aria-pressed',String(audio.demoEnabled));}
     renderGrid();renderTrackGrid();renderControls();notify(audio.demoEnabled?'Demo synth sounds enabled on empty pads.':'Demo sounds off.');
   });
