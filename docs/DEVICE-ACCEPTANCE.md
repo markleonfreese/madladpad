@@ -5,10 +5,10 @@ Use this checklist to close the physical-device and human-review gates recorded 
 ## Current review target — 10 November 2026
 
 - **Preview:** <https://preview-ux-acceptance-20261108-madladpad.markleonfreese.workers.dev/>
-- **Application source:** current `main` commit `eb051c14a3812f919ec5176fb3acdfcab8acfc83`. PR #84 is the review-only preview branch; its checked application source must match `main`, while its branch changes only these acceptance notes. Before testing, verify the current PR head, confirm both `Verify` and `Workers Builds` passed for that exact head, and open the preview linked from that Workers Builds check.
-- This is a non-production review preview. Read-only checks on 10 November returned HTTP 200 for production, but its service worker identifies `madladpad-shell-v4` while current `main` is `v13`. The earlier intermittent 503 was not reproduced or explained. Do not use production to accept current `main`.
+- **Application source:** current `main` commit `a9557634e00ba5e262af1d2f9edf8bc2ac47cc03`. PR #84 is the review-only preview branch; its checked application source must match `main`, while its branch changes only these acceptance notes. Before testing, verify the current PR head, confirm both `Verify` and `Workers Builds` passed for that exact head, and open the preview linked from that Workers Builds check.
+- This is a non-production review preview. Read-only checks on 10 November returned HTTP 200 for production, but its service worker identifies `madladpad-shell-v4` while current `main` is `v14`. The earlier intermittent 503 was not reproduced or explained. Do not use production to accept current `main`.
 - First-use speech transcription downloads about 65 MB of model/runtime files from Hugging Face. Plan the first speech test on an appropriate connection; the selected audio remains local.
-- After testing, record the preview URL, application `main` SHA `eb051c14a3812f919ec5176fb3acdfcab8acfc83`, current PR #84 head SHA, and matching successful Workers Builds check in Issue #2. Keep device, screen-reader, and listening results separate from hosted browser evidence.
+- After testing, record the preview URL, application `main` SHA `a9557634e00ba5e262af1d2f9edf8bc2ac47cc03`, current PR #84 head SHA, and matching successful Workers Builds check in Issue #2. Keep device, screen-reader, and listening results separate from hosted browser evidence.
 
 ## Before testing
 
