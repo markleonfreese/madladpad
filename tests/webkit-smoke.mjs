@@ -79,35 +79,21 @@ try{
   });
   assert.equal(restored,true,'the imported local File should survive a WebKit page reload');
 
-  const videoFixture=await page.evaluate(async()=>{
-    if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream)return null;
-    const mime=['video/mp4','video/webm;codecs=vp8,opus','video/webm'].find(type=>MediaRecorder.isTypeSupported(type));
-    if(!mime)return null;
-    const audio=new AudioContext();await audio.resume();
-    const oscillator=audio.createOscillator(),gain=audio.createGain(),audioStream=audio.createMediaStreamDestination();
-    oscillator.frequency.value=440;gain.gain.value=.18;oscillator.connect(gain).connect(audioStream);oscillator.start();
-    const canvas=document.createElement('canvas');canvas.width=160;canvas.height=90;
-    const paint=canvas.getContext('2d');let frame=0;
-    const timer=setInterval(()=>{paint.fillStyle=frame++%2?'#193b25':'#487b30';paint.fillRect(0,0,canvas.width,canvas.height);},33);
-    const videoStream=canvas.captureStream(30),stream=new MediaStream([...videoStream.getVideoTracks(),...audioStream.stream.getAudioTracks()]);
-    const recorder=new MediaRecorder(stream,{mimeType:mime}),chunks=[];
-    recorder.ondataavailable=event=>{if(event.data.size)chunks.push(event.data);};
-    const stopped=new Promise(resolve=>recorder.onstop=()=>resolve(new Blob(chunks,{type:recorder.mimeType||mime})));
-    recorder.start(100);await new Promise(resolve=>setTimeout(resolve,2000));recorder.stop();
-    const blob=await stopped;clearInterval(timer);oscillator.stop();stream.getTracks().forEach(track=>track.stop());await audio.close();
-    const bytes=new Uint8Array(await blob.arrayBuffer());let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);
-    return {mime:blob.type,size:bytes.length,base64:btoa(binary)};
-  });
-  if(videoFixture){
-    assert.ok(videoFixture.size>100,'WebKit should produce a playable synthetic video fixture');
+  const canPlayTestVideo=await page.evaluate(()=>Boolean(document.createElement('video').canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"')));
+  if(canPlayTestVideo){
+    const videoFixture=await readFile(resolve('tests/fixtures/webkit-stop-boundary.mp4'));
+    assert.ok(videoFixture.length>100,'the deterministic synthetic video fixture should be present');
+    console.log(`WebKit synthetic video fixture: video/mp4 (${videoFixture.length} bytes).`);
     await page.locator('.pad').nth(1).hover();
     await page.locator('.pad .edit-pad').nth(1).click();
     page.once('dialog',dialog=>dialog.accept());
-    const extension=videoFixture.mime.includes('mp4')?'mp4':'webm';
-    await page.locator('#media-input').setInputFiles({name:`webkit-playback.${extension}`,mimeType:videoFixture.mime,buffer:Buffer.from(videoFixture.base64,'base64')});
+    const extension='mp4';
+    await page.locator('#media-input').setInputFiles({name:`webkit-playback.${extension}`,mimeType:'video/mp4',buffer:videoFixture});
     await page.getByText(new RegExp(`webkit-playback\\.${extension}.*stored on this device`,'i')).waitFor({timeout:15000});
-    await page.waitForFunction(()=>{const video=document.querySelectorAll('.pad video')[1];return video?.readyState>=2&&Number.isFinite(video.duration)&&video.duration>=1.5;},{timeout:15000});
+    await page.waitForFunction(()=>{const video=document.querySelectorAll('.pad video')[1];return Boolean(video&&(video.readyState>=2||video.error!==null));},null,{timeout:15000});
     const video=page.locator('.pad video').nth(1);
+    const decoded=await video.evaluate(element=>({readyState:element.readyState,duration:element.duration,error:element.error&&{code:element.error.code,message:element.error.message},networkState:element.networkState,src:element.currentSrc}));
+    assert.ok(decoded.readyState>=2&&Number.isFinite(decoded.duration)&&decoded.duration>=1.5,`WebKit should decode its generated video before the stop-boundary check: ${JSON.stringify(decoded)}`);
     await page.evaluate(()=>{
       const nativePlay=HTMLMediaElement.prototype.play;
       HTMLMediaElement.prototype.play=function(...args){
@@ -127,7 +113,48 @@ try{
       playback.push({speed,...result});
     }
     console.log(`WebKit media stop boundary passed: ${JSON.stringify(playback)}.`);
-  }else console.log('Skipped WebKit video stop-boundary check: MediaRecorder or canvas captureStream is unavailable.');
+
+    await page.waitForFunction(()=>!document.querySelector('#region-start').disabled,'',{timeout:10000});
+    await page.locator('#region-start').fill('0.40');
+    await page.locator('#region-end').fill('0.45');
+    await page.locator('#region-apply').click();
+    await video.evaluate(element=>{
+      const addNativeListener=element.addEventListener.bind(element);
+      element.addEventListener=(type,...args)=>{
+        if(type==='timeupdate')return;
+        return addNativeListener(type,...args);
+      };
+      element.addEventListener('playing',()=>{element.dataset.smokeDidPlay='true';element.dataset.smokePlayingAt=String(performance.now());});
+      element.addEventListener('pause',()=>{
+        if(element.dataset.smokeDidPlay==='true'){
+          element.dataset.smokeDidPause='true';
+          element.dataset.smokePausedAt=String(performance.now());
+        }
+      });
+    });
+    const trimmedPlayback=[];
+    for(const speed of [1,2]){
+      await page.locator('#speed').evaluate((element,value)=>{element.value=String(value);element.dispatchEvent(new Event('input',{bubbles:true}));},speed);
+      await video.evaluate(element=>{
+        element.pause();element.currentTime=0;element.dataset.smokeDidPlay='false';element.dataset.smokeDidPause='false';
+        element.dataset.smokePlayingAt='';element.dataset.smokePausedAt='';
+      });
+      await page.locator('.pad-hit').nth(1).click();
+      await page.waitForFunction(()=>{
+        const element=document.querySelectorAll('.pad video')[1];
+        return element?.dataset.smokeDidPlay==='true'&&element.dataset.smokeDidPause==='true';
+      },null,{timeout:7000});
+      const result=await video.evaluate(element=>({
+        duration:element.duration,currentTime:element.currentTime,playbackRate:element.playbackRate,paused:element.paused,
+        playedForMs:Number(element.dataset.smokePausedAt)-Number(element.dataset.smokePlayingAt)
+      }));
+      assert.equal(result.paused,true,`WebKit should pause the 50 ms selected region at Speed ${speed}×`);
+      assert.ok(result.currentTime>=.40&&result.currentTime<=.58,`WebKit should stop near the selected 0.45 s trim boundary at Speed ${speed}×, got ${JSON.stringify(result)}`);
+      assert.ok(result.playedForMs>=10&&result.playedForMs<500,`WebKit should play briefly then stop without the old one-second grace period at Speed ${speed}×, got ${JSON.stringify(result)}`);
+      trimmedPlayback.push({speed,...result});
+    }
+    console.log(`WebKit short-trim boundary passed: ${JSON.stringify(trimmedPlayback)}.`);
+  }else console.log('Skipped WebKit video stop-boundary check: this Playwright WebKit build reports no H.264/AAC MP4 playback support.');
 
   assert.deepEqual(errors,[],'the tested WebKit journeys should not produce uncaught page errors');
   console.log('WebKit smoke passed: 320/390px overflow, secondary navigation state, Rap focus, WAV import and IndexedDB File reload.');
