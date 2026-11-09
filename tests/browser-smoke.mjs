@@ -64,6 +64,9 @@ try {
     window.AudioContext=class extends NativeAudioContext {
       constructor(...args){super(...args);window.__madladpadAppAudioContext??=this;}
     };
+    window.forceSilentCaptureMeter=false;
+    const nativeGetFloatTimeDomainData=window.AnalyserNode?.prototype.getFloatTimeDomainData;
+    if(nativeGetFloatTimeDomainData)window.AnalyserNode.prototype.getFloatTimeDomainData=function(samples){if(window.forceSilentCaptureMeter){samples.fill(0);return;}return nativeGetFloatTimeDomainData.call(this,samples);};
     window.forceWebmDecodeFailure=false;
     const decodeAudioData=AudioContext.prototype.decodeAudioData;
     AudioContext.prototype.decodeAudioData=function(data,...args){
@@ -955,8 +958,10 @@ try {
     await page.locator('#camera-keep').waitFor({state:'visible',timeout:6000});
     await page.waitForFunction(()=>!document.querySelector('#camera-keep').disabled,null,{timeout:6000});
     assert.equal(await page.locator('#camera-review').isVisible(),true,'a bar-length take should stop automatically and open trim review');
+    assert.match(await page.locator('#camera-status').textContent(),/Sound detected/,'active captured audio should be reported as detected before review');
     await page.locator('#camera-retake').click();
     await page.waitForFunction(()=>!document.querySelector('#camera-capture').disabled,null,{timeout:5000});
+    await page.evaluate(()=>{window.forceSilentCaptureMeter=true;});
     await page.locator('#camera-length').selectOption('3');
     assert.equal(await page.locator('#camera-length-summary').textContent(),'One-shot · up to 3 seconds','one-shot capture options should retain their fixed duration');
     await page.waitForFunction(()=>!document.querySelector('#camera-capture').disabled);
@@ -964,6 +969,8 @@ try {
     await page.waitForFunction(()=>document.querySelector('#camera-capture').textContent.includes('STOP'));
     await page.locator('#camera-keep').waitFor({state:'visible',timeout:7000});
     await page.waitForFunction(()=>!document.querySelector('#camera-keep').disabled);
+    assert.match(await page.locator('#camera-status').textContent(),/No clear sound detected\. The full take is selected/,'silent capture must not claim the detector found sound');
+    assert.equal(Number(await page.locator('#camera-start').inputValue()),0,'silent capture fallback should keep the full take selected for manual trimming');
     await page.locator('#camera-keep').click();
     await page.waitForFunction(()=>!document.querySelector('#camera-dialog').open&&document.querySelector('#sample-info').textContent.includes('stored on this device'));
     const keptCaptureTrackStates=await page.evaluate(()=>window.__cameraCaptureStreams.flatMap(stream=>stream.getTracks().map(({kind,readyState})=>({kind,readyState}))));

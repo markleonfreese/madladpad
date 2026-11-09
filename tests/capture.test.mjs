@@ -19,8 +19,17 @@ test('capture analysis offers active sound with trim handles and silence fallbac
   const region=core.suggestActiveRegion([0,.002,.003,.1,.16,.07,.001,.002],4);
   assert.ok(region.start>0&&region.start<1.5);
   assert.ok(region.end>2&&region.end<4);
-  assert.deepEqual(core.suggestActiveRegion([0,0,0],3),{start:0,end:3});
-  assert.deepEqual(core.suggestActiveRegion([],0),{start:0,end:.05});
+  assert.equal(region.detected,true);
+  assert.deepEqual(core.suggestActiveRegion([0,0,0],3),{start:0,end:3,detected:false});
+  assert.deepEqual(core.suggestActiveRegion([],0),{start:0,end:.05,detected:false});
+});
+
+test('capture review distinguishes silence or unavailable metering from detected sound',()=>{
+  assert.equal(core.suggestActiveRegion([0,0,0],3).detected,false);
+  assert.equal(core.suggestActiveRegion([],3).detected,false);
+  assert.equal(core.suggestActiveRegion([.002,.002,.012,.01,.008,.002],2).detected,true);
+  assert.equal(core.captureRegionStatus(false),'No clear sound detected. The full take is selected; adjust manually, preview or keep.');
+  assert.equal(core.captureRegionStatus(true),'Sound detected. Suggested trim surrounds it; adjust, preview or keep.');
 });
 
 test('capture analysis finds quiet sounds above a local noise floor', () => {
