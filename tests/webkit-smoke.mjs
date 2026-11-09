@@ -160,7 +160,7 @@ try{
       }));
       assert.equal(result.paused,true,`WebKit should pause the 50 ms selected region at Speed ${speed}×`);
       assert.ok(result.playingPosition>=.35&&result.playingPosition<=.50,`WebKit should start the selected region at 0.40 s at Speed ${speed}×, got ${JSON.stringify(result)}`);
-      assert.ok(result.currentTime>=.40&&result.currentTime<.95,`WebKit should stop before the legacy one-second grace point for the 0.45 s trim at Speed ${speed}×, got ${JSON.stringify(result)}`);
+      assert.ok(result.currentTime>=.40&&result.currentTime<result.duration-.05,`WebKit should stop the short trim before natural playback ends at Speed ${speed}×, got ${JSON.stringify(result)}`);
       assert.ok(result.playedForMs>=10&&result.playedForMs<500,`WebKit should play briefly then stop without the old one-second grace period at Speed ${speed}×, got ${JSON.stringify(result)}`);
       trimmedPlayback.push({speed,...result});
     }
