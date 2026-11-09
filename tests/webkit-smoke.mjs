@@ -96,6 +96,7 @@ try{
     assert.ok(decoded.readyState>=2&&Number.isFinite(decoded.duration)&&decoded.duration>=1.5,`WebKit should decode its generated video before the stop-boundary check: ${JSON.stringify(decoded)}`);
     await page.evaluate(()=>{
       const nativePlay=HTMLMediaElement.prototype.play;
+      window.__webkitSmokeNativePlay=nativePlay;
       HTMLMediaElement.prototype.play=function(...args){
         if(!this.closest('.pad'))return nativePlay.apply(this,args);
         return new Promise((resolve,reject)=>setTimeout(()=>nativePlay.apply(this,args).then(resolve,reject),500));
@@ -118,13 +119,21 @@ try{
     await page.locator('#region-start').fill('0.40');
     await page.locator('#region-end').fill('0.45');
     await page.locator('#region-apply').click();
+    await page.evaluate(()=>{
+      if(window.__webkitSmokeNativePlay)HTMLMediaElement.prototype.play=window.__webkitSmokeNativePlay;
+      delete window.__webkitSmokeNativePlay;
+    });
     await video.evaluate(element=>{
       const addNativeListener=element.addEventListener.bind(element);
       element.addEventListener=(type,...args)=>{
         if(type==='timeupdate')return;
         return addNativeListener(type,...args);
       };
-      element.addEventListener('playing',()=>{element.dataset.smokeDidPlay='true';element.dataset.smokePlayingAt=String(performance.now());});
+      element.addEventListener('playing',()=>{
+        element.dataset.smokeDidPlay='true';
+        element.dataset.smokePlayingAt=String(performance.now());
+        element.dataset.smokePlayingPosition=String(element.currentTime);
+      });
       element.addEventListener('pause',()=>{
         if(element.dataset.smokeDidPlay==='true'){
           element.dataset.smokeDidPause='true';
@@ -137,7 +146,7 @@ try{
       await page.locator('#speed').evaluate((element,value)=>{element.value=String(value);element.dispatchEvent(new Event('input',{bubbles:true}));},speed);
       await video.evaluate(element=>{
         element.pause();element.currentTime=0;element.dataset.smokeDidPlay='false';element.dataset.smokeDidPause='false';
-        element.dataset.smokePlayingAt='';element.dataset.smokePausedAt='';
+        element.dataset.smokePlayingAt='';element.dataset.smokePausedAt='';element.dataset.smokePlayingPosition='';
       });
       await page.locator('.pad-hit').nth(1).click();
       await page.waitForFunction(()=>{
@@ -146,9 +155,11 @@ try{
       },null,{timeout:7000});
       const result=await video.evaluate(element=>({
         duration:element.duration,currentTime:element.currentTime,playbackRate:element.playbackRate,paused:element.paused,
+        playingPosition:Number(element.dataset.smokePlayingPosition),
         playedForMs:Number(element.dataset.smokePausedAt)-Number(element.dataset.smokePlayingAt)
       }));
       assert.equal(result.paused,true,`WebKit should pause the 50 ms selected region at Speed ${speed}×`);
+      assert.ok(result.playingPosition>=.35&&result.playingPosition<=.50,`WebKit should start the selected region at 0.40 s at Speed ${speed}×, got ${JSON.stringify(result)}`);
       assert.ok(result.currentTime>=.40&&result.currentTime<=.58,`WebKit should stop near the selected 0.45 s trim boundary at Speed ${speed}×, got ${JSON.stringify(result)}`);
       assert.ok(result.playedForMs>=10&&result.playedForMs<500,`WebKit should play briefly then stop without the old one-second grace period at Speed ${speed}×, got ${JSON.stringify(result)}`);
       trimmedPlayback.push({speed,...result});
