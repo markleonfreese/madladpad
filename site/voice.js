@@ -1,4 +1,4 @@
-import { clamp, midiFrequency, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, findAudioRecorderMime, extensionForAudioMime } from './core.js';
+import { clamp, midiFrequency, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, findAudioRecorderMime, extensionForAudioMime, AsyncActivity } from './core.js';
 import { getValue, saveVoiceLayer, deleteVoiceLayer } from './storage.js';
 import { detectPitch } from './tuner.js';
 
@@ -268,13 +268,23 @@ function renderRap(project, save, audio, notify) {
 export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTransport, notify, save, assignWordsToPads }) {
   const project = getProject(), audio = getAudio();
   let worker = null;
+  const transcriptionActivity = new AsyncActivity();
   let vocalRecording = null;
   let tunerStream = null, tunerSource = null, tunerAnalyser = null, tunerTimer = null, tunerFrame = null;
+  const tunerActivity = new AsyncActivity();
   const vocalFiles = new Map();
-  const updateConsentState = () => { $('voice-transcribe').disabled = !$('voice-source-pad').value || !$('voice-consent').checked; };
+  const updateConsentState = () => { $('voice-transcribe').disabled = transcriptionActivity.phase!=='idle' || !$('voice-source-pad').value || !$('voice-consent').checked; };
+  const cancelTranscription = (message = null) => {
+    transcriptionActivity.cancel();
+    worker?.terminate(); worker = null;
+    $('voice-cancel').hidden = true;
+    updateConsentState();
+    if (message) $('voice-status').textContent = message;
+  };
   const updateManualEntryState = () => { $('voice-manual-add').disabled = !$('voice-source-pad').value || !getMediaFiles().has(Number($('voice-source-pad').value)) || !$('voice-manual-text').value.trim(); };
   const transportState = () => getTransport?.() || {running:false, epoch:audio.transportEpoch, bpm:project.bpm};
   const stopTuner = (message = 'Tuner stopped. Microphone is off.') => {
+    tunerActivity.cancel();
     if (tunerTimer) clearInterval(tunerTimer);
     tunerTimer = null;
     if (tunerFrame) cancelAnimationFrame(tunerFrame);
@@ -282,7 +292,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     try { tunerSource?.disconnect(); } catch { /* already disconnected */ }
     tunerSource = null; tunerAnalyser = null;
     tunerStream?.getTracks().forEach(track => track.stop()); tunerStream = null;
-    $('tuner-start').hidden = false; $('tuner-stop').hidden = true;
+    $('tuner-start').hidden = false; $('tuner-start').disabled = false; $('tuner-stop').hidden = true;
     $('tuner-status').textContent = message;
   };
   const updateOverdubControls = () => {
@@ -432,8 +442,14 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   }
   await reloadLayers();
   window.addEventListener('madladpad-media-change', render);
-  $('voice-source-pad').addEventListener('change', render);
-  $('voice-consent').addEventListener('change', render);
+  $('voice-source-pad').addEventListener('change', () => {
+    if (transcriptionActivity.phase!=='idle') cancelTranscription('Source changed. Previous transcription canceled.');
+    render();
+  });
+  $('voice-consent').addEventListener('change', () => {
+    if (!$('voice-consent').checked && transcriptionActivity.phase!=='idle') cancelTranscription('Consent withdrawn. Transcription canceled.');
+    render();
+  });
   $('voice-manual-text').addEventListener('input', updateManualEntryState);
   $('voice-manual-add').addEventListener('click', () => {
     const padId = Number($('voice-source-pad').value), text = $('voice-manual-text').value.trim();
@@ -459,31 +475,41 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     const padId = Number($('voice-source-pad').value), file = getMediaFiles().get(padId);
     if (!$('voice-consent').checked || !file) return;
     if (file.size > 32 * 1024 * 1024) { $('voice-status').textContent = 'Choose a file smaller than 32 MB for this on-device workflow.'; return; }
+    const token = transcriptionActivity.begin();
+    if (token===null) return;
     $('voice-transcribe').disabled = true; $('voice-cancel').hidden = false; $('voice-status').textContent = 'Decoding the selected local clip…';
     try {
       let buffer = audio.sources.get(padId)?.buffer;
       if (!buffer) buffer = await audio.context.decodeAudioData(await file.arrayBuffer());
+      if (!transcriptionActivity.current(token)) return;
       const samples = toMono16k(buffer);
-      worker?.terminate(); worker = new Worker('/voice-inference-worker.bundle.js', { type: 'module' });
-      worker.onmessage = event => {
+      if (!transcriptionActivity.activate(token)) return;
+      const activeWorker = new Worker('/voice-inference-worker.bundle.js', { type: 'module' });
+      worker = activeWorker;
+      activeWorker.onmessage = event => {
+        if (!transcriptionActivity.current(token)) return;
         const data = event.data;
         if (data.type === 'progress') {
           const label = data.state?.file || 'speech model';
           $('voice-status').textContent = data.state?.progress != null ? `Loading ${label}: ${Math.round(data.state.progress)}%… audio remains local.` : `Loading ${label} on this device…`;
         }
-        if (data.type === 'error') { const message=String(data.message||'Local transcription failed.'); const fetchFailure=/failed to fetch|networkerror|network request failed/i.test(message); $('voice-status').textContent=fetchFailure?'Could not download the on-device speech model. Check your internet connection and retry, or add words and timestamps manually. Your audio was not uploaded.':`Transcription unavailable: ${message}. Review the browser and model connection, then retry.`; worker.terminate(); worker = null; $('voice-cancel').hidden = true; updateConsentState(); }
+        if (data.type === 'error') { const message=String(data.message||'Local transcription failed.'); const fetchFailure=/failed to fetch|networkerror|network request failed/i.test(message); cancelTranscription(fetchFailure?'Could not download the on-device speech model. Check your internet connection and retry, or add words and timestamps manually. Your audio was not uploaded.':`Transcription unavailable: ${message}. Review the browser and model connection, then retry.`); }
         if (data.type === 'result') {
+          if (getMediaFiles().get(padId)!==file || $('voice-source-pad').value!==String(padId) || !$('voice-consent').checked) {
+            cancelTranscription('Source or consent changed. The stale draft was discarded.');
+            return;
+          }
           const words = data.words.slice(0, MAX_TRANSCRIPT_WORDS).map((word, index) => ({ ...word, id: `${Date.now()}-${index}`, selected: false, score: null }));
           project.voice.transcripts.push({ id: `${Date.now()}`, sourcePad: padId, words }); project.voice.transcripts = project.voice.transcripts.slice(-16);
           save(); $('voice-status').textContent = `Draft transcript has ${words.length} timestamped words. Confidence is not provided; check wording and timing.`;
-          worker.terminate(); worker = null; $('voice-cancel').hidden = true; render();
+          cancelTranscription(); render();
         }
       };
-      worker.onerror = () => { $('voice-status').textContent = 'The local model could not start in this browser. The clip was not sent anywhere.'; worker?.terminate(); worker = null; $('voice-cancel').hidden = true; $('voice-transcribe').disabled = false; };
-      worker.postMessage({ type: 'transcribe', samples }, [samples.buffer]); $('voice-status').textContent = 'Loading the on-device speech model…';
-    } catch (error) { $('voice-status').textContent = `Could not decode this clip: ${error.message}`; $('voice-cancel').hidden = true; updateConsentState(); }
+      activeWorker.onerror = () => { if (transcriptionActivity.current(token)) cancelTranscription('The local model could not start in this browser. The clip was not sent anywhere.'); };
+      activeWorker.postMessage({ type: 'transcribe', samples }, [samples.buffer]); $('voice-status').textContent = 'Loading the on-device speech model…';
+    } catch (error) { if (transcriptionActivity.current(token)) cancelTranscription(`Could not decode this clip: ${error.message}`); }
   });
-  $('voice-cancel').addEventListener('click', () => { worker?.terminate(); worker = null; $('voice-cancel').hidden = true; updateConsentState(); $('voice-status').textContent = 'Transcription canceled. The local clip was not uploaded.'; });
+  $('voice-cancel').addEventListener('click', () => cancelTranscription('Transcription canceled. The local clip was not uploaded.'));
   $('voice-make-phrase').addEventListener('click', () => {
     if (project.voice.phrases.length >= MAX_VOICE_PHRASES) return;
     const transcript = project.voice.transcripts.at(-1), chosen = transcript?.words.filter(word => word.selected) || [];
@@ -494,12 +520,17 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   });
   $('melody-tuning').addEventListener('change', () => { project.voice.melody.tuning = clamp($('melody-tuning').value, 400, 480); save(); renderMelody(project, save); });
   $('tuner-start').addEventListener('click', async () => {
+    const token = tunerActivity.begin();
+    if (token===null) return;
     $('tuner-start').disabled = true;
     $('tuner-status').textContent = 'Requesting microphone access. Audio stays on this device…';
     try {
       if (!navigator.mediaDevices?.getUserMedia || !window.AudioContext) throw new Error('This browser does not support local microphone analysis.');
       await audio.unlock();
-      tunerStream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+      if (!tunerActivity.current(token)) return;
+      const stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+      if (!tunerActivity.activate(token)) { stream.getTracks().forEach(track => track.stop()); return; }
+      tunerStream = stream;
       if (!tunerStream.getAudioTracks().length) throw new Error('The browser did not provide an audio track.');
       tunerSource = audio.context.createMediaStreamSource(tunerStream);
       tunerAnalyser = audio.context.createAnalyser(); tunerAnalyser.fftSize = 2048; tunerSource.connect(tunerAnalyser);
@@ -521,9 +552,9 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
         }
       };
       tunerTimer = setInterval(update, 90); update();
-      const track = tunerStream.getAudioTracks()[0]; track.addEventListener('ended', () => stopTuner('Microphone ended. Tuner stopped.'));
-    } catch (error) { stopTuner(`Tuner could not start: ${error.message}`); }
-    finally { $('tuner-start').disabled = false; }
+      const track = tunerStream.getAudioTracks()[0]; track.addEventListener('ended', () => { if (tunerActivity.current(token)) stopTuner('Microphone ended. Tuner stopped.'); });
+    } catch (error) { if (tunerActivity.current(token)) stopTuner(`Tuner could not start: ${error.message}`); }
+    finally { if (tunerActivity.current(token)) $('tuner-start').disabled = false; }
   });
   $('tuner-stop').addEventListener('click', () => stopTuner());
   $('melody-follow-beat').addEventListener('change',()=>{project.voice.melody.followBeat=$('melody-follow-beat').checked;save();});

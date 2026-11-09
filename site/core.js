@@ -122,6 +122,23 @@ export class CaptureSession {
   cancel() { this.version++;this.phase='idle';this.target=null;this.take=null; }
 }
 
+// Guards asynchronous device/transport starts against duplicate requests and
+// completions that arrive after the user has stopped or navigated away.
+// A generation token is deliberately not persisted with project data.
+export class AsyncActivity {
+  constructor() { this.phase='idle'; this.version=0; }
+  begin() {
+    if (this.phase!=='idle') return null;
+    this.phase='starting'; return ++this.version;
+  }
+  current(token) { return token!==null && token===this.version && this.phase!=='idle'; }
+  activate(token) {
+    if (!this.current(token) || this.phase!=='starting') return false;
+    this.phase='active'; return true;
+  }
+  cancel() { this.version++; this.phase='idle'; }
+}
+
 export function isPadAudible(pads,id){
   const pad=pads[id];
   return Boolean(pad)&&!pad.muted&&(!pads.some(item=>item.solo)||pad.solo);
