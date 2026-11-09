@@ -80,8 +80,9 @@ try{
   assert.equal(restored,true,'the imported local File should survive a WebKit page reload');
 
   const videoFixture=await page.evaluate(async()=>{
+    if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream)return null;
     const mime=['video/mp4','video/webm;codecs=vp8,opus','video/webm'].find(type=>MediaRecorder.isTypeSupported(type));
-    if(!mime||!HTMLCanvasElement.prototype.captureStream)return null;
+    if(!mime)return null;
     const audio=new AudioContext();await audio.resume();
     const oscillator=audio.createOscillator(),gain=audio.createGain(),audioStream=audio.createMediaStreamDestination();
     oscillator.frequency.value=440;gain.gain.value=.18;oscillator.connect(gain).connect(audioStream);oscillator.start();

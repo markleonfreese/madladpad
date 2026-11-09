@@ -32,6 +32,35 @@ test('speed alone sets media playbackRate while pitch metadata is ignored', asyn
   assert.equal(element.pauseCount,2,'the selected end should pause the media element after playback starts');
 });
 
+test('video playback reaches the selected end after delayed media startup', async () => {
+  const listeners=new Map();let playbackTimer=null;
+  const element={
+    duration:10,currentTime:0,playbackRate:1,preservesPitch:false,paused:true,lastPausedAt:null,
+    addEventListener(type,listener){listeners.set(type,listener);},
+    removeEventListener(type,listener){if(listeners.get(type)===listener)listeners.delete(type);},
+    pause(){
+      if(!this.paused)this.lastPausedAt=this.currentTime;
+      this.paused=true;clearInterval(playbackTimer);
+    },
+    play(){return new Promise(resolve=>setTimeout(()=>{
+      this.paused=false;
+      playbackTimer=setInterval(()=>{
+        this.currentTime+=.015*this.playbackRate;
+        listeners.get('timeupdate')?.();
+      },10);
+      resolve();
+    },100));}
+  };
+  const sampler=Object.create(SamplerAudio.prototype);
+  sampler.context={currentTime:0};
+  sampler.sources=new Map([[0,{file:{},element,gain:{gain:{value:1}}}]]);
+  sampler.demoEnabled=false;
+  sampler.trigger(0,{kind:'video',start:0,end:.12,speed:1.5,pitch:0,volume:1},()=>{},0);
+  await new Promise(resolve=>setTimeout(resolve,350));
+  assert.equal(element.paused,true,'the video should stop at its selected end');
+  assert.ok(element.lastPausedAt>=.1,`stop should follow media playback time, got ${element.lastPausedAt}`);
+});
+
 test('decodable audio keeps low-latency polyphonic buffer playback at Speed only', () => {
   const nodes=[];
   const param=()=>({
