@@ -5,14 +5,15 @@ Use this checklist to close the physical-device and human-review gates recorded 
 ## Current review target — 10 November 2026
 
 - **Preview:** <https://preview-ux-acceptance-20261108-madladpad.markleonfreese.workers.dev/>
-- **Application source:** current `main` commit `f555b3ed36fbda5a71d81e096722b813458fae17`. PR #84 is the review-only preview branch; its checked application source must match `main`, while its branch changes only these acceptance notes. Before testing, verify the current PR head, confirm both `Verify` and `Workers Builds` passed for that exact head, and open the preview linked from that Workers Builds check.
+- **Application source:** current `main` commit `eb051c14a3812f919ec5176fb3acdfcab8acfc83`. PR #84 is the review-only preview branch; its checked application source must match `main`, while its branch changes only these acceptance notes. Before testing, verify the current PR head, confirm both `Verify` and `Workers Builds` passed for that exact head, and open the preview linked from that Workers Builds check.
 - This is a non-production review preview. Read-only checks on 10 November returned HTTP 200 for production, but its service worker identifies `madladpad-shell-v4` while current `main` is `v13`. The earlier intermittent 503 was not reproduced or explained. Do not use production to accept current `main`.
 - First-use speech transcription downloads about 65 MB of model/runtime files from Hugging Face. Plan the first speech test on an appropriate connection; the selected audio remains local.
-- After testing, record the preview URL, application `main` SHA `f555b3ed36fbda5a71d81e096722b813458fae17`, current PR #84 head SHA, and matching successful Workers Builds check in Issue #2. Keep device, screen-reader, and listening results separate from hosted browser evidence.
+- After testing, record the preview URL, application `main` SHA `eb051c14a3812f919ec5176fb3acdfcab8acfc83`, current PR #84 head SHA, and matching successful Workers Builds check in Issue #2. Keep device, screen-reader, and listening results separate from hosted browser evidence.
 
 ## Before testing
 
 - Test the trusted HTTPS preview only after confirming PR #84's latest Workers Builds check passed for its current head. Record the URL, application `main` SHA and PR head SHA. The production `workers.dev` URL serves an older bundle and is not evidence for current `main`.
+- On phones, tap the center of each demo pad to play it and use the separate Edit row below a pad to open its source choices; check both actions at narrow portrait widths.
 - Use current Android Chrome and iOS Safari on physical devices. Record device model, OS version, browser version, screen size, and whether the PWA is installed.
 - Test in a fresh browser profile for first-run/model download, then in the same profile for warm/offline use. Allow a separate pass with an existing project.
 - Use consenting testers and recordings. Do not commit or upload raw personal recordings, transcripts, or private project packs. Record only outcomes, timings, approximate file sizes, and sanitized error text.

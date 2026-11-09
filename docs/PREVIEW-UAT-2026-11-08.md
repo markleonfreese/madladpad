@@ -1,6 +1,6 @@
 # MadLadPad mobile UX preview acceptance — refreshed 10 November 2026
 
-This review-only preview serves current `main` at `f555b3ed36fbda5a71d81e096722b813458fae17`. The PR #84 branch contains the same application source and changes only these acceptance notes. Before testing, verify that the latest `Verify` and `Workers Builds` checks passed for the displayed PR head; use the preview link on that Workers Builds check. The stable preview URL is listed in PR #84. No production configuration or release was changed.
+This review-only preview serves current `main` at `eb051c14a3812f919ec5176fb3acdfcab8acfc83`. The PR #84 branch contains the same application source and changes only these acceptance notes. Before testing, verify that the latest `Verify` and `Workers Builds` checks passed for the displayed PR head; use the preview link on that Workers Builds check. The stable preview URL is listed in PR #84. No production configuration or release was changed.
 
 Review checklist (see [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md) for detailed scenarios):
 
