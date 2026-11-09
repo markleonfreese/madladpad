@@ -149,7 +149,7 @@ export const makePad = id => ({
   steps: Array(STEP_COUNT).fill(false), stepOffsets: Array(STEP_COUNT).fill(0)
 });
 export const makeProject = () => ({
-  version: 1, title: 'Untitled mixtape', layout: '3x4', bpm: 120,
+  version: 1, title: 'Untitled mixtape', layout: '3x4', bpm: 120, demoEnabled: false,
   quantize: 'off', gridDivision:'1/16', pads: Array.from({ length: 16 }, (_, i) => makePad(i)), scenes: [], voice: makeVoiceData(), video:makeVideoDirection()
 });
 export function normaliseProject(value) {
@@ -181,6 +181,7 @@ export function normaliseProject(value) {
     videoShots:Array.isArray(scene?.videoShots)?normaliseVideoDirection({shots:scene.videoShots}).shots:null
   })):[];
   return { version: 1, title: String(value?.title || base.title).slice(0, 80), layout,
+    demoEnabled: Boolean(value?.demoEnabled),
     bpm: clamp(value?.bpm ?? 120, 40, 240),
     quantize: ['off','1/4','1/8','1/16'].includes(value?.quantize) ? value.quantize : 'off',
     gridDivision:['1/4','1/8','1/16'].includes(value?.gridDivision)?value.gridDivision:'1/16', pads, scenes,
