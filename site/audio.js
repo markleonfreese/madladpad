@@ -59,6 +59,27 @@ export class SamplerAudio {
     return effectivePitchSemitones(source.pitch||0,source.speed||1);
   }
 
+  setMediaOutputGain(source,volume,atTime=this.context.currentTime){
+    const parameter=source?.gain?.gain;
+    if(!parameter)return;
+    const target=clamp(volume,0,1.5);
+    if(typeof parameter.cancelScheduledValues==='function'&&typeof parameter.setValueAtTime==='function'&&typeof parameter.linearRampToValueAtTime==='function'){
+      parameter.cancelScheduledValues(atTime);
+      parameter.setValueAtTime(0,atTime);
+      parameter.linearRampToValueAtTime(target,atTime+.008);
+    }else parameter.value=target;
+  }
+
+  fadeMediaOutput(source,atTime=this.context.currentTime){
+    const parameter=source?.gain?.gain;
+    if(!parameter)return;
+    if(typeof parameter.cancelScheduledValues==='function'&&typeof parameter.setValueAtTime==='function'&&typeof parameter.linearRampToValueAtTime==='function'){
+      parameter.cancelScheduledValues(atTime);
+      parameter.setValueAtTime(clamp(parameter.value,0,1.5),atTime);
+      parameter.linearRampToValueAtTime(0,atTime+.008);
+    }else parameter.value=0;
+  }
+
   routeMediaPitch(source,atTime=this.context.currentTime){
     if(!source.mediaNode||!source.gain)return false;
     const semitones=this.mediaPitchSemitones(source);
@@ -255,7 +276,7 @@ export class SamplerAudio {
         if(pitchPreservation)element[pitchPreservation]=true;
         else if(rate!==1&&(!this.pitchReady||source.pitchAvailable===false)&&typeof window!=='undefined')window.dispatchEvent(new CustomEvent('madladpad-error',{detail:'This browser may change perceived pitch when Speed changes because Pitch processing is unavailable.'}));
         element.muted = false;
-        if (source.gain) source.gain.gain.value = clamp(pad.volume, 0, 1.5);
+        this.setMediaOutputGain(source,pad.volume);
         const thisFile = source.file;
         let finished=false,stopTimer=null;
         const cleanup=pause=>{
@@ -264,7 +285,13 @@ export class SamplerAudio {
           element.removeEventListener('timeupdate',stopAtBoundary);
           element.removeEventListener('ended',stopAtBoundary);
           if(stopTimer!==null)clearTimeout(stopTimer);
-          if(source.stopPlayback===stopPlayback){source.stopPlayback=null;if(pause)element.pause();}
+          if(source.stopPlayback===stopPlayback){
+            source.stopPlayback=null;
+            if(pause){
+              this.fadeMediaOutput(source);
+              element.pause();
+            }
+          }
         };
         const stopPlayback=()=>cleanup(true);
         const stopAtBoundary=()=>{
