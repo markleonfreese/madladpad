@@ -32,6 +32,36 @@ test('speed alone sets media playbackRate while pitch metadata is ignored', asyn
   assert.equal(element.pauseCount,2,'the selected end should pause the media element after playback starts');
 });
 
+test('pitched media fades at the selected boundary and resets its gain on retrigger',async()=>{
+  const listeners=new Map();
+  const gain={
+    value:1,events:[],
+    cancelScheduledValues(time){this.events.push(['cancel',time]);},
+    setValueAtTime(value,time){this.value=value;this.events.push(['set',value,time]);},
+    linearRampToValueAtTime(value,time){this.value=value;this.events.push(['ramp',value,time]);}
+  };
+  const element={
+    duration:1,currentTime:0,playbackRate:1,preservesPitch:false,paused:true,
+    addEventListener(type,listener){listeners.set(type,listener);},
+    removeEventListener(type,listener){if(listeners.get(type)===listener)listeners.delete(type);},
+    pause(){this.paused=true;},
+    play(){this.paused=false;this.currentTime=1;listeners.get('timeupdate')?.();return Promise.resolve();}
+  };
+  const source={file:{},element,gain:{gain}};
+  const sampler=Object.create(SamplerAudio.prototype);
+  sampler.context={currentTime:3};sampler.sources=new Map([[0,source]]);sampler.demoEnabled=false;
+  const pad={kind:'video',start:0,end:.5,speed:1,pitch:7,volume:.8};
+
+  sampler.trigger(0,pad,()=>{},0);
+  await new Promise(resolve=>setTimeout(resolve,10));
+  sampler.trigger(0,pad,()=>{},0);
+  await new Promise(resolve=>setTimeout(resolve,10));
+
+  assert.deepEqual(gain.events.filter(event=>event[0]==='ramp').map(event=>event[1]),[.8,0,.8,0],
+    'each media hit should fade to its pad level and fade out at the selected end');
+  assert.equal(element.paused,true,'each ended media hit should leave the element stopped');
+});
+
 test('video playback reaches the selected end after delayed media startup', async () => {
   const listeners=new Map();let playbackTimer=null;
   const element={
