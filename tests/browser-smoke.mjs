@@ -91,20 +91,49 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(origin);
   await wait(page, '.pad-hit');
-  assert.equal(await page.locator('#quick-demo').isVisible(),true,'the demo should be the primary first-run action');
+  assert.equal(await page.locator('#quick-demo').isVisible(),true,'a demo beat should be the primary first-run action');
+  assert.equal(await page.locator('#loop-settings').evaluate(element=>element.open),false,'advanced tempo and layout settings should start collapsed');
   await page.locator('#quick-demo').click();
-  assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'true','quick-start demo should use the existing demo toggle');
+  await page.waitForFunction(()=>document.body.dataset.screen==='beats');
+  assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'true','quick-start should enable the demo kit');
+  assert.equal(await page.locator('#beat-advanced').evaluate(element=>element.open),false,'specialist beat controls should start collapsed');
+  await page.locator('#make-video').click();
+  await page.waitForFunction(()=>document.body.dataset.screen==='export');
+  await page.locator('[data-studio-screen="beats"]').click();
+  await page.waitForFunction(()=>document.body.dataset.screen==='beats');
+  await page.locator('#beat-advanced > summary').click();
+  await page.locator('#video-director-details > summary').click();
+  assert.equal(await page.locator('#steps .step.on').count()>0,true,'the first-run action should prepare a starter loop');
+  for(const pad of ['0','1','2']){
+    await page.locator('#beat-pad-select').selectOption(pad);
+    await page.locator('#clear-steps').click();
+  }
+  await page.locator('[data-studio-screen="sounds"]').click();
+  await page.waitForFunction(()=>document.body.dataset.screen==='sounds');
+  await page.locator('#loop-settings > summary').click();
   assert.match(await page.locator('#sample-info').textContent(),/Demo synth ready to play/,'demo pads should explain why sample editing controls are not yet available');
+  await page.locator('#sample-advanced > summary').click();
   assert.equal(await page.locator('#volume').isVisible(),true,'demo pads should keep their volume control in Sounds');
   assert.equal(await page.locator('#speed').isVisible(),false,'media-only controls should stay hidden for demo pads');
-  await page.locator('#quick-demo').click();
-  assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'false','quick-start demo should stay synchronized when switched off');
+  await page.locator('#demo-button').click();
+  assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'false','demo sounds should remain switchable from the sample workspace');
   assert.equal(await page.locator('#volume').isVisible(),false,'empty pads should keep advanced controls hidden when demo is off');
   assert.equal(await page.locator('#quick-import').isVisible(),true,'quick import should be available from the first-run actions');
   assert.equal(await page.locator('#quick-record').isVisible(),true,'quick recording should be available from the first-run actions');
   const openScreen=async screen=>{
+    if(screen==='voice'||screen==='overdub'){
+      const more=page.locator('#studio-more-tools');
+      if(!await more.evaluate(element=>element.open))await more.locator('summary').click();
+    }
     await page.locator(`[data-studio-screen="${screen}"]`).click();
     await page.waitForFunction(value=>document.body.dataset.screen===value,screen);
+    if(screen==='beats'){
+      for(const id of ['beat-advanced','video-director-details']){
+        const details=page.locator(`#${id}`);
+        if(!await details.evaluate(element=>element.open))await details.locator('summary').click();
+      }
+    }
+    if(screen==='sounds'&&!await page.locator('#loop-settings').evaluate(element=>element.open))await page.locator('#loop-settings > summary').click();
   };
   await openScreen('voice');
   assert.equal(await page.locator('#voice-speech-tool').isVisible(),true,'Voice Lab should initially focus Speech & words');
@@ -119,6 +148,8 @@ try {
   const rapLayout=await page.locator('#voice-rap-tool').evaluate(card=>({rap:card.getBoundingClientRect().width,container:card.parentElement.getBoundingClientRect().width}));
   assert.ok(rapLayout.rap>rapLayout.container*.9,`focused rap writing should use the available width: ${JSON.stringify(rapLayout)}`);
   await openScreen('sounds');
+  assert.equal(await page.locator('#source-advanced').evaluate(element=>element.open),false,'optional sources should stay behind a disclosure');
+  await page.locator('#source-advanced > summary').click();
   const flowMusicLink=page.getByRole('link',{name:'Google Flow Music'});
   assert.equal(await flowMusicLink.getAttribute('href'),'https://www.flowmusic.app/','Sounds should link to Google Labs’ current Flow Music destination');
   assert.match(await page.locator('#sample-inspector').textContent(),/manual file handoff/i,'Flow Music use should be explained as a manual import, not an account integration');
@@ -132,6 +163,7 @@ try {
     assert.match(await page.locator(`#${id}`).locator('small').textContent(),/Setup required/);
     assert.match(await page.locator(`#${id}`).getAttribute('aria-label'),/Use Device \/ Files or Record on Pad/);
   }
+  await page.locator('#source-advanced > summary').click();
   await page.locator('.pad-hit').first().click();
   assert.equal(await page.locator('#pad-source-dialog').isVisible(),true,'empty pads should offer a source picker');
   assert.equal(await page.locator('#pad-google-drive').isVisible(),true,'Drive should be available in the source picker');
@@ -660,6 +692,7 @@ try {
   await page.locator('#media-input').setInputFiles({name:'synthetic-region.wav',mimeType:'audio/wav',buffer:regionWav});
   await page.getByText(/synthetic-region\.wav.*stored on this device/).waitFor();
   await page.waitForFunction(()=>!document.querySelector('#region-start').disabled&&Number(document.querySelector('#region-end').max)>=4);
+  await page.locator('#sample-advanced > summary').click();
   await page.locator('#region-end').fill('2.25');
   await page.locator('#region-start').fill('1.85');
   assert.match(await page.locator('#region-status').textContent(),/Draft: 1\.85–2\.25 s of 4\.00 s/);
@@ -741,6 +774,7 @@ try {
   await page.waitForTimeout(1000);
   await page.getByText(/synthetic-audio-video\.webm.*stored on this device/).waitFor({timeout:5000});
   await page.waitForFunction(()=>Number(document.querySelector('#region-end').max)>=2);
+  if(!await page.locator('#sample-advanced').evaluate(element=>element.open))await page.locator('#sample-advanced > summary').click();
   await page.evaluate(()=>window.forceWebmDecodeFailure=true);
   await page.locator('#find-samples').click();
   await page.waitForFunction(()=>document.querySelectorAll('#sample-suggestions .suggestion').length>=2||document.querySelector('#analysis-status').textContent.includes('unavailable'),null,{timeout:10000});
@@ -1055,9 +1089,16 @@ try {
   const laneGeometry=await page.locator('.track-row').first().evaluate(row=>{const head=row.querySelector('.track-head'),headRect=head.getBoundingClientRect(),steps=row.querySelector('.track-steps').getBoundingClientRect(),edit=head.querySelector('.track-edit').getBoundingClientRect(),gain=head.querySelector('.track-gain'),gainRect=gain.getBoundingClientRect();return {headRight:headRect.right,headWidth:headRect.width,columns:getComputedStyle(head).gridTemplateColumns,stepsLeft:steps.left,editRight:edit.right,gainRight:gainRect.right,gainWidth:gainRect.width,gainCell:gain.parentElement.getBoundingClientRect().toJSON(),gainMinWidth:getComputedStyle(gain).minWidth};});
   assert.ok(laneGeometry.editRight<=laneGeometry.headRight+.5&&laneGeometry.gainRight<=laneGeometry.stepsLeft&&laneGeometry.headRight<=laneGeometry.stepsLeft,`mobile lane controls should fit before the step grid: ${JSON.stringify(laneGeometry)}`);
   await openScreen('voice');
-  const mobileTabs=await page.locator('#studio-nav a').evaluateAll(links=>links.map(link=>({left:link.getBoundingClientRect().left,right:link.getBoundingClientRect().right,visible:link.getBoundingClientRect().width>0})));
-  assert.equal(mobileTabs.length,5,'all five studio stages should be discoverable');
-  assert.ok(mobileTabs.every(tab=>tab.visible&&tab.left>=0&&tab.right<=390),`all five studio stages should remain in view without horizontal scrolling: ${JSON.stringify(mobileTabs)}`);
+  const mobileTabs=await page.locator('#studio-nav > a').evaluateAll(links=>links.map(link=>({left:link.getBoundingClientRect().left,right:link.getBoundingClientRect().right,visible:link.getBoundingClientRect().width>0})));
+  assert.equal(mobileTabs.length,3,'the three core studio destinations should be primary');
+  assert.ok(mobileTabs.every(tab=>tab.visible&&tab.left>=0&&tab.right<=390),`core destinations should remain in view without horizontal scrolling: ${JSON.stringify(mobileTabs)}`);
+  assert.match(await page.locator('#studio-more-tools > summary').textContent(),/Voice Lab/,'the current specialist destination should remain identified');
+  await page.locator('#studio-more-tools > summary').click();
+  for(const link of await page.locator('.studio-more-links a').all()){
+    const box=await link.boundingBox();
+    assert.ok(box&&box.x>=0&&box.x+box.width<=390,`specialist destinations should fit the mobile viewport: ${JSON.stringify(box)}`);
+  }
+  await page.locator('#studio-more-tools > summary').click();
   await page.locator('[data-voice-jump="rap-title"]').click();
   const mobileRap=await page.locator('#rap-title').evaluate(title=>title.closest('.voice-card').getBoundingClientRect().width);
   assert.ok(mobileRap<mobileLayout.width,`mobile rap editor should stay within the single-column Voice Lab: ${mobileRap}px of ${mobileLayout.width}px`);

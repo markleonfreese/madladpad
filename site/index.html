@@ -26,23 +26,28 @@
       </div>
     </header>
 
-    <nav id="studio-nav" class="studio-nav" aria-label="Studio steps">
+    <nav id="studio-nav" class="studio-nav" aria-label="Studio">
       <a href="#sounds" data-studio-screen="sounds" aria-current="page"><span>01</span> Sounds</a>
       <a href="#beats" data-studio-screen="beats"><span>02</span> Beat Grid</a>
-      <a href="#voice" data-studio-screen="voice"><span>03</span> Voice Lab</a>
-      <a href="#overdub" data-studio-screen="overdub"><span>04</span> Overdub</a>
-      <a href="#export" data-studio-screen="export"><span>05</span> Finish & Export</a>
+      <a href="#export" data-studio-screen="export"><span>03</span> Video & Export</a>
+      <details class="studio-more-tools" id="studio-more-tools">
+        <summary>More tools</summary>
+        <div class="studio-more-links">
+          <a href="#voice" data-studio-screen="voice">Voice Lab</a>
+          <a href="#overdub" data-studio-screen="overdub">Overdub</a>
+        </div>
+      </details>
     </nav>
 
     <main id="studio-main">
     <section class="intro" id="studio-intro" aria-label="Introduction">
       <div><p class="overline"><span class="live-dot"></span> THE WORLD IS YOUR INSTRUMENT</p><h2>Collect the moment.<br><em>Play the unexpected.</em></h2></div>
       <div class="intro-action-block">
-        <p>Turn a sound or a short video into a playable pad. Start with your own clip or try the demo.</p>
+        <p>Make a beat with a ready-to-play kit, or start with your own sound.</p>
         <div class="intro-actions" aria-label="Get started">
-          <button id="quick-demo" class="pill-button primary-action" aria-pressed="false">TRY DEMO SOUNDS</button>
-          <button id="quick-import" class="pill-button">IMPORT A CLIP</button>
-          <button id="quick-record" class="pill-button">RECORD ON PAD</button>
+          <button id="quick-demo" class="pill-button primary-action" aria-pressed="false">START WITH A DEMO BEAT</button>
+          <button id="quick-import" class="pill-button">USE YOUR OWN CLIP</button>
+          <button id="quick-record" class="pill-button">RECORD A CLIP</button>
         </div>
       </div>
     </section>
@@ -50,10 +55,15 @@
     <section class="transport-panel" aria-label="Performance controls">
       <div class="project-name"><label for="project-title">YOUR SESSION</label><input id="project-title" maxlength="80" value="Untitled mixtape" aria-label="Project name"></div>
       <div class="transport-controls">
-        <label class="field">LAYOUT<select id="layout-select"><option value="3x4">12 PADS</option><option value="2x2">4 PADS</option><option value="4x4">16 PADS</option></select></label>
-        <label class="field">BPM<input id="bpm-input" type="number" min="40" max="240" value="120"></label>
-        <label class="field">QUANTISE<select id="quantize-select"><option value="off">FREE</option><option value="1/4">1/4</option><option value="1/8">1/8</option><option value="1/16">1/16</option></select></label>
         <button class="play-button" id="studio-play" type="button" aria-pressed="false">▶ PLAY LOOP</button>
+        <details class="control-disclosure" id="loop-settings">
+          <summary>Loop settings</summary>
+          <div class="transport-settings">
+            <label class="field">PAD LAYOUT<select id="layout-select"><option value="3x4">12 PADS</option><option value="2x2">4 PADS</option><option value="4x4">16 PADS</option></select></label>
+            <label class="field">TEMPO · BPM<input id="bpm-input" type="number" min="40" max="240" value="120"></label>
+            <label class="field">QUANTISE<select id="quantize-select"><option value="off">FREE</option><option value="1/4">1/4</option><option value="1/8">1/8</option><option value="1/16">1/16</option></select></label>
+          </div>
+        </details>
       </div>
     </section>
 
@@ -74,11 +84,18 @@
         <div class="source-buttons">
           <button id="add-file" class="source-button main-source"><span class="source-icon">+</span> DEVICE / FILES <small>incl. iCloud Drive</small></button>
           <button id="camera-button" class="source-button"><span class="source-icon">◎</span> RECORD ON PAD <small>Camera + mic</small></button>
+        </div>
+        <details class="source-advanced" id="source-advanced">
+          <summary>More ways to add a clip</summary>
+          <div class="source-buttons">
           <button id="google-drive" class="source-button" disabled aria-label="Google Drive import unavailable: optional setup required. Use Device / Files or Record on Pad."><span class="source-icon">△</span> GOOGLE DRIVE <small>Setup required</small></button>
           <button id="google-photos" class="source-button" disabled aria-label="Google Photos import unavailable: optional setup required. Use Device / Files or Record on Pad."><span class="source-icon">▧</span> GOOGLE PHOTOS <small>Setup required</small></button>
-        </div>
+          </div>
+          <p class="voice-note">Create a backing track in <a href="https://www.flowmusic.app/" target="_blank" rel="noopener noreferrer">Google Flow Music</a>, download its audio, then use Device / Files to import it here. This is a manual file handoff: MadLadPad does not access your Flow account or send your recordings there.</p>
+        </details>
         <p id="editor-empty-hint" class="editor-empty-hint">Your trim, pitch and tuning tools will appear once you've added a sample.</p>
-        <p class="voice-note">Create a backing track in <a href="https://www.flowmusic.app/" target="_blank" rel="noopener noreferrer">Google Flow Music</a>, download its audio, then use Device / Files to import it here. This is a manual file handoff: MadLadPad does not access your Flow account or send your recordings there.</p>
+        <details class="sample-advanced" id="sample-advanced">
+          <summary>Trim, tune and edit</summary>
         <section class="region-editor" aria-labelledby="region-title">
           <h3 id="region-title">SELECT A MOMENT</h3>
           <p id="region-status">Load an audio or video clip to select a region.</p>
@@ -117,14 +134,40 @@
           <label>END <output id="end-out">2.00 s</output><input id="trim-end" type="range" min="0.05" max="10" step="0.05" value="2"></label>
         </div>
         <div class="inspector-actions"><button id="clear-pad" class="text-button">Clear sample</button><button id="connect-midi" class="text-button">Connect MIDI</button></div>
+        </details>
         <div class="info-note"><strong>PRIVATE BY DEFAULT</strong><p>Your clips are saved locally on this device. Export a pack to back them up or share them.</p></div>
       </aside>
     </div>
 
     <section class="sequencer" id="sequencer" aria-label="16-step sequencer" hidden>
-      <div class="section-label"><span>02 / BEAT MAKER</span><span>1/4 · 1/8 · 1/16 GRID · ALL PADS CAN PLAY TOGETHER</span></div>
-      <label class="beat-pad-choice">EDITING PAD<select id="beat-pad-select" aria-label="Pad to edit in the beat grid"></select></label>
-      <div class="sequencer-head"><div><h2>Make it a loop.</h2><p>Edit one pad or arrange the whole kit in a multi-track grid.</p></div><div class="seq-buttons"><button class="pill-button" id="track-view" aria-pressed="false">ALL TRACKS</button><button class="pill-button" id="auto-beat">SURPRISE ME</button><button class="pill-button" id="clear-steps">CLEAR SELECTED</button><label class="pattern-setting">GRID<select id="grid-division" aria-label="Sequencer grid division"><option value="1/4">QUARTER · 4 STEPS</option><option value="1/8">EIGHTH · 8 STEPS</option><option value="1/16">SIXTEENTH · 16 STEPS</option></select></label><label class="pattern-setting">TAKE<select id="pattern-take-mode"><option value="overdub">OVERDUB</option><option value="replace">REPLACE</option></select></label><label class="pattern-setting">QUANTISE<select id="pattern-quantize"><option value="nearest">NEAREST GRID</option><option value="off">FREE</option></select></label><button class="pill-button record-pattern-button" id="record-pattern" aria-pressed="false">● RECORD PATTERN</button><button class="pill-button" id="undo-pattern" disabled>UNDO TAKE</button><label class="pattern-setting">SCENE<select id="scene-select" aria-label="Select scene"><option value="" disabled selected>No saved scenes</option></select></label><input id="scene-name" class="scene-name-input" maxlength="32" placeholder="Scene name" aria-label="Scene name"><button class="pill-button" id="save-scene" disabled>SAVE NEW</button><button class="pill-button" id="update-scene" disabled>UPDATE</button><button class="pill-button" id="launch-scene" disabled>LOAD SCENE</button><button class="pill-button" id="delete-scene" disabled>DELETE</button><button class="play-button" id="play-seq" aria-pressed="false">▶ PLAY</button></div></div>
+      <div class="section-label"><span>02 / BEAT MAKER</span><span>TAP STEPS · PRESS PLAY</span></div>
+      <div class="sequencer-head">
+        <div><h2>Make it a loop.</h2><p>Tap a step to add a sound. Press Play when you’re ready.</p></div>
+        <div class="seq-buttons">
+          <button class="play-button" id="play-seq" aria-pressed="false">▶ PLAY</button>
+          <details class="control-disclosure beat-advanced" id="beat-advanced">
+            <summary>More beat controls</summary>
+            <div class="beat-advanced-controls">
+              <label class="beat-pad-choice">EDITING PAD<select id="beat-pad-select" aria-label="Pad to edit in the beat grid"></select></label>
+              <button class="pill-button" id="track-view" aria-pressed="false">ALL TRACKS</button>
+              <button class="pill-button" id="auto-beat">SURPRISE ME</button>
+              <button class="pill-button" id="clear-steps">CLEAR SELECTED</button>
+              <label class="pattern-setting">GRID<select id="grid-division"><option value="1/4">QUARTER · 4 STEPS</option><option value="1/8">EIGHTH · 8 STEPS</option><option value="1/16">SIXTEENTH · 16 STEPS</option></select></label>
+              <label class="pattern-setting">TAKE<select id="pattern-take-mode"><option value="overdub">OVERDUB</option><option value="replace">REPLACE</option></select></label>
+              <label class="pattern-setting">QUANTISE<select id="pattern-quantize"><option value="nearest">NEAREST GRID</option><option value="off">FREE</option></select></label>
+              <button class="pill-button record-pattern-button" id="record-pattern" aria-pressed="false">● RECORD PATTERN</button>
+              <button class="pill-button" id="undo-pattern" disabled>UNDO TAKE</button>
+              <label class="pattern-setting">SCENE<select id="scene-select" aria-label="Select scene"><option value="" disabled selected>No saved scenes</option></select></label>
+              <input id="scene-name" class="scene-name-input" maxlength="32" placeholder="Scene name" aria-label="Scene name">
+              <button class="pill-button" id="save-scene" disabled>SAVE NEW</button>
+              <button class="pill-button" id="update-scene" disabled>UPDATE</button>
+              <button class="pill-button" id="launch-scene" disabled>LOAD SCENE</button>
+              <button class="pill-button" id="delete-scene" disabled>DELETE</button>
+            </div>
+          </details>
+        </div>
+      </div>
+      <div class="beat-next-step"><p>Ready to make a video?</p><button class="pill-button" id="make-video">VIDEO & EXPORT</button></div>
       <p id="scene-status" class="pattern-record-status" role="status" aria-live="polite">Save the current pattern as a named scene.</p>
       <p id="pattern-record-status" class="pattern-record-status" role="status" aria-live="polite">Ready to record pad taps into the 16-step loop. Coarser grids hide finer steps but keep them saved.</p>
       <div class="steps" id="steps" role="group" aria-label="Pattern steps for selected pad"></div>
@@ -132,6 +175,7 @@
       <div class="timeline"><span>1</span><span>2</span><span>3</span><span>4</span></div>
     </section>
 
+    <details class="video-director-disclosure" id="video-director-details"><summary>Edit video cuts</summary>
     <section class="studio-stage" id="video-director" aria-labelledby="video-director-title" hidden>
       <div class="section-label"><span>02 / VIDEO DIRECTOR</span><span>ONE SHOT PER SIXTEENTH NOTE · AUTOMATIC OR MANUAL</span></div>
       <h2 id="video-director-title">Cut the pictures to your beat.</h2>
@@ -143,6 +187,7 @@
       </div>
       <p class="voice-note" id="director-status" role="status">Select a step to direct its video.</p>
     </section>
+    </details>
 
     <section class="voice-lab" id="voice-lab" aria-labelledby="voice-lab-title" hidden>
       <div class="section-label"><span>03 / VOICE LAB</span><span>WORDS · MELODY · BARS</span></div>
