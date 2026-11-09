@@ -1161,6 +1161,18 @@ try {
   assert.ok(mobileRap<mobileLayout.width,`mobile rap editor should stay within the single-column Voice Lab: ${mobileRap}px of ${mobileLayout.width}px`);
   assert.equal(await page.locator('#voice-lab').isVisible(),true,'task jumps should keep the user within Voice Lab');
   assert.equal(await page.locator('#voice-speech-tool').isHidden(),true,'mobile task switching should keep only the chosen Voice Lab tool visible');
+  await page.setViewportSize({width:320,height:720});
+  await page.locator('[data-voice-jump="melody-title"]').click();
+  const melodyTouchTargets=await page.locator('#melody-tuning,#melody-notes input,#melody-add,#melody-harmony-add,#melody-play,#melody-export').evaluateAll(elements=>elements.map(element=>{const rect=element.getBoundingClientRect();return {id:element.id,label:element.getAttribute('aria-label'),width:rect.width,height:rect.height};}));
+  assert.ok(melodyTouchTargets.length>3&&melodyTouchTargets.every(target=>target.width>=44&&target.height>=44),`melody controls should provide 44px mobile hit areas: ${JSON.stringify(melodyTouchTargets)}`);
+  await page.locator('[data-voice-jump="rap-title"]').click();
+  await page.locator('#rap-bars .rap-flow summary').first().click();
+  const rapFlowTouchTargets=await page.locator('#rap-export,#rap-bars .rap-flow[open]>summary,#rap-bars .rap-flow[open] .rap-flow-step').evaluateAll(elements=>elements.map(element=>{const rect=element.getBoundingClientRect();return {label:element.getAttribute('aria-label'),width:rect.width,height:rect.height};}));
+  const rapFlowLayout=await page.locator('#rap-bars .rap-flow-grid').first().evaluate(element=>({width:element.clientWidth,scrollWidth:element.scrollWidth,columns:getComputedStyle(element).gridTemplateColumns.split(/\s+/).length,steps:element.querySelectorAll('.rap-flow-step').length,pageWidth:document.documentElement.scrollWidth,viewportWidth:document.documentElement.clientWidth}));
+  assert.ok(rapFlowTouchTargets.every(target=>target.width>=44&&target.height>=44),`rap flow controls should provide 44px mobile hit areas: ${JSON.stringify(rapFlowTouchTargets)}`);
+  assert.equal(rapFlowLayout.columns,4,`the 16-step rap flow should use a compact 4-column mobile grid: ${JSON.stringify(rapFlowLayout)}`);
+  assert.equal(rapFlowLayout.steps,16,'the mobile flow grid should retain all 16 steps');
+  assert.ok(rapFlowLayout.scrollWidth<=rapFlowLayout.width&&rapFlowLayout.pageWidth<=rapFlowLayout.viewportWidth,`rap flow should fit without horizontal overflow: ${JSON.stringify(rapFlowLayout)}`);
   await openScreen('sounds');
   await page.locator('.pad:not([hidden]) .edit-pad').first().scrollIntoViewIfNeeded();
   const mobileEdit=await page.locator('.pad:not([hidden]) .edit-pad').first().boundingBox();
