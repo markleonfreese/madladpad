@@ -114,6 +114,8 @@ try {
   assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'true','demo kit mode should restore with the project');
   assert.equal(await page.locator('#pad-grid .pad').first().locator('.pad-title').textContent(),'DEMO 01','the restored starter loop should retain playable demo pads');
   assert.equal(await page.locator('#steps .step').nth(1).getAttribute('aria-pressed'),'true','step edits should survive the same reload as the demo kit');
+  await page.locator('#pad-grid .pad-hit').first().click();
+  await page.waitForFunction(()=>document.querySelector('#pad-grid .pad').classList.contains('playing'));
   assert.equal(await page.locator('#beat-advanced').evaluate(element=>element.open),false,'specialist beat controls should start collapsed');
   const narrowBeatGrid=()=>page.evaluate(()=>({viewport:document.documentElement.clientWidth,content:document.documentElement.scrollWidth,pad:(()=>{const rect=document.querySelector('#pad-grid .pad:not([hidden])').getBoundingClientRect();return {width:rect.width,height:rect.height};})()}));
   let narrowLayout=await narrowBeatGrid();
@@ -124,6 +126,22 @@ try {
   narrowLayout=await narrowBeatGrid();
   assert.equal(narrowLayout.content,narrowLayout.viewport,'the 4-column Beat Grid should not cause horizontal overflow at 320px');
   assert.ok(narrowLayout.pad.width>=48&&narrowLayout.pad.height>=48,'4-column Beat Grid pads should retain touch-sized targets');
+  await page.locator('#pad-grid .pad-hit').first().click();
+  await page.waitForFunction(()=>document.querySelector('#pad-grid .pad').classList.contains('playing'));
+  const editOutsidePad=await page.locator('#pad-grid .pad-cell').first().evaluate(cell=>{
+    const pad=cell.querySelector('.pad').getBoundingClientRect(),edit=cell.querySelector('.edit-pad').getBoundingClientRect();
+    return edit.top>=pad.bottom;
+  });
+  assert.equal(editOutsidePad,true,'the 44px Edit target must be separate from the pad center in the mobile 4x4 layout');
+  await page.setViewportSize({width:390,height:844});
+  await page.locator('#pad-grid .pad-hit').first().click();
+  await page.waitForFunction(()=>document.querySelector('#pad-grid .pad').classList.contains('playing'));
+  const editOutsidePad390=await page.locator('#pad-grid .pad-cell').first().evaluate(cell=>{
+    const pad=cell.querySelector('.pad').getBoundingClientRect(),edit=cell.querySelector('.edit-pad').getBoundingClientRect();
+    return edit.top>=pad.bottom;
+  });
+  assert.equal(editOutsidePad390,true,'the 44px Edit target must not overlap the playable pad at 390px either');
+  await page.setViewportSize({width:320,height:720});
   await page.locator('#layout-select').selectOption('3x4');
   await page.locator('#loop-settings > summary').click();
   await page.setViewportSize({width:1280,height:900});
@@ -148,6 +166,12 @@ try {
   await page.locator('#demo-button').click();
   assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'false','demo sounds should remain switchable from the sample workspace');
   assert.equal(await page.locator('#volume').isVisible(),false,'empty pads should keep advanced controls hidden when demo is off');
+  await page.setViewportSize({width:390,height:844});
+  await page.locator('#layout-select').selectOption('4x4');
+  await page.locator('#pad-grid .pad-hit').nth(3).click();
+  assert.equal(await page.locator('#pad-source-dialog').evaluate(dialog=>dialog.open),true,'a mobile center tap on an empty 4x4 pad should open its source choices');
+  await page.locator('#pad-source-cancel').click();
+  await page.locator('#layout-select').selectOption('3x4');
   assert.equal(await page.locator('#quick-import').isVisible(),true,'quick import should be available from the first-run actions');
   assert.equal(await page.locator('#quick-record').isVisible(),true,'quick recording should be available from the first-run actions');
   const openScreen=async screen=>{
@@ -265,7 +289,7 @@ try {
   const desktopBeatOrder=await page.evaluate(()=>({sequencer:document.querySelector('#sequencer').getBoundingClientRect().top,pads:document.querySelector('.performance-area').getBoundingClientRect().top}));
   assert.ok(desktopBeatOrder.sequencer<desktopBeatOrder.pads,`Beat Grid should place the sequencer before the pad grid on desktop: ${JSON.stringify(desktopBeatOrder)}`);
   await page.locator('.pad[data-id="2"]').hover();
-  await page.locator('.pad[data-id="2"] .edit-pad').click();
+  await page.locator('.pad-cell[data-pad-id="2"] .edit-pad').click();
   await page.waitForFunction(()=>document.body.dataset.screen==='sounds');
   assert.equal(await page.locator('.pad[data-id="2"]').evaluate(pad=>pad.classList.contains('selected')),true,'pad-card Edit from Beat Grid should open Sounds with that pad selected');
   await openScreen('beats');
@@ -430,13 +454,13 @@ try {
     await page.locator('#export-video-preview').waitFor({state:'visible'});
     await openScreen('sounds');
     await page.locator('.pad').nth(1).hover();
-    await page.locator('.pad .edit-pad').nth(1).click();
+    await page.locator('.pad-cell .edit-pad').nth(1).click();
     await page.locator('#media-input').setInputFiles({name:'synthetic-set.webm',mimeType:'video/webm',buffer:recordedVideo});
     await page.getByText(/synthetic-set\.webm.*stored on this device/).waitFor();
     await page.locator('.pad-hit').nth(1).click();
     await page.waitForTimeout(250);
     await page.locator('.pad').first().hover();
-    await page.locator('.pad .edit-pad').first().click();
+    await page.locator('.pad-cell .edit-pad').first().click();
     checkpoint('audiovisual set recording and local WebM playback');
   }else{
     console.log('Skipped audiovisual set recording: MediaRecorder or canvas captureStream is unavailable.');
@@ -733,7 +757,7 @@ try {
   checkpoint('local audio import and reload');
   await openScreen('sounds');
   await page.locator('.pad').nth(11).hover();
-  await page.locator('.pad .edit-pad').nth(11).click();
+  await page.locator('.pad-cell .edit-pad').nth(11).click();
   await page.locator('#media-input').setInputFiles({name:'synthetic-region.wav',mimeType:'audio/wav',buffer:regionWav});
   await page.getByText(/synthetic-region\.wav.*stored on this device/).waitFor();
   await page.waitForFunction(()=>!document.querySelector('#region-start').disabled&&Number(document.querySelector('#region-end').max)>=4);
@@ -789,12 +813,12 @@ try {
   await page.waitForTimeout(500);
   await page.reload();
   await page.locator('.pad').nth(11).hover();
-  await page.locator('.pad .edit-pad').nth(11).click();
+  await page.locator('.pad-cell .edit-pad').nth(11).click();
   await page.getByText(/synthetic-region\.wav.*stored on this device/).waitFor();
   assert.equal(await page.locator('#trim-start').inputValue(),'1.85','manual region start should persist after reload');
   assert.equal(await page.locator('#trim-end').inputValue(),'2.25','manual region end should persist after reload');
   await page.locator('.pad').first().hover();
-  await page.locator('.pad .edit-pad').first().click();
+  await page.locator('.pad-cell .edit-pad').first().click();
   checkpoint('manual later-region preview/apply, local suggestions and reload persistence');
   const syntheticVideo=await page.evaluate(async()=>{
     if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream)throw new Error('WebM capture unavailable');
@@ -814,7 +838,7 @@ try {
   });
   assert.match(syntheticVideo.type,/video\/webm/,'fallback fixture should be a WebM video');
   await page.locator('.pad').nth(10).hover();
-  await page.locator('.pad .edit-pad').nth(10).click();
+  await page.locator('.pad-cell .edit-pad').nth(10).click();
   await page.locator('#media-input').setInputFiles({name:'synthetic-audio-video.webm',mimeType:'video/webm',buffer:Buffer.from(syntheticVideo.bytes)});
   await page.waitForTimeout(1000);
   await page.getByText(/synthetic-audio-video\.webm.*stored on this device/).waitFor({timeout:5000});
@@ -911,7 +935,7 @@ try {
         assert.ok(videoTone.size>100,'synthetic video-tone fixture should contain recorded media');
         await page.locator('.pad-hit').nth(1).click();
         await page.locator('.pad').nth(1).hover();
-        await page.locator('.pad .edit-pad').nth(1).click();
+        await page.locator('.pad-cell .edit-pad').nth(1).click();
         page.once('dialog',dialog=>dialog.accept());
         await page.locator('#media-input').setInputFiles({name:'synthetic-pitch-video.webm',mimeType:'video/webm',buffer:Buffer.from(videoTone.base64,'base64')});
         await page.getByText(/synthetic-pitch-video\.webm.*stored on this device/).waitFor();
@@ -1023,7 +1047,7 @@ try {
     assert.equal(longVideoTargets.length,2,'two empty pads should remain available for adaptive composition fixtures');
     for(const target of longVideoTargets){
       await page.locator('.pad').nth(target).hover();
-      await page.locator('.pad .edit-pad').nth(target).click();
+      await page.locator('.pad-cell .edit-pad').nth(target).click();
       await page.locator('#media-input').setInputFiles({name:'synthetic-long.webm',mimeType:'video/webm',buffer:longVideo});
       await page.getByText(/synthetic-long\.webm.*stored on this device/).waitFor();
     }
@@ -1197,8 +1221,8 @@ try {
   assert.equal(rapFlowLayout.steps,16,'the mobile flow grid should retain all 16 steps');
   assert.ok(rapFlowLayout.scrollWidth<=rapFlowLayout.width&&rapFlowLayout.pageWidth<=rapFlowLayout.viewportWidth,`rap flow should fit without horizontal overflow: ${JSON.stringify(rapFlowLayout)}`);
   await openScreen('sounds');
-  await page.locator('.pad:not([hidden]) .edit-pad').first().scrollIntoViewIfNeeded();
-  const mobileEdit=await page.locator('.pad:not([hidden]) .edit-pad').first().boundingBox();
+  await page.locator('.pad-cell:has(.pad:not([hidden])) .edit-pad').first().scrollIntoViewIfNeeded();
+  const mobileEdit=await page.locator('.pad-cell:has(.pad:not([hidden])) .edit-pad').first().boundingBox();
   assert.ok(mobileEdit.width>=44&&mobileEdit.height>=44,`mobile Edit pad hit area should be at least 44 × 44px: ${JSON.stringify(mobileEdit)}`);
   const mobileEditTarget=await page.locator('.edit-pad').first().evaluate(button=>{
     const rect=button.getBoundingClientRect(),points=[[rect.left+2,rect.top+20],[rect.left+22,rect.top+5]];

@@ -238,9 +238,17 @@ window.addEventListener('pagehide', flushSave);
 function buildGrid() {
   const grid = $('pad-grid');
   for (let id = 0; id < 16; id++) {
+    const cell = document.createElement('div');
+    cell.className = 'pad-cell';
+    cell.dataset.padId = id;
     const card = document.createElement('div');
     card.className = 'pad empty';
     card.dataset.id = id;
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'edit-pad';
+    edit.setAttribute('aria-label', `Edit pad ${id+1}`);
+    edit.innerHTML = '<span>EDIT</span>';
     const video = document.createElement('video');
     video.className = 'media';
     video.muted = true; video.playsInline = true; video.preload = 'metadata';
@@ -251,15 +259,14 @@ function buildGrid() {
     card.innerHTML = `<div class="pad-bg" aria-hidden="true">+</div>
       <button type="button" class="pad-hit" aria-label="Play or load pad ${id+1}"></button>
       <div class="pad-top"><span class="key-tag">${HOTKEYS[id]}</span><span class="pad-index">${String(id+1).padStart(2,'0')}</span></div>
-      <div class="pad-bottom-line"><span class="pad-title"></span></div>
-      <button type="button" class="edit-pad" aria-label="Edit pad ${id+1}"><span>EDIT</span></button>`;
+      <div class="pad-bottom-line"><span class="pad-title"></span></div>`;
     card.prepend(video,image);
     card.querySelector('.pad-hit').addEventListener('click', () => {
       selectPad(id);
       if (!mediaFiles.has(id) && !audio.demoEnabled) { sourcePad=id; $('pad-source-title').textContent=`Add a sample to pad ${id+1}`; $('pad-source-dialog').showModal(); }
       else playPad(id);
     });
-    card.querySelector('.edit-pad').addEventListener('click', () => {selectPad(id);if(location.hash!=='#sounds')location.hash='#sounds';});
+    edit.addEventListener('click', () => {selectPad(id);if(location.hash!=='#sounds')location.hash='#sounds';});
     card.addEventListener('dragover', event => { event.preventDefault(); });
     card.addEventListener('drop', async event => {
       event.preventDefault(); selectPad(id);
@@ -273,7 +280,8 @@ function buildGrid() {
       }
     });
     pads.push({card,video,image});
-    grid.append(card);
+    cell.append(card,edit);
+    grid.append(cell);
   }
 }
 
