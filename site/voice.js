@@ -7,7 +7,15 @@ const rhymes = {
   light:['night','bright','flight','sight','write','mic'], day:['way','play','say','stay','away','display'],
   flow:['glow','show','know','grow','slow','go'], time:['rhyme','climb','line','shine','design'],
   sound:['ground','round','found','around','bound'], heart:['start','art','part','smart'],
-  fire:['higher','wire','inspire','desire'], mind:['find','kind','grind','behind']
+  fire:['higher','wire','inspire','desire'], mind:['find','kind','grind','behind'],
+  cat:['bat','flat','hat','mat','sat','chat'], back:['black','crack','track','stack','pack','attack'],
+  face:['place','grace','space','trace','case','chase'], rain:['train','chain','brain','plain','gain','remain'],
+  run:['fun','sun','spun','stun','begun','outrun'], love:['above','dove','glove','shove'],
+  home:['roam','foam','dome','chrome','comb'], make:['take','break','shake','wake','awake','mistake'],
+  beat:['heat','street','repeat','complete','seat','meet'], high:['sky','fly','try','why','supply','reply'],
+  name:['game','same','flame','frame','claim','became'], dream:['beam','cream','seem','team','stream','theme'],
+  real:['feel','deal','heal','steal','reveal','appeal'], cold:['bold','hold','told','gold','sold','scold'],
+  star:['car','far','scar','bar','guitar','bizarre'], world:['curled','twirled','hurled','unfurled']
 };
 const wordKey = text => String(text).toLowerCase().replace(/[^a-z']/g, '').replace(/(?:ing|ed|s)$/, '');
 function rhymeHints(line) {
