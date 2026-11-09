@@ -96,11 +96,18 @@ try {
   await wait(page, '.pad-hit');
   assert.equal(await page.locator('#quick-demo').isVisible(),true,'a demo beat should be the primary first-run action');
   assert.equal(await page.locator('#loop-settings').evaluate(element=>element.open),false,'advanced tempo and layout settings should start collapsed');
+  await page.setViewportSize({width:320,height:720});
   await page.locator('#quick-demo').click();
   await page.waitForFunction(()=>document.body.dataset.screen==='beats');
   assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'true','quick-start should enable the demo kit');
+  await page.locator('#toast.show').waitFor();
+  const firstRunToastOverlapsPlay=await page.evaluate(()=>{
+    const toast=document.querySelector('#toast').getBoundingClientRect();
+    const play=[...document.querySelectorAll('#sequencer button')].find(button=>button.textContent.toLowerCase().includes('play')).getBoundingClientRect();
+    return toast.left<play.right&&toast.right>play.left&&toast.top<play.bottom&&toast.bottom>play.top;
+  });
+  assert.equal(firstRunToastOverlapsPlay,false,'first-run guidance should not cover Play at a narrow phone viewport');
   assert.equal(await page.locator('#beat-advanced').evaluate(element=>element.open),false,'specialist beat controls should start collapsed');
-  await page.setViewportSize({width:320,height:740});
   const narrowBeatGrid=()=>page.evaluate(()=>({viewport:document.documentElement.clientWidth,content:document.documentElement.scrollWidth,pad:(()=>{const rect=document.querySelector('#pad-grid .pad:not([hidden])').getBoundingClientRect();return {width:rect.width,height:rect.height};})()}));
   let narrowLayout=await narrowBeatGrid();
   assert.equal(narrowLayout.content,narrowLayout.viewport,'the 3-column Beat Grid should not cause horizontal overflow at 320px');
