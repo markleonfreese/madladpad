@@ -107,6 +107,13 @@ try {
     return toast.left<play.right&&toast.right>play.left&&toast.top<play.bottom&&toast.bottom>play.top;
   });
   assert.equal(firstRunToastOverlapsPlay,false,'first-run guidance should not cover Play at a narrow phone viewport');
+  await page.locator('#steps .step').nth(1).click();
+  await page.waitForTimeout(400);
+  await page.reload();
+  await wait(page,'.pad-hit');
+  assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'true','demo kit mode should restore with the project');
+  assert.equal(await page.locator('#pad-grid .pad').first().locator('.pad-title').textContent(),'DEMO 01','the restored starter loop should retain playable demo pads');
+  assert.equal(await page.locator('#steps .step').nth(1).getAttribute('aria-pressed'),'true','step edits should survive the same reload as the demo kit');
   assert.equal(await page.locator('#beat-advanced').evaluate(element=>element.open),false,'specialist beat controls should start collapsed');
   const narrowBeatGrid=()=>page.evaluate(()=>({viewport:document.documentElement.clientWidth,content:document.documentElement.scrollWidth,pad:(()=>{const rect=document.querySelector('#pad-grid .pad:not([hidden])').getBoundingClientRect();return {width:rect.width,height:rect.height};})()}));
   let narrowLayout=await narrowBeatGrid();
@@ -1061,6 +1068,7 @@ try {
     checkpoint('adaptive performance capture transitions one-to-two-to-three clips');
 
     await openScreen('sounds');
+    if(await page.locator('#demo-button').getAttribute('aria-pressed')==='true')await page.locator('#demo-button').click();
     const canceledPad=await page.locator('.pad').evaluateAll(cards=>cards.findIndex(card=>card.classList.contains('empty')&&!card.hidden));
     assert.notEqual(canceledPad,-1,'an empty pad should remain available for capture-cancel coverage');
     await page.locator('.pad-hit').nth(canceledPad).click();
