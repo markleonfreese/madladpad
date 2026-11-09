@@ -178,3 +178,5 @@ body[data-screen="beats"] .pad-bg{font-size:18px}
   .track-steps{width:100%;min-width:0;overflow-x:auto;overscroll-behavior-x:contain;grid-template-columns:repeat(var(--track-step-count,16),44px);scrollbar-width:thin;scroll-snap-type:x proximity}
   .track-steps .step{width:44px;min-width:44px;min-height:44px;scroll-snap-align:start}
 }
+.pad-cell{position:relative;min-width:0}.pad-cell>.pad{width:100%}.pad-cell:hover>.edit-pad,.pad.selected+.edit-pad,.edit-pad:focus-visible{visibility:visible}
+@media(max-width:740px){.pad-cell{display:grid;grid-template-rows:auto 44px;gap:0}.pad-cell>.edit-pad{position:static;right:auto;bottom:auto;justify-self:end;width:44px;height:44px;min-width:44px;min-height:44px;padding:0}}

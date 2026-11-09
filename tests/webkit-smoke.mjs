@@ -85,7 +85,7 @@ try{
     assert.ok(videoFixture.length>100,'the deterministic synthetic video fixture should be present');
     console.log(`WebKit synthetic video fixture: video/mp4 (${videoFixture.length} bytes).`);
     await page.locator('.pad').nth(1).hover();
-    await page.locator('.pad .edit-pad').nth(1).click();
+    await page.locator('.pad-cell .edit-pad').nth(1).click();
     page.once('dialog',dialog=>dialog.accept());
     const extension='mp4';
     await page.locator('#media-input').setInputFiles({name:`webkit-playback.${extension}`,mimeType:'video/mp4',buffer:videoFixture});
