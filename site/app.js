@@ -79,16 +79,46 @@ function showStudioScreen() {
     if(link.dataset.studioScreen===screen)link.setAttribute('aria-current','page');
     else link.removeAttribute('aria-current');
   }
+  const moreTools=$('studio-more-tools'),moreSummary=moreTools.querySelector('summary');
+  if(screen==='voice'||screen==='overdub'){
+    moreSummary.textContent=`More tools · ${screen==='voice'?'Voice Lab':'Overdub'}`;
+    moreSummary.setAttribute('aria-current','page');
+  }else{
+    moreSummary.textContent='More tools';
+    moreSummary.removeAttribute('aria-current');
+  }
+  moreTools.open=false;
   $('studio-intro').hidden = screen!=='sounds';
   $('studio-workspace').hidden = screen!=='sounds' && screen!=='beats';
   $('studio-workspace').classList.toggle('wide-grid',screen==='beats');
   $('sample-inspector').hidden = screen!=='sounds';
   $('grid-section-label').textContent = screen==='beats' ? '02 / PERFORMANCE PADS' : '01 / SOUND PADS';
   $('sequencer').hidden = screen!=='beats' && screen!=='overdub';
+  $('video-director-details').hidden=screen!=='beats';
   $('video-director').hidden=screen!=='beats';
   $('voice-lab').hidden = screen!=='voice';
   $('overdub-lab').hidden = screen!=='overdub';
   $('export-lab').hidden = screen!=='export';
+}
+
+function startDemoBeat(){
+  const hasPattern=project.pads.some(pad=>pad.steps.some(Boolean));
+  audio.demoEnabled=true;
+  if(!hasPattern){
+    const [kick,snare,hat]=project.pads;
+    for(const step of [0,8])kick.steps[step]=true;
+    for(const step of [4,12])snare.steps[step]=true;
+    for(let step=0;step<16;step+=2)hat.steps[step]=true;
+    queueSave();
+  }
+  for(const button of [$('demo-button'),$('quick-demo')]){
+    button.classList.add('active');
+    button.setAttribute('aria-pressed','true');
+  }
+  renderGrid();renderTrackGrid();renderControls();renderSteps();
+  if(location.hash==='#beats')showStudioScreen();
+  else location.hash='#beats';
+  notify(hasPattern?'Your beat is ready. Press Play to hear it.':'Starter beat ready. Press Play to hear it, then tap steps to edit.');
 }
 
 function showVoiceTool(tool,{focus=false}={}) {
@@ -1442,7 +1472,7 @@ function bindControls() {
   }
   $('media-input').addEventListener('change',async event=>{const target=fileTarget??selected;fileTarget=null;await placeFiles([...event.target.files],target);event.target.value='';});
   $('project-input').addEventListener('change',async event=>{if(event.target.files?.[0])await importPack(event.target.files[0]);event.target.value='';});
-  $('quick-demo').addEventListener('click',()=>$('demo-button').click());
+  $('quick-demo').addEventListener('click',startDemoBeat);
   $('quick-import').addEventListener('click',()=>$('add-file').click());
   $('quick-record').addEventListener('click',()=>$('camera-button').click());
   $('add-file').addEventListener('click',()=>{fileTarget=selected;$('media-input').click();});
@@ -1481,6 +1511,7 @@ function bindControls() {
     renderGrid();renderTrackGrid();renderControls();notify(audio.demoEnabled?'Demo synth sounds enabled on empty pads.':'Demo sounds off.');
   });
   $('play-seq').addEventListener('click',()=>transportActivity.phase!=='idle'?stopSequencer():startSequencer());
+  $('make-video').addEventListener('click',()=>{location.hash='#export';});
   $('auto-beat').addEventListener('click',surpriseBeat);
   $('clear-steps').addEventListener('click',()=>{project.pads[selected].steps.fill(false);project.pads[selected].stepOffsets.fill(0);patternUndoSnapshot=null;renderSteps();renderPatternRecordingState();queueSave();});
   $('record-pattern').addEventListener('click',togglePatternRecording);
