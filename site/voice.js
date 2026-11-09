@@ -241,7 +241,10 @@ function renderRap(project, save, audio, notify) {
       }
       const target = anchor?.word || line.trim().split(/\s+/).at(-1) || '';
       const hints = rhymeHints(target);
-      meta.textContent = `${group ? `${group} rhyme` : 'Free rhyme'} · ${estimateSyllables(line)} estimated syllables${anchor ? ` · match bar ${anchor.index + 1} “${anchor.word}”` : hints.length ? ` · rhyme ideas: ${hints.join(', ')}` : ''}`;
+      const cues = [];
+      if (anchor) cues.push(`match bar ${anchor.index + 1} “${anchor.word}”`);
+      if (hints.length) cues.push(`rhyme ideas: ${hints.join(', ')}`);
+      meta.textContent = [`${group ? `${group} rhyme` : 'Free rhyme'}`, `${estimateSyllables(line)} estimated syllables`, ...cues].join(' · ');
     };
     row.updateMeta = renderMeta;
     text.addEventListener('input', () => { project.voice.rap.bars[index] = text.value; host.querySelectorAll('.rap-bar').forEach(item => item.updateMeta?.()); save(); }); renderMeta(); row.append(number, text, meta);
