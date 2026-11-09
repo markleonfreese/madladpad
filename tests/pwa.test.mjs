@@ -27,6 +27,8 @@ test('offline shell and all locally referenced ES modules exist', () => {
   assert.ok(shell[1].includes("'/pitch-dsp.js'")&&shell[1].includes("'/pitch-shifter.js'"),
     'offline shell must include both pitch processor modules');
   assert.ok(shell[1].includes("'/tuning.js'"),'offline shell must include local note detection');
+  assert.ok(shell[1].includes("'/credits.html'")&&shell[1].includes("'/licenses/Apache-2.0.txt'")&&shell[1].includes("'/licenses/MIT-OpenAI-Whisper.txt'")&&shell[1].includes("'/licenses/MIT-ONNX-Runtime.txt'"),
+    'offline shell must include model/runtime credits and their license texts');
   assert.ok(sw.includes("caches.match('/')"),
     'offline navigation must fall back to the canonical root route used by Workers Static Assets');
 });
@@ -34,7 +36,7 @@ test('offline shell and all locally referenced ES modules exist', () => {
 test('service worker activation removes stale app shells without deleting the Whisper model cache', async () => {
   const sw = readFileSync(join(site, 'sw.js'), 'utf8');
   const handlers = new Map();
-  const cacheNames = ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13', 'transformers-cache', 'another-app-cache'];
+  const cacheNames = ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13', 'madladpad-shell-v14', 'transformers-cache', 'another-app-cache'];
   const deleted = [];
   const context = {
     self: {
@@ -53,7 +55,7 @@ test('service worker activation removes stale app shells without deleting the Wh
   let activation;
   handlers.get('activate')({ waitUntil: promise => { activation = promise; } });
   await activation;
-  assert.deepEqual(deleted, ['madladpad-shell-v11', 'madladpad-shell-v12']);
+  assert.deepEqual(deleted, ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13']);
 });
 
 

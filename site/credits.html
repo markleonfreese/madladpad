@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111512">
+  <title>Model and license credits · MadLadPad</title>
+  <style>
+    :root{color-scheme:dark;background:#111512;color:#edf3e9;font:16px/1.6 system-ui,sans-serif}
+    body{max-width:760px;margin:0 auto;padding:32px 20px}
+    h1,h2{line-height:1.2;letter-spacing:-.03em}
+    a{color:#d5ff67;text-underline-offset:3px}
+    li{margin:0 0 20px}
+    .note{color:#c2cec1}
+    nav{margin-top:32px}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Model and license credits</h1>
+    <p class="note">MadLadPad runs speech recognition in your browser. The first transcription downloads model and runtime files from their maintainers; your selected recording is processed on your device.</p>
+    <ul>
+      <li><strong>Speech model:</strong> <a href="https://huggingface.co/Xenova/whisper-tiny.en">Xenova/whisper-tiny.en</a>, an ONNX conversion of <a href="https://huggingface.co/openai/whisper-tiny.en">OpenAI Whisper Tiny English</a>. The Xenova model is marked Apache-2.0; the original Whisper project is MIT licensed. Read the <a href="/licenses/Apache-2.0.txt">Apache-2.0 license</a> and <a href="/licenses/MIT-OpenAI-Whisper.txt">Whisper MIT license</a>.</li>
+      <li><strong>Inference library:</strong> <a href="https://github.com/huggingface/transformers.js">Hugging Face Transformers.js</a>, Apache-2.0. Read the <a href="/licenses/Apache-2.0.txt">Apache-2.0 license</a>.</li>
+      <li><strong>Audio inference runtime:</strong> <a href="https://github.com/microsoft/onnxruntime">ONNX Runtime Web</a>, MIT. Read the <a href="/licenses/MIT-ONNX-Runtime.txt">ONNX Runtime MIT license</a>.</li>
+    </ul>
+    <p class="note">Model and runtime downloads are separate from transcription: the selected audio is not uploaded by this feature. Recognition is English-only; review its editable words and timestamps.</p>
+    <nav><a href="/">Return to MadLadPad</a></nav>
+  </main>
+</body>
+</html>

@@ -45,12 +45,16 @@ try{
   assert.equal(index.status,307,'Workers Static Assets should canonicalize /index.html');
   assert.equal(index.headers.get('location'),'/');
 
-  for(const [path,type] of [['/app.js','javascript'],['/voice.js','javascript'],['/sw.js','javascript'],['/manifest.webmanifest','json'],['/voice-inference-worker.bundle.js','javascript'],['/ort-wasm-simd-threaded.mjs','javascript']]){
+  for(const [path,type] of [['/app.js','javascript'],['/voice.js','javascript'],['/sw.js','javascript'],['/manifest.webmanifest','json'],['/voice-inference-worker.bundle.js','javascript'],['/ort-wasm-simd-threaded.mjs','javascript'],['/credits.html','html'],['/licenses/Apache-2.0.txt','text'],['/licenses/MIT-OpenAI-Whisper.txt','text'],['/licenses/MIT-ONNX-Runtime.txt','text']]){
     const response=await fetch(`${origin}${path}`);
     assert.equal(response.status,200,`${path} should be served by the configured assets directory`);
     assert.match(response.headers.get('content-type')||'',new RegExp(type==='json'?'json':type));
     assert.ok((await response.arrayBuffer()).byteLength>100,`${path} should not be empty`);
   }
+  const credits=await fetch(`${origin}/credits.html`);
+  const creditsHtml=await credits.text();
+  assert.match(creditsHtml,/Xenova\/whisper-tiny\.en/,'model credits should identify the selected English Whisper model');
+  assert.match(creditsHtml,/ONNX Runtime Web/,'model credits should identify the inference runtime');
   const wasm=await fetch(`${origin}/ort-wasm-simd-threaded.wasm`);
   assert.equal(wasm.status,200,'on-device inference WASM should be served as a static asset');
   const wasmBytes=(await wasm.arrayBuffer()).byteLength;
