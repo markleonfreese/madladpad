@@ -1141,6 +1141,21 @@ try {
     assert.ok(box&&box.x>=0&&box.x+box.width<=390,`specialist destinations should fit the mobile viewport: ${JSON.stringify(box)}`);
   }
   await page.locator('#studio-more-tools > summary').click();
+  await openScreen('sounds');
+  const secondaryNavSummary=page.locator('#studio-more-tools > summary');
+  await secondaryNavSummary.focus();await page.keyboard.press('Enter');await page.keyboard.press('Tab');await page.keyboard.press('Enter');
+  await page.waitForFunction(()=>document.body.dataset.screen==='voice');
+  assert.equal(await page.locator('#studio-more-tools').evaluate(element=>element.open),false,'keyboard Voice Lab navigation should close the specialist menu');
+  assert.equal(await secondaryNavSummary.getAttribute('aria-current'),'page','the closed specialist menu should identify Voice Lab as the current page');
+  assert.match(await secondaryNavSummary.textContent(),/Voice Lab/,'the closed specialist menu should name the current Voice Lab destination');
+  assert.equal(await page.locator('#voice-lab').isVisible(),true,'keyboard Voice Lab navigation should show its workspace');
+  await secondaryNavSummary.focus();await page.keyboard.press('Enter');await page.keyboard.press('Tab');await page.keyboard.press('Tab');await page.keyboard.press('Enter');
+  await page.waitForFunction(()=>document.body.dataset.screen==='overdub');
+  assert.equal(await page.locator('#studio-more-tools').evaluate(element=>element.open),false,'keyboard Overdub navigation should close the specialist menu');
+  assert.equal(await secondaryNavSummary.getAttribute('aria-current'),'page','the closed specialist menu should identify Overdub as the current page');
+  assert.match(await secondaryNavSummary.textContent(),/Overdub/,'the closed specialist menu should name the current Overdub destination');
+  assert.equal(await page.locator('#overdub-lab').isVisible(),true,'keyboard Overdub navigation should show its workspace');
+  await openScreen('voice');
   await page.locator('[data-voice-jump="rap-title"]').click();
   const mobileRap=await page.locator('#rap-title').evaluate(title=>title.closest('.voice-card').getBoundingClientRect().width);
   assert.ok(mobileRap<mobileLayout.width,`mobile rap editor should stay within the single-column Voice Lab: ${mobileRap}px of ${mobileLayout.width}px`);
