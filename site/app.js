@@ -119,7 +119,9 @@ function startDemoBeat(){
   renderGrid();renderTrackGrid();renderControls();renderSteps();
   if(location.hash==='#beats')showStudioScreen();
   else location.hash='#beats';
-  notify(hasPattern?'Your beat is ready. Press Play to hear it.':'Starter beat ready. Press Play to hear it, then tap steps to edit.');
+  // The Beat Grid already explains that steps are editable. Keep this toast
+  // compact so it does not cover the Play control on short phone viewports.
+  notify(hasPattern?'Your beat is ready.':'Starter beat ready.');
 }
 
 function showVoiceTool(tool,{focus=false}={}) {
