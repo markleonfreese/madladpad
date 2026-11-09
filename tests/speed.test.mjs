@@ -13,7 +13,14 @@ test('legacy projects default speed to 1 and preserve pitch metadata', () => {
 });
 
 test('speed alone sets media playbackRate while pitch metadata is ignored', async () => {
-  const element = { duration: 10, currentTime:0, playbackRate:1, preservesPitch:false, pause(){}, play(){return Promise.resolve();} };
+  const listeners=new Map();
+  const element = {
+    duration:10,currentTime:0,playbackRate:1,preservesPitch:false,pauseCount:0,
+    addEventListener(type,listener){listeners.set(type,listener);},
+    removeEventListener(type,listener){if(listeners.get(type)===listener)listeners.delete(type);},
+    pause(){this.pauseCount++;},
+    play(){setTimeout(()=>{this.currentTime=.05;listeners.get('timeupdate')?.();},1);return Promise.resolve();}
+  };
   const sampler = Object.create(SamplerAudio.prototype);
   sampler.context = {currentTime:0};
   sampler.sources = new Map([[0,{file:{},element,gain:{gain:{value:1}}}]]);
@@ -22,6 +29,7 @@ test('speed alone sets media playbackRate while pitch metadata is ignored', asyn
   await new Promise(resolve=>setTimeout(resolve,15));
   assert.equal(element.playbackRate,1.5);
   assert.equal(element.preservesPitch,true);
+  assert.equal(element.pauseCount,2,'the selected end should pause the media element after playback starts');
 });
 
 test('decodable audio keeps low-latency polyphonic buffer playback at Speed only', () => {
