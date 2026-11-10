@@ -2,13 +2,13 @@
 
 Use this checklist to close the physical-device and human-review gates recorded in [GitHub Issue #2](https://github.com/markleonfreese/madladpad/issues/2). It supplements [`tests/BROWSER-SMOKE.md`](../tests/BROWSER-SMOKE.md), which is synthetic desktop Chromium evidence.
 
-## Current review target — 10 November 2026
+## Current published app — 11 November 2026
 
-- **Preview:** <https://fix-pack-video-codec-data-uri-madladpad.markleonfreese.workers.dev/>
-- **Application source:** current `main` is `305be4b82416994049aef8ec7d6b4faafa4b37ff`. This preview was built from PR #121 head `5b567c546c8918453a1ec9520f82d7415b6dcb3a`, whose tree matches merged `main`. The `Workers Builds` check and post-merge `Verify` run `42837683740` passed. Read-only checks found `/`, `/app.js`, `/storage.js`, `/sw.js`, `/voice.js`, and `/credits.html` returning 200; served `app.js`, `storage.js`, and `sw.js` matched the checked source. The service worker shell is v14.
-- This is a non-production review preview. Production remains on release `cb25639efaef5fbe95065f0d00764d286afc7987` (shell v4; `/voice.js` is 404); do not use it to accept current `main`. The earlier intermittent 503 was not reproduced by the latest browser-like GET checks.
+- **Test this URL:** <https://madladpad.pages.dev>. Cloudflare Pages deployment `21735203-c83c-4596-b625-b71672dd5e5c` is on production branch `main`, source `4745fb0aa2239c98f606441817afbed6da44cb45`. Cloudflare confirms it uses no Pages Functions. It serves the current static app, but it does not replace the older Workers URL or any custom domain.
+- **Hosted evidence on this release:** app, service worker, Voice Lab, inference worker, ONNX WASM and MIDI/rap workflows were fetched or exercised successfully. Hosted Chromium verified local Whisper transcription, melody/MIDI export and ABAB rap/TXT export; warm browser-offline transcription also succeeded after first loading the model. Details are in [Issue #2](https://github.com/markleonfreese/madladpad/issues/2#issuecomment-6773517307) and the exact-main suite note [here](https://github.com/markleonfreese/madladpad/issues/2#issuecomment-6773628704). This remains synthetic desktop evidence, not device, listening or screen-reader acceptance.
+- The older **Workers production URL** <https://madladpad.markleonfreese.workers.dev/> is unchanged and serves an older bundle (`/voice.js` returns 404). Do not use it to accept current `main`; use the Pages URL above.
 - First-use speech transcription downloads about 65 MB of model/runtime files from Hugging Face. Plan the first speech test on an appropriate connection; the selected audio remains local.
-- PR #84 is still a review-only preview branch and must be checked for exact source parity before use. After testing, record the preview URL and tested `main` SHA in Issue #2. Keep device, screen-reader, and listening results separate from hosted browser evidence.
+- PR #84 is a review-only preview branch, explicitly not for merging, and currently conflicts with `main`. Do not use it as the primary test target. After testing, record the Pages URL and tested `main` SHA in Issue #2. Keep physical-device, screen-reader and listening results separate from hosted browser evidence.
 
 ## Before testing
 
