@@ -6,3 +6,8 @@ export function pagesReleaseGuardError({ branch, sha, upstreamSha, dirty }) {
   }
   return null;
 }
+
+export function pagesDeployEnvironment(baseEnvironment, accountId) {
+  if (!/^[a-f\d]{32}$/i.test(accountId || '')) throw new Error('wrangler.jsonc must contain one valid 32-character account_id');
+  return { ...baseEnvironment, CLOUDFLARE_ACCOUNT_ID: accountId };
+}

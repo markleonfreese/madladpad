@@ -25,7 +25,7 @@ git merge --ff-only origin/main
 npm run deploy:pages
 ```
 
-The command refuses to publish from another branch, a dirty checkout, or a `main` commit that differs from `origin/main`. It builds the Voice Lab assets, then runs Wrangler Pages Direct Upload for project `madladpad`, branch `main`, with the Git SHA and commit subject attached. Wrangler needs the existing account's Pages write permission. It publishes the Pages app; it does not deploy the legacy Worker. Do not replace it with `npm run deploy`.
+The command refuses to publish from another branch, a dirty checkout, or a `main` commit that differs from `origin/main`. It builds the Voice Lab assets, then runs Wrangler Pages Direct Upload for project `madladpad`, branch `main`, with the Git SHA and commit subject attached. It selects the account ID pinned in `wrangler.jsonc`, so a multi-account login cannot choose another account. Wrangler needs Pages write permission for that account. It publishes the Pages app; it does not deploy the legacy Worker. Do not replace it with `npm run deploy`.
 
 After publishing, verify the new production deployment with `npx wrangler pages deployment list --project-name madladpad` and fetch the app URL plus key assets. Record deployment ID and source SHA in Issue #2. Keep Pages Functions absent and do not change domains, DNS or account configuration as part of this release.
 
