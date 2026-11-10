@@ -12,6 +12,8 @@ test('the primary studio surface exposes a simple playable progression',()=>{
   assert.match(html,/<a href="#export" data-studio-screen="export"[^>]*><span>03<\/span>\s*Video &amp; Export<\/a>|<a href="#export" data-studio-screen="export"[^>]*><span>03<\/span>\s*Video & Export<\/a>/);
   assert.match(html,/<summary>Experimental<\/summary>/);
   assert.match(html,/<section class="intro" id="studio-intro"[^>]*hidden>/);
+  assert.match(html,/<div class="section-label playground-heading"><span id="grid-section-label">PLAYGROUND · 12 PADS<\/span><div class="playground-actions"><button id="demo-button"[^>]*>Demo sounds<\/button><button type="button" id="pad-edit-mode"/);
+  assert.doesNotMatch(html,/<div class="pad-bottom">[\s\S]*?<button id="demo-button"/,'demo sounds should be in the first-screen Playground controls');
   assert.match(html,/<button[^>]*id="pad-edit-mode"[^>]*aria-pressed="false"/);
   assert.match(html,/<button[^>]*id="studio-play"/);
   assert.match(html,/<details class="control-disclosure" id="loop-settings">/);
