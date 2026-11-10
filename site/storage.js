@@ -167,10 +167,13 @@ export function blobAsDataUrl(blob) {
 }
 
 export function dataUrlAsBlob(data) {
-  if (typeof data !== 'string' || !/^data:(audio|video|image)\/[\w.+-]+(?:;[A-Za-z0-9._=-]+)*;base64,/.test(data)) throw new Error('Invalid imported media data');
-  const [header, encoded] = data.split(',', 2);
+  const match = typeof data === 'string'
+    ? /^data:((?:audio|video|image)\/[\w.+-]+)((?:;[A-Za-z0-9!#$&^_.+-]+=[A-Za-z0-9!#$&^_.+,:/-]+)*);base64,/i.exec(data)
+    : null;
+  if (!match) throw new Error('Invalid imported media data');
+  const encoded = data.slice(match[0].length);
   const binary = atob(encoded);
   const result = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) result[i] = binary.charCodeAt(i);
-  return new Blob([result], {type: header.slice(5).split(';')[0]});
+  return new Blob([result], {type: match[1].toLowerCase()});
 }
