@@ -1,6 +1,6 @@
 # Playground-first UX review and implementation (10 November 2026)
 
-Status: reviewable implementation; **not merged or deployed**. This is a response to the in-person UX discussion, not a new audio engine or storage format.
+Status: merged in PR #119 (main `3131b6442884e47e0a38aaec116c0ff3b96ed6ce`), with the video-pack import fix included in current main `305be4b82416994049aef8ec7d6b4faafa4b37ff`. Production has not been updated. The current non-production review preview and remaining physical-device checks are listed in [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md). This is a response to the in-person UX discussion, not a new audio engine or storage format.
 
 ## Design decision
 
@@ -31,8 +31,8 @@ The application is an instrument first and an editor second. Default entry is th
 - This change does not alter the saved project schema, bulk media import, offline cache, output file codecs, audio quantisation, voice models or the camera save transaction.
 - The duplicate action stores a second media slot using the existing IndexedDB representation. A future shared media-library index could deduplicate storage, but that requires an explicit migration and rollback plan.
 - Follow-active video composition is the newly preferred default for **new** capture sessions; fixed grid and directed shots remain selectable. Recording is not automatically started.
-- Pixel-level screenshots, screen-reader navigation, real-camera permissions, iOS Safari and touch gesture acceptance remain required before merge. The local execution sandbox cannot launch Chromium because Unix sockets are denied, so an automated browser pass has not been claimed.
-- Old browser-smoke assumptions that the inspector is always visible on Sounds must be updated for modal-on-demand editing. The browser suite must pass against a real headless browser in CI or an approved test environment before merge.
+- GitHub Verify `42837683740` passed unit tests, Chromium/browser and accessibility checks, WebKit mobile-adjacent smoke, and Workers runtime checks on current main. These synthetic checks do not verify physical Android/iOS, real camera permissions, touch gestures, screen readers, or human listening.
+- The browser regressions for the Playground-first editing flow are in the current suite. Continue using the physical-device checklist for those remaining acceptance gates; do not describe them as pre-merge work.
 
 ## Minimum release acceptance
 
