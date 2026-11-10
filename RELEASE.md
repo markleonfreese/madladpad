@@ -16,6 +16,19 @@ The Pages app and the older Workers app are separate releases. <https://madladpa
 
 For a new release, record the exact `main` commit and the Pages production deployment ID in [Issue #2](https://github.com/markleonfreese/madladpad/issues/2). Confirm the deployment's source commit and production branch in Cloudflare Pages, and confirm that Pages Functions remain absent unless separately reviewed and approved. Verify the public app URL and its app shell, service worker, Voice Lab assets, ONNX WASM and nested-route behavior. Compare the served artifacts with the built assets for the published commit.
 
+After the exact `main` commit has passed GitHub Verify and is accepted for release, publish it from a clean, up-to-date `main` checkout:
+
+```sh
+git fetch origin
+git switch main
+git merge --ff-only origin/main
+npm run deploy:pages
+```
+
+The command refuses to publish from another branch, a dirty checkout, or a `main` commit that differs from `origin/main`. It builds the Voice Lab assets, then runs Wrangler Pages Direct Upload for project `madladpad`, branch `main`, with the Git SHA and commit subject attached. Wrangler needs the existing account's Pages write permission. It publishes the Pages app; it does not deploy the legacy Worker. Do not replace it with `npm run deploy`.
+
+After publishing, verify the new production deployment with `npx wrangler pages deployment list --project-name madladpad` and fetch the app URL plus key assets. Record deployment ID and source SHA in Issue #2. Keep Pages Functions absent and do not change domains, DNS or account configuration as part of this release.
+
 The repository checks are:
 
 ```sh
