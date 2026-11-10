@@ -59,6 +59,24 @@ try {
     return url.startsWith(`${origin}/`) ? route.continue() : route.abort();
   });
   const page = await context.newPage();
+  const firstRunContext=await browser.newContext();
+  await firstRunContext.route('**/*',route=>route.request().url().startsWith(`${origin}/`)?route.continue():route.abort());
+  const firstRunPage=await firstRunContext.newPage();
+  await firstRunPage.goto(origin);
+  await wait(firstRunPage,'.pad-hit');
+  await firstRunPage.setViewportSize({width:320,height:720});
+  const firstRunDemo=await firstRunPage.evaluate(()=>{
+    const demo=document.querySelector('#demo-button').getBoundingClientRect();
+    const grid=document.querySelector('#pad-grid').getBoundingClientRect();
+    return {demoBottom:demo.bottom,gridTop:grid.top,viewportHeight:innerHeight,scrollWidth:document.documentElement.scrollWidth};
+  });
+  assert.ok(firstRunDemo.demoBottom<firstRunDemo.gridTop&&firstRunDemo.demoBottom<firstRunDemo.viewportHeight,'the demo sound action should be visible above the pad grid in the first 320×720 phone viewport');
+  assert.equal(firstRunDemo.scrollWidth,320,'the first-screen demo action should not cause horizontal overflow');
+  await firstRunPage.locator('#demo-button').click();
+  assert.equal(await firstRunPage.locator('#demo-button').getAttribute('aria-pressed'),'true','the first-screen demo action should enable synthesized sounds');
+  await firstRunPage.locator('#demo-button').click();
+  assert.equal(await firstRunPage.locator('#demo-button').getAttribute('aria-pressed'),'false','the first-screen demo action should remain reversible');
+  await firstRunContext.close();
   await page.addInitScript(() => {
     const NativeAudioContext=window.AudioContext;
     window.AudioContext=class extends NativeAudioContext {
@@ -335,7 +353,8 @@ try {
     await page.locator('#layout-select').selectOption(value);
     assert.equal(await page.locator('.pad:not([hidden])').count(), count);
   }
-  await page.locator('#demo-button').click();
+  if(await page.locator('#demo-button').getAttribute('aria-pressed')==='false')await page.locator('#demo-button').evaluate(button=>button.click());
+  assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'true','demo sounds should remain switchable from the first-screen Playground controls');
   await page.locator('.pad-hit').first().click();
   await page.waitForTimeout(250);
   assert.deepEqual(errors, [], 'demo pad should not produce a page error');
