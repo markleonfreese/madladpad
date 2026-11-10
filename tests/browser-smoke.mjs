@@ -164,6 +164,7 @@ try {
   await page.waitForFunction(()=>!document.querySelector('#sample-editor-dialog').open&&document.querySelector('#sample-inspector').parentElement.id==='studio-workspace');
   assert.equal(await mobileEditButton.evaluate(element=>document.activeElement===element),true,'Escape should close the editor and restore focus to its trigger');
   await page.setViewportSize({width:320,height:720});
+  if(!await page.locator('#loop-settings').evaluate(element=>element.open))await page.locator('#loop-settings > summary').click();
   await page.locator('#layout-select').selectOption('3x4');
   await page.locator('#loop-settings > summary').click();
   await page.setViewportSize({width:1280,height:900});
@@ -183,33 +184,46 @@ try {
   await page.locator('#loop-settings > summary').click();
   assert.match(await page.locator('#sample-info').textContent(),/Demo synth ready to play/,'demo pads should explain why sample editing controls are not yet available');
   await page.locator('#sample-advanced > summary').click();
-  assert.equal(await page.locator('#volume').isVisible(),true,'demo pads should keep their volume control in Sounds');
+  assert.equal(await page.locator('#volume').isVisible(),true,'demo pads should keep their volume control in Playground');
   assert.equal(await page.locator('#speed').isVisible(),false,'media-only controls should stay hidden for demo pads');
   await page.locator('#demo-button').click();
   assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'false','demo sounds should remain switchable from the sample workspace');
   assert.equal(await page.locator('#volume').isVisible(),false,'empty pads should keep advanced controls hidden when demo is off');
   await page.setViewportSize({width:390,height:844});
+  if(!await page.locator('#loop-settings').evaluate(element=>element.open))await page.locator('#loop-settings > summary').click();
   await page.locator('#layout-select').selectOption('4x4');
   await page.locator('#pad-grid .pad-hit').nth(3).click();
   assert.equal(await page.locator('#pad-source-dialog').evaluate(dialog=>dialog.open),true,'a mobile center tap on an empty 4x4 pad should open its source choices');
   await page.locator('#pad-source-cancel').click();
+  if(!await page.locator('#loop-settings').evaluate(element=>element.open))await page.locator('#loop-settings > summary').click();
   await page.locator('#layout-select').selectOption('3x4');
+  if(await page.locator('#loop-settings').evaluate(element=>element.open))await page.locator('#loop-settings > summary').click();
   assert.equal(await page.locator('#quick-import').isVisible(),true,'quick import should be available from the first-run actions');
   assert.equal(await page.locator('#quick-record').isVisible(),true,'quick recording should be available from the first-run actions');
   const mobileHome=await page.evaluate(()=>{
     const record=document.querySelector('#quick-record').getBoundingClientRect();
     const demo=document.querySelector('#quick-demo').getBoundingClientRect();
     const pads=document.querySelector('#pad-grid .pad:not([hidden])').getBoundingClientRect();
-    return {recordTop:record.top,demoTop:demo.top,padsBottom:pads.bottom,viewport:innerHeight,introHeight:document.querySelector('#studio-intro').getBoundingClientRect().height};
+    return {recordTop:record.top,demoTop:demo.top,padsBottom:pads.bottom,viewport:innerHeight,introHeight:document.querySelector('#studio-intro').getBoundingClientRect().height,columns:getComputedStyle(document.querySelector('#pad-grid')).gridTemplateColumns.split(' ').length};
   });
   assert.ok(mobileHome.recordTop<mobileHome.demoTop,'recording should be the primary first-run action on phones');
   assert.ok(mobileHome.introHeight<140,`mobile copy should leave more room for the sampler: ${JSON.stringify(mobileHome)}`);
   assert.ok(mobileHome.padsBottom<mobileHome.viewport,`the first pad row should be visible without scrolling on a phone: ${JSON.stringify(mobileHome)}`);
+  assert.equal(mobileHome.columns,3,'the default phone pad layout should use three finger-sized columns');
+  await page.locator('#loop-settings > summary').click();
+  const settingsPopover=await page.locator('.transport-settings').evaluate(popover=>{const rect=popover.getBoundingClientRect(),bar=document.querySelector('.transport-panel').getBoundingClientRect();return {visible:rect.width>0,top:rect.top,bottom:rect.bottom,barTop:bar.top,width:rect.width,viewport:innerWidth};});
+  assert.equal(settingsPopover.visible,true,'the bottom bar Settings control should expose layout and tempo options');
+  assert.ok(settingsPopover.bottom<=settingsPopover.barTop,`transport settings should open above the fixed bar: ${JSON.stringify(settingsPopover)}`);
+  assert.ok(settingsPopover.width<=settingsPopover.viewport,`transport settings should fit a narrow phone: ${JSON.stringify(settingsPopover)}`);
+  await page.locator('#studio-nav').hover();
+  await page.mouse.wheel(0,80);
+  assert.equal(await page.locator('#loop-settings').evaluate(element=>element.open),false,'scrolling away from the settings popover should dismiss it');
   await page.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));
   await page.waitForTimeout(100);
-  const stickyTransport=await page.locator('#studio-play').evaluate(button=>({top:button.getBoundingClientRect().top,visible:button.getBoundingClientRect().bottom>0&&button.getBoundingClientRect().top<innerHeight,position:getComputedStyle(button.closest('.transport-panel')).position}));
-  assert.equal(stickyTransport.position,'sticky','phone playback controls should remain reachable while scrolling');
+  const stickyTransport=await page.locator('#studio-play').evaluate(button=>({top:button.getBoundingClientRect().top,bottom:button.getBoundingClientRect().bottom,visible:button.getBoundingClientRect().bottom>0&&button.getBoundingClientRect().top<innerHeight,position:getComputedStyle(button.closest('.transport-panel')).position}));
+  assert.equal(stickyTransport.position,'fixed','phone playback controls should remain reachable in the bottom bar');
   assert.equal(stickyTransport.visible,true,`the main playback control should remain visible on a long phone page: ${JSON.stringify(stickyTransport)}`);
+  assert.ok(stickyTransport.bottom<=844&&stickyTransport.bottom>694,`the playback bar should sit above the phone safe area: ${JSON.stringify(stickyTransport)}`);
   await page.evaluate(()=>window.scrollTo(0,0));
   const openScreen=async screen=>{
     if(screen==='voice'||screen==='overdub'){
@@ -224,7 +238,6 @@ try {
         if(!await details.evaluate(element=>element.open))await details.locator('summary').click();
       }
     }
-    if(screen==='sounds'&&!await page.locator('#loop-settings').evaluate(element=>element.open))await page.locator('#loop-settings > summary').click();
   };
   await openScreen('voice');
   assert.equal(await page.locator('#voice-speech-tool').isVisible(),true,'Voice Lab should initially focus Speech & words');
@@ -299,8 +312,9 @@ try {
     for(const screen of ['sounds','beats','voice','overdub','export']){
       await openScreen(screen);
       if(screen==='beats'){
-        const beatOrder=await page.evaluate(()=>({controls:document.querySelector('.transport-panel').getBoundingClientRect().top,sequencer:document.querySelector('#sequencer').getBoundingClientRect().top,pads:document.querySelector('.performance-area').getBoundingClientRect().top}));
-        assert.ok(beatOrder.controls<beatOrder.sequencer&&beatOrder.sequencer<beatOrder.pads,`Beat Grid should show its sequencer before the pad grid at ${width}px: ${JSON.stringify(beatOrder)}`);
+        const beatOrder=await page.evaluate(()=>({transport:getComputedStyle(document.querySelector('.transport-panel')).position,sequencer:document.querySelector('#sequencer').getBoundingClientRect().top,pads:document.querySelector('.performance-area').getBoundingClientRect().top}));
+        assert.equal(beatOrder.transport,'fixed',`the phone transport should stay in its bottom bar at ${width}px`);
+        assert.ok(beatOrder.sequencer<beatOrder.pads,`Sequence should show its step grid before the performance pads at ${width}px: ${JSON.stringify(beatOrder)}`);
       }
       await page.waitForFunction(()=>{const toast=document.querySelector('#toast');return !toast.classList.contains('show')||Number(getComputedStyle(toast).opacity)>=.99;});
       const stageAudit=await page.evaluate(async()=>axe.run(document));
@@ -311,6 +325,7 @@ try {
   await page.setViewportSize(desktopViewport);
   await openScreen('sounds');
   checkpoint('all five studio stages pass mobile accessibility at 320 px and 390 px');
+  await page.locator('#loop-settings > summary').click();
   for (const [value, count] of [['2x2',4],['4x4',16],['3x4',12]]) {
     await page.locator('#layout-select').selectOption(value);
     assert.equal(await page.locator('.pad:not([hidden])').count(), count);
@@ -349,11 +364,13 @@ try {
   await page.waitForFunction(()=>document.body.dataset.screen==='sounds');
   assert.equal(await page.locator('.pad[data-id="2"]').evaluate(pad=>pad.classList.contains('selected')),true,'Beat Grid Edit should select the correct pad in Sounds');
   await openScreen('beats');
+  await page.locator('#loop-settings > summary').click();
   for (const [layout,count] of [['2x2',4],['4x4',16],['3x4',12]]) {
     await page.locator('#layout-select').selectOption(layout);
     assert.equal(await page.locator('#track-grid .track-row').count(),count,`all-tracks view should refresh to ${count} lanes for ${layout}`);
     assert.equal(await page.locator('#track-grid .track-row .track-steps .step').count(),count*16,`every ${layout} lane should retain all 16 steps`);
   }
+  await page.locator('#loop-settings > summary').click();
   await page.locator('#grid-division').selectOption('1/4');
   assert.equal(await page.locator('#steps .step').count(),4,'quarter grid should show four cells');
   assert.deepEqual(await page.locator('#steps .step').evaluateAll(buttons=>buttons.map(button=>Number(button.dataset.step))),[0,4,8,12]);
@@ -1234,7 +1251,9 @@ try {
   const mobileTabs=await page.locator('#studio-nav > a').evaluateAll(links=>links.map(link=>({left:link.getBoundingClientRect().left,right:link.getBoundingClientRect().right,visible:link.getBoundingClientRect().width>0})));
   assert.equal(mobileTabs.length,3,'the three core studio destinations should be primary');
   assert.ok(mobileTabs.every(tab=>tab.visible&&tab.left>=0&&tab.right<=390),`core destinations should remain in view without horizontal scrolling: ${JSON.stringify(mobileTabs)}`);
+  assert.deepEqual(await page.locator('#studio-nav > a').evaluateAll(links=>links.map(link=>link.textContent.replace(/\s+/g,' ').trim())),['01 Playground','02 Sequence','03 Video & Export'],'the primary navigation should name the three core creative tasks');
   assert.match(await page.locator('#studio-more-tools > summary').textContent(),/Voice Lab/,'the current specialist destination should remain identified');
+  assert.match(await page.locator('#studio-more-tools > summary').textContent(),/Experimental/,'Voice Lab and Overdub should sit under Experimental');
   await page.locator('#studio-more-tools > summary').click();
   for(const link of await page.locator('.studio-more-links a').all()){
     const box=await link.boundingBox();
@@ -1274,6 +1293,7 @@ try {
   assert.equal(rapFlowLayout.steps,16,'the mobile flow grid should retain all 16 steps');
   assert.ok(rapFlowLayout.scrollWidth<=rapFlowLayout.width&&rapFlowLayout.pageWidth<=rapFlowLayout.viewportWidth,`rap flow should fit without horizontal overflow: ${JSON.stringify(rapFlowLayout)}`);
   await openScreen('sounds');
+  if(await page.locator('#loop-settings').evaluate(element=>element.open))await page.locator('#loop-settings > summary').click();
   await page.locator('.pad-cell:has(.pad:not([hidden])) .edit-pad').first().scrollIntoViewIfNeeded();
   const mobileEdit=await page.locator('.pad-cell:has(.pad:not([hidden])) .edit-pad').first().boundingBox();
   assert.ok(mobileEdit.width>=44&&mobileEdit.height>=44,`mobile Edit pad hit area should be at least 44 × 44px: ${JSON.stringify(mobileEdit)}`);

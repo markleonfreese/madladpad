@@ -72,10 +72,11 @@ let activeVoiceTool='transcript-title';
 function showStudioScreen() {
   const requested = location.hash.slice(1);
   const screen = STUDIO_SCREENS.has(requested) ? requested : 'sounds';
+  $('loop-settings').open = false;
   if (screen !== 'voice') voiceLab?.stopTuner?.('Voice Lab closed. Microphone is off.');
   if (screen !== 'sounds' && $('sample-editor-dialog').open) $('sample-editor-dialog').close();
   document.body.dataset.screen = screen;
-  // Keep the sequencer first in reading and tab order on Beat Grid/Overdub.
+  // Keep the sequencer first in reading and tab order on Sequence/Overdub.
   const workspace=$('studio-workspace'),sequencer=$('sequencer');
   if(screen==='beats'||screen==='overdub')workspace.before(sequencer);
   else workspace.after(sequencer);
@@ -85,10 +86,10 @@ function showStudioScreen() {
   }
   const moreTools=$('studio-more-tools'),moreSummary=moreTools.querySelector('summary');
   if(screen==='voice'||screen==='overdub'){
-    moreSummary.textContent=`More tools · ${screen==='voice'?'Voice Lab':'Overdub'}`;
+    moreSummary.textContent=`Experimental · ${screen==='voice'?'Voice Lab':'Overdub'}`;
     moreSummary.setAttribute('aria-current','page');
   }else{
-    moreSummary.textContent='More tools';
+    moreSummary.textContent='Experimental';
     moreSummary.removeAttribute('aria-current');
   }
   moreTools.open=false;
@@ -96,7 +97,7 @@ function showStudioScreen() {
   $('studio-workspace').hidden = screen!=='sounds' && screen!=='beats';
   $('studio-workspace').classList.toggle('wide-grid',screen==='beats');
   $('sample-inspector').hidden = screen!=='sounds';
-  $('grid-section-label').textContent = screen==='beats' ? '02 / PERFORMANCE PADS' : '01 / SOUND PADS';
+  $('grid-section-label').textContent = screen==='beats' ? '02 / SEQUENCE PADS' : '01 / PLAYGROUND';
   $('sequencer').hidden = screen!=='beats' && screen!=='overdub';
   $('video-director-details').hidden=screen!=='beats';
   $('video-director').hidden=screen!=='beats';
@@ -1414,6 +1415,11 @@ function configureGoogleSources(){
 function bindControls() {
   configureGoogleSources();
   window.addEventListener('hashchange',showStudioScreen);
+  document.addEventListener('pointerdown',event=>{if($('loop-settings').open&&!$('loop-settings').contains(event.target))$('loop-settings').open=false;});
+  window.addEventListener('scroll',()=>{
+    const settings=$('loop-settings'),fields=settings.querySelector('.transport-settings');
+    if(settings.open&&!fields.contains(document.activeElement))settings.open=false;
+  },{passive:true});
   $('close-sample-editor').addEventListener('click',()=>$('sample-editor-dialog').close());
   $('sample-editor-dialog').addEventListener('close',restoreSampleInspector);
   $('sample-editor-dialog').addEventListener('click',event=>{
