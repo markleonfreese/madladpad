@@ -96,14 +96,16 @@ try {
   await page.addInitScript(() => {
     window.syntheticVoiceWorkerError = false;
     window.syntheticVoiceWorkerDelay = 20;
+    window.syntheticVoiceWords = null;
     const NativeWorker = window.Worker;
     window.Worker = class extends NativeWorker {
       constructor(url, options) {
         if (String(url).includes('voice-inference-worker')) {
           const delay = window.syntheticVoiceWorkerDelay;
+          const words = window.syntheticVoiceWords || [{text:'Hello',start:0,end:.25},{text:'from',start:.3,end:.55},{text:'MadLadPad',start:.6,end:1}];
           const source = window.syntheticVoiceWorkerError
             ? `self.onmessage=event=>{if(event.data.type==='transcribe')setTimeout(()=>self.postMessage({type:'error',message:'Failed to fetch'}),${delay})};`
-            : `self.onmessage=event=>{if(event.data.type==='transcribe')setTimeout(()=>self.postMessage({type:'result',words:[{text:'Hello',start:0,end:.25},{text:'from',start:.3,end:.55},{text:'MadLadPad',start:.6,end:1}]}),${delay})};`;
+            : `self.onmessage=event=>{if(event.data.type==='transcribe')setTimeout(()=>self.postMessage({type:'result',words:${JSON.stringify(words)}}),${delay})};`;
           super(URL.createObjectURL(new Blob([source], {type:'text/javascript'})));
         } else super(url, options);
       }
@@ -683,6 +685,12 @@ try {
   assert.equal(await page.locator(`.track-row[data-pad="${mappedPadIds[1]}"] [data-step="2"]`).getAttribute('aria-pressed'),'true','second phrase word should overlap the first word at the saved crossfade timing');
   assert.match(await page.locator('#toast').textContent(),/word samples mapped to pads and the 16-step pattern/);
   await openScreen('voice');
+  await page.evaluate(()=>{window.syntheticVoiceWords=[{text:'Hello',start:0,end:.25},{text:'from',start:.3,end:.55},{text:'MadLadPad',start:.6,end:1},{text:'outside',start:1.2,end:1.8}];});
+  await page.locator('#voice-transcribe').click();
+  await page.waitForFunction(()=>document.querySelector('#voice-status').textContent.includes('1 returned word had unusable or out-of-clip timing'));
+  assert.equal(await page.locator('#voice-word-list .voice-word').count(),3,'words outside the clip should not be included in the draft');
+  assert.match(await page.locator('#voice-status').textContent(),/review the clip and add any missing words manually/i,'the transcript should disclose omitted words and explain manual recovery');
+  await page.evaluate(()=>{window.syntheticVoiceWords=null;});
   await page.locator('[data-voice-jump="melody-title"]').click();
   const tunerBrowserResult=await page.evaluate(async()=>{
     const {detectPitch}=await import('/tuner.js');
