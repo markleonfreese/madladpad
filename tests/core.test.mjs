@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withModelReferrerPolicy } from '../site/voice-model-fetch.js';
-import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, midiFrequency, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, midiFrequency, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes } from '../site/core.js';
 
 test('Whisper model fetch omits the app referrer only for Hugging Face assets', async () => {
   const calls = [];
@@ -13,6 +13,22 @@ test('Whisper model fetch omits the app referrer only for Hugging Face assets', 
   await fetchModel('https://example.test/asset.json', { cache: 'no-store' });
   assert.deepEqual(calls[0].init, { cache: 'no-store', referrerPolicy: 'no-referrer' });
   assert.deepEqual(calls[1].init, { cache: 'no-store' });
+});
+
+test('transcript word timestamps stay inside the source clip and invalid words are discarded', () => {
+  const words = boundTranscriptWordTimes([
+    {text:'start',start:-.2,end:.4},
+    {text:'middle',start:3.6,end:6.86},
+    {text:'outside',start:5,end:7},
+    {text:'zero span',start:1,end:1},
+    {text:'bad time',start:NaN,end:2},
+    {text:'   ',start:0,end:.5}
+  ], 4.12);
+  assert.deepEqual(words, [
+    {text:'start',start:0,end:.4},
+    {text:'middle',start:3.6,end:4.12}
+  ]);
+  assert.deepEqual(boundTranscriptWordTimes([{text:'word',start:0,end:1}], 0), []);
 });
 
 test('initial layout has 12 visible pads and 16 backing slots', () => {

@@ -108,6 +108,18 @@ export function normaliseRegion(start, end, duration, changed = 'start') {
   return {start:a,end:b};
 }
 
+export function boundTranscriptWordTimes(words, duration) {
+  const limit = Number(duration);
+  if (!Array.isArray(words) || !Number.isFinite(limit) || limit <= 0) return [];
+  return words.map(word => {
+    const start = Number(word?.start), end = Number(word?.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+    const boundedStart = clamp(start, 0, limit), boundedEnd = clamp(end, 0, limit);
+    if (!String(word?.text || '').trim() || boundedEnd <= boundedStart) return null;
+    return { ...word, start: boundedStart, end: boundedEnd };
+  }).filter(Boolean);
+}
+
 export class CaptureSession {
   constructor() { this.version=0; this.phase='idle'; this.target=null; this.take=null; }
   begin(target) {
