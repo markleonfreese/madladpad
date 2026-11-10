@@ -144,6 +144,25 @@ try {
     return edit.top>=pad.bottom;
   });
   assert.equal(editOutsidePad390,true,'the 44px Edit target must not overlap the playable pad at 390px either');
+  assert.equal(await page.locator('#pad-grid .pad-title').first().evaluate(element=>getComputedStyle(element).userSelect),'none','holding a pad should not select its label text');
+  assert.notEqual(await page.locator('#pad-name').evaluate(element=>getComputedStyle(element).userSelect),'none','sample names should remain selectable while editing');
+  const mobileEditButton=page.locator('#pad-grid .pad-cell').first().locator('.edit-pad');
+  await mobileEditButton.click();
+  assert.equal(await page.locator('#sample-editor-dialog').evaluate(dialog=>dialog.open),true,'Edit should open the selected pad editor without sending a phone user down the page');
+  assert.equal(await page.locator('#sample-inspector').isVisible(),true,'the existing sample editor should be visible inside the modal');
+  const mobileEditorBounds=await page.locator('#sample-editor-dialog').evaluate(dialog=>{const rect=dialog.getBoundingClientRect();return {width:Math.round(rect.width),height:Math.round(rect.height),parent:document.querySelector('#sample-inspector').parentElement.id};});
+  assert.equal(mobileEditorBounds.width,390,'the sample editor should use the phone viewport width');
+  assert.equal(mobileEditorBounds.height,844,'the sample editor should use the phone viewport height');
+  assert.equal(mobileEditorBounds.parent,'sample-editor-dialog','the existing inspector should move into the modal without duplicating its controls');
+  await page.locator('#close-sample-editor').click();
+  assert.equal(await page.locator('#sample-editor-dialog').evaluate(dialog=>dialog.open),false,'Done should close the mobile sample editor');
+  await page.waitForFunction(()=>document.querySelector('#sample-inspector').parentElement.id==='studio-workspace');
+  assert.equal(await page.locator('#sample-inspector').evaluate(element=>element.parentElement.id),'studio-workspace','closing the modal should restore the desktop inspector in place');
+  assert.equal(await mobileEditButton.evaluate(element=>document.activeElement===element),true,'closing the modal should return focus to the Edit button');
+  await mobileEditButton.click();
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(()=>!document.querySelector('#sample-editor-dialog').open&&document.querySelector('#sample-inspector').parentElement.id==='studio-workspace');
+  assert.equal(await mobileEditButton.evaluate(element=>document.activeElement===element),true,'Escape should close the editor and restore focus to its trigger');
   await page.setViewportSize({width:320,height:720});
   await page.locator('#layout-select').selectOption('3x4');
   await page.locator('#loop-settings > summary').click();
@@ -214,6 +233,10 @@ try {
   }
   await page.setViewportSize({width:1280,height:900});
   await openScreen('sounds');
+  await page.locator('#pad-grid .pad-cell').first().hover();
+  await page.locator('#pad-grid .pad-cell').first().locator('.edit-pad').click();
+  assert.equal(await page.locator('#sample-editor-dialog').evaluate(dialog=>dialog.open),false,'desktop editing should keep using the visible inspector rather than opening a phone modal');
+  assert.equal(await page.locator('#sample-inspector').evaluate(element=>element.parentElement.id),'studio-workspace','desktop editing should leave the inspector in the side panel');
   assert.equal(await page.locator('#source-advanced').evaluate(element=>element.open),false,'optional sources should stay behind a disclosure');
   await page.locator('#source-advanced > summary').click();
   const flowMusicLink=page.getByRole('link',{name:'Google Flow Music'});

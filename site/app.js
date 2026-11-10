@@ -9,6 +9,8 @@ import { processInputFiles } from './file-input.js';
 const $ = id => document.getElementById(id);
 let project = makeProject();
 let selected = 0;
+let sampleInspectorPlaceholder = null;
+let sampleEditorTrigger = null;
 let trackGridVisible = false;
 let audio;
 let voiceLab = null;
@@ -71,6 +73,7 @@ function showStudioScreen() {
   const requested = location.hash.slice(1);
   const screen = STUDIO_SCREENS.has(requested) ? requested : 'sounds';
   if (screen !== 'voice') voiceLab?.stopTuner?.('Voice Lab closed. Microphone is off.');
+  if (screen !== 'sounds' && $('sample-editor-dialog').open) $('sample-editor-dialog').close();
   document.body.dataset.screen = screen;
   // Keep the sequencer first in reading and tab order on Beat Grid/Overdub.
   const workspace=$('studio-workspace'),sequencer=$('sequencer');
@@ -266,7 +269,7 @@ function buildGrid() {
       if (!mediaFiles.has(id) && !audio.demoEnabled) { sourcePad=id; $('pad-source-title').textContent=`Add a sample to pad ${id+1}`; $('pad-source-dialog').showModal(); }
       else playPad(id);
     });
-    edit.addEventListener('click', () => {selectPad(id);if(location.hash!=='#sounds')location.hash='#sounds';});
+    edit.addEventListener('click', () => openSampleEditor(id, edit));
     card.addEventListener('dragover', event => { event.preventDefault(); });
     card.addEventListener('drop', async event => {
       event.preventDefault(); selectPad(id);
@@ -283,6 +286,40 @@ function buildGrid() {
     cell.append(card,edit);
     grid.append(cell);
   }
+}
+
+function openSampleEditor(id, trigger) {
+  selectPad(id);
+  const dialog = $('sample-editor-dialog');
+  const inspector = $('sample-inspector');
+  if (!window.matchMedia('(max-width: 740px)').matches) {
+    if (location.hash !== '#sounds') {
+      location.hash = '#sounds';
+      showStudioScreen();
+    }
+    return;
+  }
+  if (dialog.open) return;
+
+  sampleEditorTrigger = trigger;
+  sampleInspectorPlaceholder = document.createComment('sample-inspector-location');
+  inspector.before(sampleInspectorPlaceholder);
+  inspector.hidden = false;
+  dialog.append(inspector);
+  dialog.showModal();
+  $('close-sample-editor').focus();
+}
+
+function restoreSampleInspector() {
+  const inspector = $('sample-inspector');
+  if (sampleInspectorPlaceholder?.parentNode) {
+    sampleInspectorPlaceholder.replaceWith(inspector);
+    sampleInspectorPlaceholder = null;
+  }
+  inspector.hidden = document.body.dataset.screen !== 'sounds';
+  const trigger = sampleEditorTrigger;
+  sampleEditorTrigger = null;
+  if (trigger?.isConnected && !trigger.closest('[hidden]')) trigger.focus({preventScroll:true});
 }
 
 function renderPad(id) {
@@ -1377,6 +1414,11 @@ function configureGoogleSources(){
 function bindControls() {
   configureGoogleSources();
   window.addEventListener('hashchange',showStudioScreen);
+  $('close-sample-editor').addEventListener('click',()=>$('sample-editor-dialog').close());
+  $('sample-editor-dialog').addEventListener('close',restoreSampleInspector);
+  $('sample-editor-dialog').addEventListener('click',event=>{
+    if(event.target===$('sample-editor-dialog'))$('sample-editor-dialog').close();
+  });
   showStudioScreen();
   showVoiceTool(activeVoiceTool);
   for(const button of document.querySelectorAll('[data-voice-jump]')){
