@@ -81,6 +81,20 @@ try{
 
   const canPlayTestVideo=await page.evaluate(()=>Boolean(document.createElement('video').canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"')));
   if(canPlayTestVideo){
+    const editPad=page.locator('.pad-cell .edit-pad').nth(1);
+    const sampleEditor=page.locator('#sample-editor-dialog');
+    const openSampleEditor=async()=>{
+      if(!await sampleEditor.evaluate(dialog=>dialog.open)){
+        await editPad.click();
+        await page.waitForFunction(()=>document.querySelector('#sample-editor-dialog').open);
+      }
+    };
+    const closeSampleEditor=async()=>{
+      if(await sampleEditor.evaluate(dialog=>dialog.open)){
+        await page.locator('#close-sample-editor').click();
+        await page.waitForFunction(()=>!document.querySelector('#sample-editor-dialog').open&&document.querySelector('#sample-inspector').parentElement.id==='studio-workspace');
+      }
+    };
     const videoFixture=await readFile(resolve('tests/fixtures/webkit-stop-boundary.mp4'));
     assert.ok(videoFixture.length>100,'the deterministic synthetic video fixture should be present');
     console.log(`WebKit synthetic video fixture: video/mp4 (${videoFixture.length} bytes).`);
@@ -105,7 +119,9 @@ try{
     if(!await page.locator('#sample-advanced').evaluate(element=>element.open))await page.locator('#sample-advanced > summary').click();
     const playback=[];
     for(const speed of [1,2]){
+      await openSampleEditor();
       await page.locator('#speed').evaluate((element,value)=>{element.value=String(value);element.dispatchEvent(new Event('input',{bubbles:true}));},speed);
+      await closeSampleEditor();
       await video.evaluate(element=>{element.pause();element.currentTime=0;});
       await page.locator('.pad-hit').nth(1).click();
       await page.waitForFunction(()=>{const element=document.querySelectorAll('.pad video')[1];return element?.paused&&element.currentTime>.1;},null,{timeout:7000});
@@ -115,6 +131,7 @@ try{
     }
     console.log(`WebKit media stop boundary passed: ${JSON.stringify(playback)}.`);
 
+    await openSampleEditor();
     await page.waitForFunction(()=>!document.querySelector('#region-start').disabled,'',{timeout:10000});
     await page.locator('#region-start').fill('0.40');
     await page.locator('#region-end').fill('0.45');
@@ -143,7 +160,9 @@ try{
     });
     const trimmedPlayback=[];
     for(const speed of [1,2]){
+      await openSampleEditor();
       await page.locator('#speed').evaluate((element,value)=>{element.value=String(value);element.dispatchEvent(new Event('input',{bubbles:true}));},speed);
+      await closeSampleEditor();
       await video.evaluate(element=>{
         element.pause();element.currentTime=0;element.dataset.smokeDidPlay='false';element.dataset.smokeDidPause='false';
         element.dataset.smokePlayingAt='';element.dataset.smokePausedAt='';element.dataset.smokePlayingPosition='';

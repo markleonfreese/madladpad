@@ -180,3 +180,11 @@ body[data-screen="beats"] .pad-bg{font-size:18px}
 }
 .pad-cell{position:relative;min-width:0}.pad-cell>.pad{width:100%}.pad-cell:hover>.edit-pad,.pad.selected+.edit-pad,.edit-pad:focus-visible{visibility:visible}
 @media(max-width:740px){.pad-cell{display:grid;grid-template-rows:auto 44px;gap:0}.pad-cell>.edit-pad{position:static;right:auto;bottom:auto;justify-self:end;width:44px;height:44px;min-width:44px;min-height:44px;padding:0}}
+
+.pad-grid,.pad-grid *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.sample-editor-dialog{box-sizing:border-box;position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;max-width:none;max-height:none;margin:0;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);overflow-y:auto;border:0;color:var(--ink);background:#151c17}
+.sample-editor-dialog::backdrop{background:#080d0adc;backdrop-filter:blur(3px)}
+.sample-editor-dialog-bar{position:sticky;z-index:5;top:0;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:64px;padding:8px 17px;border-bottom:1px solid var(--line);background:#151c17}
+.sample-editor-dialog-bar h2{margin:0;color:var(--acid);font:500 11px var(--mono);letter-spacing:.09em}
+.sample-editor-dialog-bar button{min-width:64px;min-height:44px}
+.sample-editor-dialog .inspector{min-height:calc(100vh - 64px);min-height:calc(100dvh - 64px);padding:17px;border:0;border-radius:0}
