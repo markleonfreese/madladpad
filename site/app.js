@@ -1,4 +1,4 @@
-import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, directedPads, makeProject, normaliseProject, normaliseRegion, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, AsyncActivity, suggestActiveRegion, captureRegionStatus, isPadAudible, captureStepPosition, stepTriggerTime, nextBarTime, videoVisualDurationMs } from './core.js';
+import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, directedPads, makeProject, normaliseProject, normaliseRegion, copyPadSound, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, AsyncActivity, suggestActiveRegion, captureRegionStatus, isPadAudible, captureStepPosition, stepTriggerTime, nextBarTime, videoVisualDurationMs } from './core.js';
 import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, collectVoiceMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
 import { isGooglePickerConfigured, pickFromDrive, pickFromPhotos } from './google.js';
@@ -9,7 +9,6 @@ import { processInputFiles } from './file-input.js';
 const $ = id => document.getElementById(id);
 let project = makeProject();
 let selected = 0;
-let sampleInspectorPlaceholder = null;
 let sampleEditorTrigger = null;
 let trackGridVisible = false;
 let audio;
@@ -60,6 +59,9 @@ const activeUntil = new Map();
 const visualUntil = new Map();
 const keys = new Set();
 const STUDIO_SCREENS = new Set(['sounds','beats','voice','overdub','export']);
+// Open the compact first-use guide on demand, not over the performance surface.
+let introOpen = false;
+let padEditMode = false;
 const lastTakes = { video:null, audio:null };
 const MAX_WAV_TAKE_SECONDS = 30;
 const MAX_WAV_SOURCE_BYTES = 16 * 1024 * 1024;
@@ -72,8 +74,8 @@ let activeVoiceTool='transcript-title';
 function showStudioScreen() {
   const requested = location.hash.slice(1);
   const screen = STUDIO_SCREENS.has(requested) ? requested : 'sounds';
+  if(screen!=='sounds' && $('sample-editor-dialog')?.open)closeSampleEditor();
   if (screen !== 'voice') voiceLab?.stopTuner?.('Voice Lab closed. Microphone is off.');
-  if (screen !== 'sounds' && $('sample-editor-dialog').open) $('sample-editor-dialog').close();
   document.body.dataset.screen = screen;
   // Keep the sequencer first in reading and tab order on Beat Grid/Overdub.
   const workspace=$('studio-workspace'),sequencer=$('sequencer');
@@ -85,24 +87,60 @@ function showStudioScreen() {
   }
   const moreTools=$('studio-more-tools'),moreSummary=moreTools.querySelector('summary');
   if(screen==='voice'||screen==='overdub'){
-    moreSummary.textContent=`More tools · ${screen==='voice'?'Voice Lab':'Overdub'}`;
+    moreSummary.textContent=`Lab · ${screen==='voice'?'Voice Lab':'Overdub'}`;
     moreSummary.setAttribute('aria-current','page');
   }else{
-    moreSummary.textContent='More tools';
+    moreSummary.textContent='Lab';
     moreSummary.removeAttribute('aria-current');
   }
   moreTools.open=false;
-  $('studio-intro').hidden = screen!=='sounds';
+  $('studio-intro').hidden = screen!=='sounds'||!introOpen;
+  $('show-help').setAttribute('aria-expanded',String(screen==='sounds'&&introOpen));
   $('studio-workspace').hidden = screen!=='sounds' && screen!=='beats';
   $('studio-workspace').classList.toggle('wide-grid',screen==='beats');
-  $('sample-inspector').hidden = screen!=='sounds';
-  $('grid-section-label').textContent = screen==='beats' ? '02 / PERFORMANCE PADS' : '01 / SOUND PADS';
+  $('grid-section-label').textContent = screen==='beats' ? 'PLAY ALONG' : 'PLAYGROUND · 12 PADS';
+  $('pad-edit-mode').hidden = screen==='beats';
   $('sequencer').hidden = screen!=='beats' && screen!=='overdub';
-  $('video-director-details').hidden=screen!=='beats';
-  $('video-director').hidden=screen!=='beats';
+  $('video-director-details').hidden=screen!=='export';
+  $('video-director').hidden=screen!=='export';
   $('voice-lab').hidden = screen!=='voice';
   $('overdub-lab').hidden = screen!=='overdub';
   $('export-lab').hidden = screen!=='export';
+}
+
+function dismissIntro() {
+  introOpen=false;
+  showStudioScreen();
+}
+
+function setPadEditMode(enabled) {
+  padEditMode=Boolean(enabled);
+  document.body.classList.toggle('pad-edit-mode',padEditMode);
+  const button=$('pad-edit-mode');
+  button.textContent=padEditMode?'Done editing':'Edit pads';
+  button.setAttribute('aria-pressed',String(padEditMode));
+  button.setAttribute('aria-label',padEditMode?'Switch to Play pads mode':'Switch to Edit pads mode');
+  $('pad-help').textContent=padEditMode?'Tap a pad to edit its clip and trim. Select Done when finished.':'Tap to play. Tap + to add a sound. Hold a sound to play until you release.';
+  for(let id=0;id<16;id++)if(pads[id])renderPad(id);
+}
+
+function closeSampleEditor() {
+  const dialog=$('sample-editor-dialog');
+  if(!dialog.open)return;
+  cancelOnsetAnalysis(false);
+  $('region-preview').pause();
+  dialog.close();
+}
+
+function openSampleEditor(id, trigger=null) {
+  selectPad(id);
+  if(location.hash!=='#sounds'){location.hash='#sounds';showStudioScreen();}
+  $('sample-advanced').open=false;
+  $('source-advanced').open=false;
+  sampleEditorTrigger=trigger||$('pad-edit-mode');
+  const dialog=$('sample-editor-dialog');
+  if(!dialog.open)dialog.showModal();
+  $('close-sample-editor').focus({preventScroll:true});
 }
 
 function startDemoBeat(){
@@ -264,9 +302,61 @@ function buildGrid() {
       <div class="pad-top"><span class="key-tag">${HOTKEYS[id]}</span><span class="pad-index">${String(id+1).padStart(2,'0')}</span></div>
       <div class="pad-bottom-line"><span class="pad-title"></span></div>`;
     card.prepend(video,image);
-    card.querySelector('.pad-hit').addEventListener('click', () => {
+    const hit=card.querySelector('.pad-hit');
+    const openSource=()=>{
       selectPad(id);
-      if (!mediaFiles.has(id) && !audio.demoEnabled) { sourcePad=id; $('pad-source-title').textContent=`Add a sample to pad ${id+1}`; $('pad-source-dialog').showModal(); }
+      sourcePad=id;
+      $('pad-source-title').textContent=`Add a sample to pad ${id+1}`;
+      if(!$('pad-source-dialog').open)$('pad-source-dialog').showModal();
+    };
+    // Pointer down starts the sound without a click delay. A short tap lets the
+    // one-shot finish; holding a loaded pad gates playback until release.
+    let gesture=null,ignoreNextClick=false,recordTimer=null,longRecordReady=false;
+    hit.addEventListener('pointerdown',event=>{
+      if(event.button!==0||padEditMode)return;
+      if(!mediaFiles.has(id)&&!audio.demoEnabled){
+        recordTimer=setTimeout(()=>{
+          recordTimer=null;
+          longRecordReady=true;
+          card.classList.add('record-ready');
+        },550);
+        return;
+      }
+      ignoreNextClick=true;
+      gesture={start:performance.now(),released:false,elapsed:0};
+      const current=gesture;
+      try{hit.setPointerCapture(event.pointerId);}catch{}
+      playPad(id,undefined,true).then(()=>{
+        if(current.released&&current.elapsed>=240)audio.stopPadMomentary(id);
+      });
+    });
+    const release=event=>{
+      if(recordTimer!==null){clearTimeout(recordTimer);recordTimer=null;}
+      if(longRecordReady){
+        longRecordReady=false;card.classList.remove('record-ready');
+        if(event.type!=='pointercancel'){
+          ignoreNextClick=true;
+          selectPad(id);
+          openCamera(id);
+        }
+        return;
+      }
+      if(!gesture)return;
+      const current=gesture;
+      current.released=true;
+      current.elapsed=performance.now()-current.start;
+      if(current.elapsed>=240)audio.stopPadMomentary(id);
+      gesture=null;
+      if(hit.hasPointerCapture(event.pointerId))hit.releasePointerCapture(event.pointerId);
+    };
+    hit.addEventListener('pointerup',release);
+    hit.addEventListener('pointercancel',release);
+    hit.addEventListener('contextmenu',event=>event.preventDefault());
+    hit.addEventListener('click',event=>{
+      if(ignoreNextClick&&event.detail!==0){ignoreNextClick=false;return;}
+      ignoreNextClick=false;
+      if(padEditMode){openSampleEditor(id);return;}
+      if(!mediaFiles.has(id)&&!audio.demoEnabled)openSource();
       else playPad(id);
     });
     edit.addEventListener('click', () => openSampleEditor(id, edit));
@@ -288,35 +378,7 @@ function buildGrid() {
   }
 }
 
-function openSampleEditor(id, trigger) {
-  selectPad(id);
-  const dialog = $('sample-editor-dialog');
-  const inspector = $('sample-inspector');
-  if (!window.matchMedia('(max-width: 740px)').matches) {
-    if (location.hash !== '#sounds') {
-      location.hash = '#sounds';
-      showStudioScreen();
-    }
-    return;
-  }
-  if (dialog.open) return;
-
-  sampleEditorTrigger = trigger;
-  sampleInspectorPlaceholder = document.createComment('sample-inspector-location');
-  inspector.before(sampleInspectorPlaceholder);
-  inspector.hidden = false;
-  dialog.append(inspector);
-  dialog.showModal();
-  $('close-sample-editor').focus();
-}
-
-function restoreSampleInspector() {
-  const inspector = $('sample-inspector');
-  if (sampleInspectorPlaceholder?.parentNode) {
-    sampleInspectorPlaceholder.replaceWith(inspector);
-    sampleInspectorPlaceholder = null;
-  }
-  inspector.hidden = document.body.dataset.screen !== 'sounds';
+function restoreSampleEditorFocus() {
   const trigger = sampleEditorTrigger;
   sampleEditorTrigger = null;
   if (trigger?.isConnected && !trigger.closest('[hidden]')) trigger.focus({preventScroll:true});
@@ -334,6 +396,7 @@ function renderPad(id) {
   card.classList.toggle('playing', (activeUntil.get(id)||0)>performance.now());
   card.querySelector('.pad-title').textContent = hasMedia ? config.name : (audio.demoEnabled ? 'DEMO '+String(id+1).padStart(2,'0') : 'ADD SAMPLE');
   card.querySelector('.pad-hit').setAttribute('aria-label',`${hasMedia || audio.demoEnabled ? 'Play' : 'Load'} ${config.name}`);
+  if(padEditMode)card.querySelector('.pad-hit').setAttribute('aria-label',`Edit ${config.name}`);
   video.hidden = config.kind !== 'video';
   image.hidden = config.kind !== 'image';
   if (config.kind === 'image' && hasMedia) image.src = audio.sources.get(id)?.url || '';
@@ -364,6 +427,40 @@ function selectPad(id) {
   selected=id;
   renderGrid(); renderControls(); renderSteps();
   syncRegionPreview();
+}
+
+function renderCopyTargets() {
+  const select=$('copy-target'),previous=select.value;
+  const empty=Array.from({length:PAD_COUNT[project.layout]},(_,id)=>id).filter(id=>id!==selected&&!mediaFiles.has(id));
+  select.replaceChildren();
+  for(const id of empty){
+    const option=document.createElement('option');
+    option.value=String(id);option.textContent=`Pad ${String(id+1).padStart(2,'0')}`;
+    select.append(option);
+  }
+  if(empty.some(id=>String(id)===previous))select.value=previous;
+  const canCopy=mediaFiles.has(selected)&&empty.length>0;
+  select.disabled=!canCopy;
+  $('copy-pad').disabled=!canCopy;
+  $('copy-status').textContent=!mediaFiles.has(selected)?'Record or import a clip first.':!empty.length?'All visible pads already contain clips.':'Copy this raw clip and its trim, then edit a different moment on the new pad.';
+}
+
+async function copyPadToEmpty() {
+  const sourceId=selected,targetId=Number($('copy-target').value),file=mediaFiles.get(sourceId);
+  if(!file||!Number.isInteger(targetId)||targetId<0||targetId>=PAD_COUNT[project.layout]||mediaFiles.has(targetId)||targetId===sourceId)return;
+  $('copy-pad').disabled=true;
+  try{
+    const sourceConfig=structuredClone(project.pads[sourceId]);
+    await addMedia(targetId,file);
+    // The destination pattern is intentionally not overwritten by the source.
+    // Users can reuse one recording for several independent trimmed moments.
+    project.pads[targetId]=copyPadSound(sourceConfig,project.pads[targetId]);
+    const target=project.pads[targetId];
+    audio.setPadPitch(targetId,target.pitch,target.speed);
+    renderGrid();renderTrackGrid();renderVideoDirector();queueSave();
+    openSampleEditor(targetId);
+    notify(`Copied the clip to pad ${targetId+1}. Change its trim without affecting pad ${sourceId+1}.`);
+  }catch(error){notify(`Could not copy the sample: ${error.message}`);renderCopyTargets();}
 }
 
 function renderRegion() {
@@ -533,6 +630,7 @@ function renderControls() {
   const config = project.pads[selected];
   $('sample-inspector').classList.toggle('has-media',mediaFiles.has(selected));
   $('sample-inspector').classList.toggle('demo-enabled',audio.demoEnabled&&!mediaFiles.has(selected));
+  renderCopyTargets();
   $('selected-number').textContent = `PAD ${String(selected+1).padStart(2,'0')}`;
   $('selected-circle').textContent = String(selected+1).padStart(2,'0');
   $('pad-name').value = config.name;
@@ -596,7 +694,7 @@ function renderTrackGrid(){
     const head=document.createElement('div');head.className='track-head';
     const trackLabel=mediaFiles.has(id)?pad.name:(audio.demoEnabled?`Demo synth ${String(id+1).padStart(2,'0')}`:'Empty pad');row.setAttribute('aria-label',`Pattern lane ${id+1}: ${trackLabel}`);
     const name=document.createElement('button');name.type='button';name.className='track-name';name.textContent=`${String(id+1).padStart(2,'0')} · ${trackLabel}`;name.setAttribute('aria-label',`Select pad ${id+1}, ${trackLabel}`);name.addEventListener('click',()=>selectPad(id));head.append(name);
-    const edit=document.createElement('button');edit.type='button';edit.dataset.control='edit';edit.className='track-edit';edit.textContent='EDIT';edit.setAttribute('aria-label',`Edit pad ${id+1} in Sounds`);edit.addEventListener('click',()=>{selectPad(id);if(location.hash!=='#sounds')location.hash='#sounds';});head.append(edit);
+    const edit=document.createElement('button');edit.type='button';edit.dataset.control='edit';edit.className='track-edit';edit.textContent='EDIT';edit.setAttribute('aria-label',`Edit pad ${id+1}`);edit.addEventListener('click',()=>openSampleEditor(id));head.append(edit);
     for(const [key,label] of [['muted','M'],['solo','S']]){const button=document.createElement('button');button.type='button';button.dataset.control=key;button.className=`track-toggle${pad[key]?' active':''}`;button.textContent=label;button.setAttribute('aria-label',`${pad[key]?'Disable':'Enable'} ${key} for pad ${id+1}`);button.setAttribute('aria-pressed',String(pad[key]));button.addEventListener('click',()=>{pad[key]=!pad[key];renderTrackGrid();queueSave();});head.append(button);}
     const gain=document.createElement('input');gain.type='range';gain.min='0';gain.max='150';gain.value=String(Math.round(pad.volume*100));gain.className='track-gain';gain.setAttribute('aria-label',`Volume for pad ${id+1}`);gain.addEventListener('input',()=>{pad.volume=Number(gain.value)/100;if(selected===id){$('volume').value=gain.value;$('volume-out').textContent=`${gain.value}%`;}queueSave();});head.append(gain);row.append(head);
     const cells=document.createElement('div');cells.className='track-steps';cells.style.setProperty('--track-step-count',String(positions.length));cells.addEventListener('scroll',()=>{for(const other of holder.querySelectorAll('.track-steps'))if(other!==cells&&other.scrollLeft!==cells.scrollLeft)other.scrollLeft=cells.scrollLeft;},{passive:true});
@@ -725,13 +823,13 @@ function launchScene(){
   } else {applyScene(scene);notify(`Scene “${scene.name}” loaded.`);}
 }
 
-async function playPad(id, scheduledAt) {
+async function playPad(id, scheduledAt, momentary=false) {
   if(!padIsAudible(id))return;
   await audio.unlock();
   audio.setTransport(project.bpm,project.quantize);
   if(!audio.demoEnabled&&!audio.sources.get(id)?.file){notify('This pad is empty. Add a clip or switch on demo sounds.');return;}
   if(patternRecording)capturePatternTap(id);
-  if (!audio.trigger(id,project.pads[id],flashPad,scheduledAt)) {
+  if (!audio.trigger(id,project.pads[id],flashPad,scheduledAt,{momentary})) {
     notify('This pad is empty. Add a clip or switch on demo sounds.');
   }
 }
@@ -1403,6 +1501,7 @@ function configureGoogleSources(){
   for(const [id,name,action] of sources){
     const button=$(id);
     button.disabled=!configured;
+    button.hidden=!configured;
     const status=button.querySelector('small');
     if(status)status.textContent=configured?action:'Setup required';
     if(configured)button.removeAttribute('aria-label');
@@ -1413,13 +1512,24 @@ function configureGoogleSources(){
 
 function bindControls() {
   configureGoogleSources();
+  // Keep specialist video direction beside the capture choices it controls.
+  $('export-lab').append($('video-director-details'));
   window.addEventListener('hashchange',showStudioScreen);
-  $('close-sample-editor').addEventListener('click',()=>$('sample-editor-dialog').close());
-  $('sample-editor-dialog').addEventListener('close',restoreSampleInspector);
+  $('sample-editor-dialog').addEventListener('close',restoreSampleEditorFocus);
   $('sample-editor-dialog').addEventListener('click',event=>{
     if(event.target===$('sample-editor-dialog'))$('sample-editor-dialog').close();
   });
   showStudioScreen();
+  $('show-help').addEventListener('click',()=>{
+    if(location.hash!=='#sounds')location.hash='#sounds';
+    introOpen=!introOpen;
+    showStudioScreen();
+  });
+  $('dismiss-intro').addEventListener('click',dismissIntro);
+  $('pad-edit-mode').addEventListener('click',()=>setPadEditMode(!padEditMode));
+  $('close-sample-editor').addEventListener('click',closeSampleEditor);
+  $('sample-editor-dialog').addEventListener('close',()=>{cancelOnsetAnalysis(false);$('region-preview').pause();});
+  $('copy-pad').addEventListener('click',copyPadToEmpty);
   showVoiceTool(activeVoiceTool);
   for(const button of document.querySelectorAll('[data-voice-jump]')){
     button.addEventListener('click',()=>showVoiceTool(button.dataset.voiceJump,{focus:true}));
@@ -1550,9 +1660,9 @@ function bindControls() {
   }
   $('media-input').addEventListener('change',event=>{const target=fileTarget??selected;fileTarget=null;return processInputFiles(event,files=>placeFiles(files,target));});
   $('project-input').addEventListener('change',event=>processInputFiles(event,async files=>{if(files[0])await importPack(files[0]);}));
-  $('quick-demo').addEventListener('click',startDemoBeat);
-  $('quick-import').addEventListener('click',()=>$('add-file').click());
-  $('quick-record').addEventListener('click',()=>$('camera-button').click());
+  $('quick-demo').addEventListener('click',()=>{dismissIntro();startDemoBeat();});
+  $('quick-import').addEventListener('click',()=>{dismissIntro();$('add-file').click();});
+  $('quick-record').addEventListener('click',()=>{dismissIntro();$('camera-button').click();});
   $('add-file').addEventListener('click',()=>{fileTarget=selected;$('media-input').click();});
   $('import-project-button').addEventListener('click',()=>$('project-input').click());
   $('export-button').addEventListener('click',exportPack);
@@ -1609,7 +1719,7 @@ function bindControls() {
   $('google-photos').addEventListener('click',()=>pickFromPhotos(files=>placeFiles(files),notify).catch(error=>notify(error.message)));
   window.addEventListener('madladpad-error',event=>notify(event.detail));
   document.addEventListener('keydown',event=>{
-    if(event.repeat || event.metaKey || event.ctrlKey || event.altKey || $('camera-dialog').open || $('pad-source-dialog').open || $('capture-target-dialog').open || ['INPUT','SELECT','TEXTAREA','BUTTON'].includes(document.activeElement?.tagName)) return;
+    if(event.repeat || event.metaKey || event.ctrlKey || event.altKey || $('camera-dialog').open || $('pad-source-dialog').open || $('capture-target-dialog').open || $('sample-editor-dialog').open || ['INPUT','SELECT','TEXTAREA','BUTTON'].includes(document.activeElement?.tagName)) return;
     const key=event.key.toUpperCase();
     if(key===' '){event.preventDefault();transportActivity.phase!=='idle'?stopSequencer():startSequencer();return;}
     const id=HOTKEYS.indexOf(key);

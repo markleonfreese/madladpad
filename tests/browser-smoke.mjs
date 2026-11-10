@@ -97,7 +97,9 @@ try {
   await page.goto(origin);
   await wait(page, '.pad-hit');
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  assert.equal(await page.locator('#quick-demo').isVisible(),true,'a demo beat should be the primary first-run action');
+  assert.equal(await page.locator('#studio-intro').isHidden(),true,'the Playground should be visible without a recurring hero');
+  await page.locator('#show-help').click();
+  assert.equal(await page.locator('#quick-demo').isVisible(),true,'the Help guide should offer a one-tap demo beat');
   assert.equal(await page.locator('#loop-settings').evaluate(element=>element.open),false,'advanced tempo and layout settings should start collapsed');
   await page.setViewportSize({width:320,height:720});
   await page.locator('#quick-demo').click();

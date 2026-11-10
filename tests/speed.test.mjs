@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeProject, normaliseProject } from '../site/core.js';
+import { makeProject, normaliseProject, copyPadSound } from '../site/core.js';
 import { SamplerAudio } from '../site/audio.js';
 
 test('legacy projects default speed to 1 and preserve pitch metadata', () => {
@@ -10,6 +10,41 @@ test('legacy projects default speed to 1 and preserve pitch metadata', () => {
   assert.equal(normaliseProject({pads:[{speed:4}]}).pads[0].speed, 2);
   assert.equal(normaliseProject({pads:[{speed:0.1}]}).pads[0].speed, 0.5);
   assert.equal(makeProject().pads[0].speed, 1);
+});
+
+test('copying a clip preserves independent pad identity, patterns and mute state', () => {
+  const project=makeProject();
+  const source=project.pads[0],destination=project.pads[4];
+  Object.assign(source,{name:'Kitchen rhythm',fileName:'take.webm',kind:'video',start:1.2,end:2.4,speed:1.3,pitch:5,volume:.7});
+  source.steps[0]=true;source.muted=true;
+  destination.steps[8]=true;destination.solo=true;
+  const copied=copyPadSound(source,destination);
+  assert.equal(copied.id,4);
+  assert.equal(copied.name,'Kitchen rhythm copy');
+  assert.deepEqual([copied.fileName,copied.kind,copied.start,copied.end,copied.speed,copied.pitch,copied.volume],['take.webm','video',1.2,2.4,1.3,5,.7]);
+  assert.equal(copied.steps[0],false);
+  assert.equal(copied.steps[8],true);
+  assert.equal(copied.muted,false);
+  assert.equal(copied.solo,true);
+  assert.equal(source.name,'Kitchen rhythm','the original pad must not be changed');
+  assert.throws(()=>copyPadSound(makeProject().pads[0],destination),/source media/i);
+});
+
+test('a held buffer sample stops on release, while a one-shot remains independent', () => {
+  const nodes=[];
+  const param=()=>({setValueAtTime(){},linearRampToValueAtTime(){}});
+  const sampler=Object.create(SamplerAudio.prototype);
+  sampler.context={currentTime:0,createBufferSource(){const node={playbackRate:param(),connect(){return this;},start(){},stop(){this.stopped=true;},disconnect(){}};nodes.push(node);return node;},createGain(){return {gain:param(),connect(){return this;},disconnect(){}};}};
+  sampler.master={};sampler.sources=new Map([[0,{file:{},buffer:{duration:3}}]]);
+  sampler.momentaryPlayback=new Map();sampler.demoEnabled=false;
+  const pad={kind:'audio',start:0,end:2,speed:1,pitch:0,volume:.8};
+  assert.equal(sampler.trigger(0,pad,()=>{},0),true);
+  assert.equal(sampler.trigger(0,pad,()=>{},0,{momentary:true}),true);
+  sampler.stopPadMomentary(0);
+  assert.equal(nodes[0].stopped,undefined,'the tap one-shot should finish naturally');
+  assert.equal(nodes[1].stopped,true,'a held sample should be gated on release');
+  assert.equal(sampler.momentaryPlayback.size,0,'releasing a pad clears its gesture handle');
+  sampler.stopPadMomentary(0);
 });
 
 test('speed alone sets media playbackRate while pitch metadata is ignored', async () => {
