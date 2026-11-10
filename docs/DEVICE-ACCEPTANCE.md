@@ -2,13 +2,13 @@
 
 Use this checklist to close the physical-device and human-review gates recorded in [GitHub Issue #2](https://github.com/markleonfreese/madladpad/issues/2). It supplements [`tests/BROWSER-SMOKE.md`](../tests/BROWSER-SMOKE.md), which is synthetic desktop Chromium evidence.
 
-## Current review target — 9 November 2026
+## Current review target — 10 November 2026
 
-- **Preview:** <https://preview-ux-acceptance-20261108-madladpad.markleonfreese.workers.dev/>
-- **Application source:** `main` commit `6103d5058bee5f7268185dc3277257344aca9b52`. The review-only preview branch is `28823a31379a063683df7d43c2c690a49e114ef2`; its application code matches `main` and it adds a UAT notes document. Cloudflare build `b57139fe-dd68-4d1e-a66a-9ffca267c2fe` used `npx wrangler preview` and succeeded.
-- This is a non-production review preview. The production `madladpad.markleonfreese.workers.dev` URL was last verified serving an older release; do not use it to accept current `main`.
+- **Preview:** <https://fix-pack-video-codec-data-uri-madladpad.markleonfreese.workers.dev/>
+- **Application source:** current `main` is `305be4b82416994049aef8ec7d6b4faafa4b37ff`. This preview was built from PR #121 head `5b567c546c8918453a1ec9520f82d7415b6dcb3a`, whose tree matches merged `main`. The `Workers Builds` check and post-merge `Verify` run `42837683740` passed. Read-only checks found `/`, `/app.js`, `/storage.js`, `/sw.js`, `/voice.js`, and `/credits.html` returning 200; served `app.js`, `storage.js`, and `sw.js` matched the checked source. The service worker shell is v14.
+- This is a non-production review preview. Production remains on release `cb25639efaef5fbe95065f0d00764d286afc7987` (shell v4; `/voice.js` is 404); do not use it to accept current `main`. The earlier intermittent 503 was not reproduced by the latest browser-like GET checks.
 - First-use speech transcription downloads about 65 MB of model/runtime files from Hugging Face. Plan the first speech test on an appropriate connection; the selected audio remains local.
-- After testing, record the preview URL and tested `main` SHA in Issue #2. Keep device, screen-reader, and listening results separate from hosted browser evidence.
+- PR #84 is still a review-only preview branch and must be checked for exact source parity before use. After testing, record the preview URL and tested `main` SHA in Issue #2. Keep device, screen-reader, and listening results separate from hosted browser evidence.
 
 ## Before testing
 
@@ -22,7 +22,7 @@ Use this checklist to close the physical-device and human-review gates recorded 
 
 - Install the PWA where supported, launch it, and confirm all five studio stages are reachable.
 - Create a project, change its name and a pad, close/reload immediately, and confirm the edits survive.
-- Export a project pack, clear site data only after retaining the exported pack, import it, and confirm media, pad settings, patterns, transcript, melody, rap, and overdub metadata restore.
+- Export a project pack, clear site data only after retaining the exported pack, import it, and confirm media, pad settings, patterns, transcript, melody, rap, and overdub metadata restore. Include a captured video whose MIME type has a comma-separated codec list, and confirm its media restores too.
 - After the shell and speech model have loaded once, enable airplane mode, relaunch, reopen the project, and confirm cached workflows still work. Record which operations appropriately require network access, such as the first model download.
 
 ## 2. Sounds, region selection, and capture
