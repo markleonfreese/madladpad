@@ -196,6 +196,21 @@ try {
   await page.locator('#layout-select').selectOption('3x4');
   assert.equal(await page.locator('#quick-import').isVisible(),true,'quick import should be available from the first-run actions');
   assert.equal(await page.locator('#quick-record').isVisible(),true,'quick recording should be available from the first-run actions');
+  const mobileHome=await page.evaluate(()=>{
+    const record=document.querySelector('#quick-record').getBoundingClientRect();
+    const demo=document.querySelector('#quick-demo').getBoundingClientRect();
+    const pads=document.querySelector('#pad-grid .pad:not([hidden])').getBoundingClientRect();
+    return {recordTop:record.top,demoTop:demo.top,padsBottom:pads.bottom,viewport:innerHeight,introHeight:document.querySelector('#studio-intro').getBoundingClientRect().height};
+  });
+  assert.ok(mobileHome.recordTop<mobileHome.demoTop,'recording should be the primary first-run action on phones');
+  assert.ok(mobileHome.introHeight<140,`mobile copy should leave more room for the sampler: ${JSON.stringify(mobileHome)}`);
+  assert.ok(mobileHome.padsBottom<mobileHome.viewport,`the first pad row should be visible without scrolling on a phone: ${JSON.stringify(mobileHome)}`);
+  await page.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));
+  await page.waitForTimeout(100);
+  const stickyTransport=await page.locator('#studio-play').evaluate(button=>({top:button.getBoundingClientRect().top,visible:button.getBoundingClientRect().bottom>0&&button.getBoundingClientRect().top<innerHeight,position:getComputedStyle(button.closest('.transport-panel')).position}));
+  assert.equal(stickyTransport.position,'sticky','phone playback controls should remain reachable while scrolling');
+  assert.equal(stickyTransport.visible,true,`the main playback control should remain visible on a long phone page: ${JSON.stringify(stickyTransport)}`);
+  await page.evaluate(()=>window.scrollTo(0,0));
   const openScreen=async screen=>{
     if(screen==='voice'||screen==='overdub'){
       const more=page.locator('#studio-more-tools');

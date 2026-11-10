@@ -188,3 +188,16 @@ body[data-screen="beats"] .pad-bg{font-size:18px}
 .sample-editor-dialog-bar h2{margin:0;color:var(--acid);font:500 11px var(--mono);letter-spacing:.09em}
 .sample-editor-dialog-bar button{min-width:64px;min-height:44px}
 .sample-editor-dialog .inspector{min-height:calc(100vh - 64px);min-height:calc(100dvh - 64px);padding:17px;border:0;border-radius:0}
+
+/* Keep the phone home screen focused on the pads, with capture one tap away. */
+@media(max-width:740px){
+  .intro{margin:10px 0 14px;display:block}
+  .intro h2,.intro .overline,.intro-action-block>p{display:none}
+  .intro-action-block{max-width:none;margin:0}
+  .intro-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .intro-actions #quick-record{order:-1;grid-column:1/-1;min-height:48px;background:var(--acid);border-color:var(--acid);color:#172011;font-weight:800}
+  .intro-actions .primary-action{grid-column:auto;min-height:44px;background:#222b23;color:var(--ink);border-color:#445047;font-weight:500}
+  .transport-panel{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;box-shadow:0 8px 20px #080d0acc}
+  #studio-nav{position:relative;z-index:21}
+  #studio-nav [data-studio-screen],#studio-nav .studio-more-tools>summary{scroll-margin-top:190px}
+}
