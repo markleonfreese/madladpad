@@ -148,6 +148,16 @@ export const makePad = id => ({
   volume: 0.9, pitch: 0, speed: 1, start: 0, end: 2, muted:false, solo:false,
   steps: Array(STEP_COUNT).fill(false), stepOffsets: Array(STEP_COUNT).fill(0)
 });
+// Reuse the same raw clip with independent trims, without copying patterns,
+// mute/solo state or the identity of the source pad.
+export function copyPadSound(source, destination) {
+  if(!source?.fileName || !destination)throw new Error('Both source media and a destination pad are required');
+  return {...destination,
+    name:`${source.name} copy`.slice(0,45),fileName:source.fileName,kind:source.kind,
+    volume:source.volume,pitch:source.pitch,speed:source.speed,
+    start:source.start,end:source.end
+  };
+}
 export const makeProject = () => ({
   version: 1, title: 'Untitled mixtape', layout: '3x4', bpm: 120, demoEnabled: false,
   quantize: 'off', gridDivision:'1/16', pads: Array.from({ length: 16 }, (_, i) => makePad(i)), scenes: [], voice: makeVoiceData(), video:makeVideoDirection()

@@ -16,6 +16,7 @@ export class SamplerAudio {
     this.limiter.connect(this.context.destination);
     this.limiter.connect(this.recordOut);
     this.sources = new Map();
+    this.momentaryPlayback = new Map();
     this.vocalSources = new Map();
     this.vocalPlayback = new Map();
     this.transportEpoch = this.context.currentTime;
@@ -227,13 +228,24 @@ export class SamplerAudio {
     for (const id of [...this.vocalPlayback.keys()]) this.stopVocalLayer(id);
   }
 
-  trigger(id, pad, onVisual, scheduledAt) {
+  stopPadMomentary(id) {
+    const playback=this.momentaryPlayback.get(id);
+    if(!playback)return;
+    this.momentaryPlayback.delete(id);
+    playback.cancelled=true;
+    try { playback.stop?.(); } catch { /* It may already have reached its trim end. */ }
+  }
+
+  trigger(id, pad, onVisual, scheduledAt, {momentary=false}={}) {
     const source = this.sources.get(id);
     const now = this.context.currentTime;
     const when = scheduledAt ?? nextQuantizedTime(now, this.transportEpoch, this.bpm, this.quantize);
     const delay = Math.max(0, (when - now) * 1000);
+    const gesture=momentary?{cancelled:false,stop:null}:null;
+    if(gesture)this.momentaryPlayback.set(id,gesture);
     if (!source?.file && !this.demoEnabled) return false;
     if (!source?.file && this.demoEnabled) {
+      if(gesture)this.momentaryPlayback.delete(id);
       this.playDemo(id, when, pad.volume);
       setTimeout(() => onVisual?.(id), delay);
       return true;
@@ -260,12 +272,17 @@ export class SamplerAudio {
       gain.gain.setValueAtTime(clamp(pad.volume,0,1.5),audibleStart+Math.max(attack,duration/rate-.006));
       gain.gain.linearRampToValueAtTime(0,audibleStart+duration/rate);
       if(pitchNode){audio.connect(pitchNode);pitchNode.connect(gain);}else audio.connect(gain);
-      gain.connect(this.master);audio.onended=()=>{audio.disconnect();pitchNode?.disconnect();gain.disconnect();};
+      gain.connect(this.master);audio.onended=()=>{
+        if(gesture && this.momentaryPlayback.get(id)===gesture)this.momentaryPlayback.delete(id);
+        audio.disconnect();pitchNode?.disconnect();gain.disconnect();
+      };
+      if(gesture)gesture.stop=()=>audio.stop();
       // Let the processor drain its look-ahead ring after the selected clip
       // ends. The gain envelope still ends at the requested trim boundary.
       audio.start(when, offset, duration + (pitchNode ? latency * rate : 0));
     } else if (source.element && pad.kind !== 'image') {
       setTimeout(() => {
+        if(gesture?.cancelled)return;
         if (this.sources.get(id)?.file !== source.file) return;
         const element = source.element;
         source.stopPlayback?.();
@@ -282,6 +299,7 @@ export class SamplerAudio {
         const cleanup=pause=>{
           if(finished)return;
           finished=true;
+          if(gesture && this.momentaryPlayback.get(id)===gesture)this.momentaryPlayback.delete(id);
           element.removeEventListener('timeupdate',stopAtBoundary);
           element.removeEventListener('ended',stopAtBoundary);
           if(stopTimer!==null)clearTimeout(stopTimer);
@@ -311,6 +329,7 @@ export class SamplerAudio {
           },Math.max(10,Math.min(100,remaining/rate*1000)));
         };
         source.stopPlayback=stopPlayback;
+        if(gesture)gesture.stop=stopPlayback;
         element.addEventListener('timeupdate',stopAtBoundary);
         element.addEventListener('ended',stopAtBoundary);
         try{
@@ -354,6 +373,7 @@ export class SamplerAudio {
   }
 
   destroy() {
+    for(const id of [...this.momentaryPlayback.keys()])this.stopPadMomentary(id);
     for (const [id] of this.sources) this.unload(id);
     this.stopVocalLayers();
     return this.context.close();

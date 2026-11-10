@@ -21,8 +21,15 @@
       </div>
       <div class="top-actions">
         <span class="offline-pill" id="connection-indicator">LOCAL STUDIO</span>
-        <button class="quiet-button" id="export-button" title="Download a portable .madladpad project backup, including media">Back up project</button>
-        <button class="quiet-button" id="import-project-button" title="Restore a .madladpad project backup">Open project</button>
+        <button class="quiet-button" id="show-help" type="button" aria-controls="studio-intro" aria-expanded="false">Help</button>
+        <details class="session-menu" id="session-menu">
+          <summary>Project</summary>
+          <div class="session-menu-content">
+            <label class="project-name" for="project-title">SESSION NAME<input id="project-title" maxlength="80" value="Untitled mixtape" aria-label="Project name"></label>
+            <button class="quiet-button" id="export-button" title="Download a portable .madladpad project backup, including media">Back up project</button>
+            <button class="quiet-button" id="import-project-button" title="Restore a .madladpad project backup">Open project</button>
+          </div>
+        </details>
       </div>
     </header>
 
@@ -40,20 +47,20 @@
     </nav>
 
     <main id="studio-main">
-    <section class="intro" id="studio-intro" aria-label="Introduction">
-      <div><p class="overline"><span class="live-dot"></span> THE WORLD IS YOUR INSTRUMENT</p><h2>Collect the moment.<br><em>Play the unexpected.</em></h2></div>
+    <section class="intro" id="studio-intro" aria-label="Getting started" hidden>
+      <div><p class="overline"><span class="live-dot"></span> READY TO PLAY</p><h2>Tap a pad. <em>Make something.</em></h2></div>
       <div class="intro-action-block">
-        <p>Make a beat with a ready-to-play kit, or start with your own sound.</p>
+        <p>Record a sound, pick a clip or try the starter kit. Edit later.</p>
         <div class="intro-actions" aria-label="Get started">
-          <button id="quick-demo" class="pill-button primary-action" aria-pressed="false">START WITH A DEMO BEAT</button>
-          <button id="quick-import" class="pill-button">USE YOUR OWN CLIP</button>
-          <button id="quick-record" class="pill-button">RECORD A CLIP</button>
+          <button id="quick-demo" class="pill-button primary-action" aria-pressed="false">Try demo beat</button>
+          <button id="quick-import" class="pill-button">Import clip</button>
+          <button id="quick-record" class="pill-button">Record clip</button>
         </div>
       </div>
+      <button class="quiet-button intro-dismiss" id="dismiss-intro" type="button" aria-label="Close getting started">Close</button>
     </section>
 
     <section class="transport-panel" aria-label="Performance controls">
-      <div class="project-name"><label for="project-title">YOUR SESSION</label><input id="project-title" maxlength="80" value="Untitled mixtape" aria-label="Project name"></div>
       <div class="transport-controls">
         <button class="play-button" id="studio-play" type="button" aria-pressed="false">▶ PLAY LOOP</button>
         <details class="control-disclosure" id="loop-settings">
@@ -69,16 +76,17 @@
 
     <div class="workspace" id="studio-workspace">
       <section class="performance-area" aria-label="Sampler grid">
-        <div class="section-label"><span id="grid-section-label">01 / SOUND PADS</span><span>TOUCH · KEYS · MIDI</span></div>
+        <div class="section-label playground-heading"><span id="grid-section-label">PLAYGROUND · 12 PADS</span><button type="button" id="pad-edit-mode" aria-pressed="false" aria-label="Switch to Edit pads mode">Edit pads</button></div>
         <div id="pad-grid" class="pad-grid layout-3x4" role="group" aria-label="Playable sample pads"></div>
         <div class="pad-bottom">
-          <p>Tap an empty pad to record or import. Tap a loaded pad to play. Keyboard: Q W E R / A S D F / Z X C V.</p>
-          <button id="demo-button" class="pill-button" aria-pressed="false">TRY DEMO SOUNDS</button>
+          <p id="pad-help">Tap to play. Tap + to add a sound. Hold a sound to play until you release.</p>
+          <button id="demo-button" class="pill-button" aria-pressed="false">Demo sounds</button>
         </div>
       </section>
 
+      <dialog id="sample-editor-dialog" class="sample-editor-dialog" aria-labelledby="selected-number">
       <aside class="inspector" id="sample-inspector" aria-label="Sample editing panel">
-        <div class="section-label"><span>01 / SAMPLE EDITOR</span><span id="selected-number">PAD 01</span></div>
+        <div class="section-label editor-dialog-heading"><span id="selected-number">PAD 01 · EDIT SAMPLE</span><button type="button" class="quiet-button" id="close-sample-editor">Done</button></div>
         <div class="inspector-head"><div class="selected-circle" id="selected-circle">01</div><div><label for="pad-name">EDITING SAMPLE</label><input id="pad-name" maxlength="45" value="Pad 01" aria-label="Pad name"></div></div>
         <p class="sample-info" id="sample-info">No media loaded. Add a clip to get started.</p>
         <div class="source-buttons">
@@ -93,11 +101,9 @@
           </div>
           <p class="voice-note">Create a backing track in <a href="https://www.flowmusic.app/" target="_blank" rel="noopener noreferrer">Google Flow Music</a>, download its audio, then use Device / Files to import it here. This is a manual file handoff: MadLadPad does not access your Flow account or send your recordings there.</p>
         </details>
-        <p id="editor-empty-hint" class="editor-empty-hint">Your trim, pitch and tuning tools will appear once you've added a sample.</p>
-        <details class="sample-advanced" id="sample-advanced">
-          <summary>Trim, tune and edit</summary>
+        <p id="editor-empty-hint" class="editor-empty-hint">Record or import a sound, then select the moment you want to play.</p>
         <section class="region-editor" aria-labelledby="region-title">
-          <h3 id="region-title">SELECT A MOMENT</h3>
+          <h3 id="region-title">Trim your sound</h3>
           <p id="region-status">Load an audio or video clip to select a region.</p>
           <video id="region-preview" controls playsinline preload="metadata" hidden></video>
           <div id="region-timeline" class="region-timeline" role="group" aria-label="Media selection timeline" hidden>
@@ -118,6 +124,10 @@
             <button id="region-apply" type="button" disabled>Apply to pad</button>
             <button id="region-reset" type="button" disabled>Reset</button>
           </div>
+        </section>
+        <details class="sample-advanced" id="sample-advanced">
+          <summary>Fine tune, find sounds &amp; MIDI</summary>
+        <section class="region-editor region-discovery" aria-label="Find useful sound regions">
           <div class="region-actions"><label class="suggestion-length-control" for="suggestion-length">SUGGESTION LENGTH<select id="suggestion-length"><option value="0.25">0.25 s · quick hit</option><option value="0.5">0.5 s · short</option><option value="0.8" selected>0.8 s · phrase</option><option value="1.2">1.2 s · long phrase</option><option value="2">2 s · full phrase</option></select></label><button id="find-samples" type="button" disabled>Find good sounds on this device</button><button id="cancel-analysis" type="button" hidden>Cancel analysis</button></div>
           <p id="analysis-status" role="status">Suggestions are opt-in and processed locally.</p>
           <div id="sample-timeline" class="sample-timeline" role="group" aria-label="Suggested sample locations" hidden><div class="sample-timeline-track" aria-hidden="true"></div><span class="sample-timeline-start" aria-hidden="true">0 s</span><span id="sample-timeline-end" class="sample-timeline-end" aria-hidden="true"></span><div id="sample-timeline-markers" class="sample-timeline-markers"></div></div>
@@ -133,10 +143,12 @@
           <label>START <output id="start-out">0.00 s</output><input id="trim-start" type="range" min="0" max="10" step="0.05" value="0"></label>
           <label>END <output id="end-out">2.00 s</output><input id="trim-end" type="range" min="0.05" max="10" step="0.05" value="2"></label>
         </div>
+        <div class="copy-sample"><label for="copy-target">COPY CLIP AND TRIM TO</label><select id="copy-target" aria-label="Destination for copied sample"></select><button id="copy-pad" type="button" class="pill-button">Copy to empty pad</button><p id="copy-status" role="status">Keep the original clip; copy a different moment to another pad.</p></div>
         <div class="inspector-actions"><button id="clear-pad" class="text-button">Clear sample</button><button id="connect-midi" class="text-button">Connect MIDI</button></div>
         </details>
         <div class="info-note"><strong>PRIVATE BY DEFAULT</strong><p>Your clips are saved locally on this device. Export a pack to back them up or share them.</p></div>
       </aside>
+      </dialog>
     </div>
 
     <section class="sequencer" id="sequencer" aria-label="16-step sequencer" hidden>
@@ -145,12 +157,12 @@
         <div><h2>Make it a loop.</h2><p>Tap a step to add a sound. Press Play when you’re ready.</p></div>
         <div class="seq-buttons">
           <button class="play-button" id="play-seq" aria-pressed="false">▶ PLAY</button>
+          <label class="beat-pad-choice">PAD TO SEQUENCE<select id="beat-pad-select" aria-label="Pad to edit in Sequence"></select></label>
+          <button class="pill-button" id="auto-beat">SURPRISE ME</button>
           <details class="control-disclosure beat-advanced" id="beat-advanced">
-            <summary>More beat controls</summary>
+            <summary>Advanced beats</summary>
             <div class="beat-advanced-controls">
-              <label class="beat-pad-choice">EDITING PAD<select id="beat-pad-select" aria-label="Pad to edit in Sequence"></select></label>
               <button class="pill-button" id="track-view" aria-pressed="false">ALL TRACKS</button>
-              <button class="pill-button" id="auto-beat">SURPRISE ME</button>
               <button class="pill-button" id="clear-steps">CLEAR SELECTED</button>
               <label class="pattern-setting">GRID<select id="grid-division"><option value="1/4">QUARTER · 4 STEPS</option><option value="1/8">EIGHTH · 8 STEPS</option><option value="1/16">SIXTEENTH · 16 STEPS</option></select></label>
               <label class="pattern-setting">TAKE<select id="pattern-take-mode"><option value="overdub">OVERDUB</option><option value="replace">REPLACE</option></select></label>
@@ -167,12 +179,12 @@
           </details>
         </div>
       </div>
-      <div class="beat-next-step"><p>Ready to make a video?</p><button class="pill-button" id="make-video">VIDEO & EXPORT</button></div>
       <p id="scene-status" class="pattern-record-status" role="status" aria-live="polite">Save the current pattern as a named scene.</p>
       <p id="pattern-record-status" class="pattern-record-status" role="status" aria-live="polite">Ready to record pad taps into the 16-step loop. Coarser grids hide finer steps but keep them saved.</p>
       <div class="steps" id="steps" role="group" aria-label="Pattern steps for selected pad"></div>
       <div class="track-grid" id="track-grid" hidden role="group" aria-label="Patterns for all pads"></div>
       <div class="timeline"><span>1</span><span>2</span><span>3</span><span>4</span></div>
+      <div class="beat-next-step"><p>Happy with your loop?</p><button class="pill-button" id="make-video">Make a video</button></div>
     </section>
 
     <details class="video-director-disclosure" id="video-director-details"><summary>Edit video cuts</summary>
@@ -267,13 +279,15 @@
       <h2 id="export-title">Capture and share your track.</h2>
       <p class="voice-intro">Start the loop, record your performance, then review the result below. Video captures the pad visuals and the master audio; audio-only captures the mixed sound. Recording stops when you tap the same button again.</p>
       <div class="export-controls">
-        <label class="field">VIDEO FRAME<select id="record-layout"><option value="fixed">Fixed grid</option><option value="follow-active">Follow active pads</option><option value="directed">Video Director: cuts by beat</option></select></label>
+        <button class="accent-button" id="start-record" aria-pressed="false"><span class="record-dot"></span> RECORD VIDEO</button>
+        <button class="accent-button audio-record-button" id="record-audio" aria-pressed="false">♪ RECORD AUDIO</button>
+        <details class="export-advanced" id="export-advanced"><summary>Video framing &amp; formats</summary><div class="export-settings">
+        <label class="field">VIDEO FRAME<select id="record-layout"><option value="follow-active">Follow active pads</option><option value="fixed">Fixed grid</option><option value="directed">Video Director: cuts by beat</option></select></label>
         <label class="field">ASPECT RATIO<select id="video-aspect"><option value="4:3">4:3</option><option value="16:9">16:9 · wide</option><option value="9:16">9:16 · vertical</option><option value="1:1">1:1 · square</option></select></label>
         <label class="field">VIDEO FORMAT<select id="record-video-format"><option value="auto">Browser's best supported</option><option value="mp4">MP4 (if supported)</option><option value="webm">WebM (if supported)</option></select></label>
         <label class="field">AUDIO FORMAT<select id="record-audio-format"><option value="auto">Browser's best supported</option><option value="m4a">M4A (if supported)</option><option value="webm">WebM (if supported)</option><option value="ogg">Ogg (if supported)</option></select></label>
-        <button class="accent-button" id="start-record" aria-pressed="false"><span class="record-dot"></span> RECORD SET</button>
-        <button class="accent-button audio-record-button" id="record-audio" aria-pressed="false">♪ RECORD AUDIO MIX</button>
         <button class="quiet-button" id="export-pack-action" type="button">Export project pack</button>
+        </div></details>
       </div>
       <p id="export-record-status" class="voice-status" role="status">Record a video or audio take to preview it here. Completed takes also download automatically.</p>
       <canvas id="capture-canvas" class="export-live-preview" width="960" height="720" aria-label="Live performance composition" hidden></canvas>
@@ -289,9 +303,6 @@
 
   <input hidden id="media-input" type="file" accept="video/*,audio/*,image/*" multiple>
   <input hidden id="project-input" type="file" accept=".madladpad,application/json">
-  <dialog id="sample-editor-dialog" class="sample-editor-dialog" aria-labelledby="sample-editor-dialog-title">
-    <div class="sample-editor-dialog-bar"><h2 id="sample-editor-dialog-title">EDIT SAMPLE</h2><button id="close-sample-editor" class="quiet-button" type="button">DONE</button></div>
-  </dialog>
   <dialog id="pad-source-dialog" class="camera-dialog"><h3 id="pad-source-title">Add a sample</h3><p>Record now, or choose an audio or video clip.</p><div><button class="accent-button" id="pad-record">RECORD ON PAD</button><button class="quiet-button" id="pad-files">DEVICE / FILES</button><button class="quiet-button" id="pad-google-drive" disabled aria-label="Google Drive import unavailable: optional setup required. Use Device / Files or Record on Pad.">GOOGLE DRIVE <small>Setup required</small></button><button class="quiet-button" id="pad-google-photos" disabled aria-label="Google Photos import unavailable: optional setup required. Use Device / Files or Record on Pad.">GOOGLE PHOTOS <small>Setup required</small></button><button class="quiet-button" id="pad-source-cancel">CANCEL</button></div></dialog>
   <dialog id="capture-target-dialog" class="camera-dialog" aria-labelledby="capture-target-title" aria-describedby="capture-target-status"><h3 id="capture-target-title">Choose where to save the take</h3><p id="capture-target-status">The current sample stays safe until you keep the new take.</p><label for="capture-target-select">SAVE AS NEW ON</label><select id="capture-target-select"></select><div><button class="accent-button" id="capture-target-replace">REPLACE THIS PAD AFTER REVIEW</button><button class="quiet-button" id="capture-target-new">SAVE AS NEW</button><button class="quiet-button" id="capture-target-cancel">CANCEL</button></div></dialog>
   <dialog id="camera-dialog" class="camera-dialog"><h3 id="camera-title">Record on pad</h3><video id="camera-preview" muted autoplay playsinline></video><label id="camera-length-label">RECORD LENGTH <select id="camera-length"><option value="3">One-shot · 3 seconds</option><option value="5" selected>One-shot · 5 seconds</option><option value="10">One-shot · 10 seconds</option><option value="15">One-shot · 15 seconds</option><option value="30">One-shot · 30 seconds</option><option value="bars-1">1 bar</option><option value="bars-2">2 bars</option><option value="bars-4">4 bars</option></select></label><output id="camera-length-summary" for="camera-length" aria-live="polite"></output><p class="camera-length-help">Bar lengths follow the session BPM. You can stop early at any time.</p><p id="camera-status" role="status">Requesting camera and microphone access…</p><div><button class="accent-button" id="camera-capture" disabled>● START RECORDING</button><button class="quiet-button" id="camera-retake" hidden>RETAKE</button><button class="accent-button" id="camera-keep" hidden>KEEP ON PAD</button><button class="quiet-button" id="camera-close">CANCEL</button></div><section id="camera-review" hidden><p>Suggested sound region · adjust either edge, then preview or keep. Original capture remains available for re-trimming.</p><label>START <output id="camera-start-out">0.00 s</output><input id="camera-start" type="range" min="0" max="1" step="0.05" value="0"></label><label>END <output id="camera-end-out">0.00 s</output><input id="camera-end" type="range" min="0.05" max="1" step="0.05" value="1"></label><button class="quiet-button" id="camera-preview-region">▶ PREVIEW SAMPLE</button></section></dialog>

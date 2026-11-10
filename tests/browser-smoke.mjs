@@ -97,7 +97,9 @@ try {
   await page.goto(origin);
   await wait(page, '.pad-hit');
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  assert.equal(await page.locator('#quick-demo').isVisible(),true,'a demo beat should be the primary first-run action');
+  assert.equal(await page.locator('#studio-intro').isHidden(),true,'the Playground should be visible without a recurring hero');
+  await page.locator('#show-help').click();
+  assert.equal(await page.locator('#quick-demo').isVisible(),true,'the Help guide should offer a one-tap demo beat');
   assert.equal(await page.locator('#loop-settings').evaluate(element=>element.open),false,'advanced tempo and layout settings should start collapsed');
   await page.setViewportSize({width:320,height:720});
   await page.locator('#quick-demo').click();
@@ -131,49 +133,42 @@ try {
   assert.ok(narrowLayout.pad.width>=48&&narrowLayout.pad.height>=48,'4-column Beat Grid pads should retain touch-sized targets');
   await page.locator('#pad-grid .pad-hit').first().click();
   await page.waitForFunction(()=>document.querySelector('#pad-grid .pad').classList.contains('playing'));
-  const editOutsidePad=await page.locator('#pad-grid .pad-cell').first().evaluate(cell=>{
-    const pad=cell.querySelector('.pad').getBoundingClientRect(),edit=cell.querySelector('.edit-pad').getBoundingClientRect();
-    return edit.top>=pad.bottom;
-  });
-  assert.equal(editOutsidePad,true,'the 44px Edit target must be separate from the pad center in the mobile 4x4 layout');
   await page.setViewportSize({width:390,height:844});
-  await page.locator('#pad-grid .pad-hit').first().click();
-  await page.waitForFunction(()=>document.querySelector('#pad-grid .pad').classList.contains('playing'));
-  const editOutsidePad390=await page.locator('#pad-grid .pad-cell').first().evaluate(cell=>{
-    const pad=cell.querySelector('.pad').getBoundingClientRect(),edit=cell.querySelector('.edit-pad').getBoundingClientRect();
-    return edit.top>=pad.bottom;
-  });
-  assert.equal(editOutsidePad390,true,'the 44px Edit target must not overlap the playable pad at 390px either');
+  await page.locator('[data-studio-screen="sounds"]').click();
+  await page.waitForFunction(()=>document.body.dataset.screen==='sounds');
   assert.equal(await page.locator('#pad-grid .pad-title').first().evaluate(element=>getComputedStyle(element).userSelect),'none','holding a pad should not select its label text');
   assert.notEqual(await page.locator('#pad-name').evaluate(element=>getComputedStyle(element).userSelect),'none','sample names should remain selectable while editing');
-  const mobileEditButton=page.locator('#pad-grid .pad-cell').first().locator('.edit-pad');
+  const mobileEditButton=page.locator('#pad-edit-mode');
   await mobileEditButton.click();
-  assert.equal(await page.locator('#sample-editor-dialog').evaluate(dialog=>dialog.open),true,'Edit should open the selected pad editor without sending a phone user down the page');
+  assert.equal(await mobileEditButton.getAttribute('aria-pressed'),'true','Playground should offer an explicit pad editing mode');
+  assert.equal(await page.locator('#pad-grid .pad-hit').first().getAttribute('aria-label'),'Edit Pad 01','pad actions should explain their current Play/Edit mode');
+  await page.locator('#pad-grid .pad-hit').first().click();
+  assert.equal(await page.locator('#sample-editor-dialog').evaluate(dialog=>dialog.open),true,'Edit mode should open the selected pad editor without scrolling away from the grid');
   assert.equal(await page.locator('#sample-inspector').isVisible(),true,'the existing sample editor should be visible inside the modal');
   const mobileEditorBounds=await page.locator('#sample-editor-dialog').evaluate(dialog=>{const rect=dialog.getBoundingClientRect();return {width:Math.round(rect.width),height:Math.round(rect.height),parent:document.querySelector('#sample-inspector').parentElement.id};});
-  assert.equal(mobileEditorBounds.width,390,'the sample editor should use the phone viewport width');
-  assert.equal(mobileEditorBounds.height,844,'the sample editor should use the phone viewport height');
-  assert.equal(mobileEditorBounds.parent,'sample-editor-dialog','the existing inspector should move into the modal without duplicating its controls');
+  assert.ok(mobileEditorBounds.width>300&&mobileEditorBounds.width<=390,'the focused editor should fit within the phone viewport width');
+  assert.ok(mobileEditorBounds.height>500&&mobileEditorBounds.height<=844,'the focused editor should remain inside the phone viewport and scroll internally');
+  assert.equal(mobileEditorBounds.parent,'sample-editor-dialog','the existing sample editor should be available inside its modal');
   await page.locator('#close-sample-editor').click();
   assert.equal(await page.locator('#sample-editor-dialog').evaluate(dialog=>dialog.open),false,'Done should close the mobile sample editor');
-  await page.waitForFunction(()=>document.querySelector('#sample-inspector').parentElement.id==='studio-workspace');
-  assert.equal(await page.locator('#sample-inspector').evaluate(element=>element.parentElement.id),'studio-workspace','closing the modal should restore the desktop inspector in place');
+  await page.waitForFunction(()=>document.activeElement===document.querySelector('#pad-edit-mode'));
   assert.equal(await mobileEditButton.evaluate(element=>document.activeElement===element),true,'closing the modal should return focus to the Edit button');
-  await mobileEditButton.click();
+  await page.locator('#pad-grid .pad-hit').first().click();
   await page.keyboard.press('Escape');
-  await page.waitForFunction(()=>!document.querySelector('#sample-editor-dialog').open&&document.querySelector('#sample-inspector').parentElement.id==='studio-workspace');
+  await page.waitForFunction(()=>!document.querySelector('#sample-editor-dialog').open&&document.activeElement===document.querySelector('#pad-edit-mode'));
   assert.equal(await mobileEditButton.evaluate(element=>document.activeElement===element),true,'Escape should close the editor and restore focus to its trigger');
   await page.setViewportSize({width:320,height:720});
   if(!await page.locator('#loop-settings').evaluate(element=>element.open))await page.locator('#loop-settings > summary').click();
   await page.locator('#layout-select').selectOption('3x4');
   await page.locator('#loop-settings > summary').click();
   await page.setViewportSize({width:1280,height:900});
+  await page.locator('[data-studio-screen="beats"]').click();
+  await page.waitForFunction(()=>document.body.dataset.screen==='beats');
   await page.locator('#make-video').click();
   await page.waitForFunction(()=>document.body.dataset.screen==='export');
   await page.locator('[data-studio-screen="beats"]').click();
   await page.waitForFunction(()=>document.body.dataset.screen==='beats');
   await page.locator('#beat-advanced > summary').click();
-  await page.locator('#video-director-details > summary').click();
   assert.equal(await page.locator('#steps .step.on').count()>0,true,'the first-run action should prepare a starter loop');
   for(const pad of ['0','1','2']){
     await page.locator('#beat-pad-select').selectOption(pad);
@@ -181,14 +176,19 @@ try {
   }
   await page.locator('[data-studio-screen="sounds"]').click();
   await page.waitForFunction(()=>document.body.dataset.screen==='sounds');
-  await page.locator('#loop-settings > summary').click();
+  await page.locator('#pad-edit-mode').click();
+  await page.locator('#pad-grid .pad-hit').nth(2).click();
   assert.match(await page.locator('#sample-info').textContent(),/Demo synth ready to play/,'demo pads should explain why sample editing controls are not yet available');
   await page.locator('#sample-advanced > summary').click();
-  assert.equal(await page.locator('#volume').isVisible(),true,'demo pads should keep their volume control in Playground');
+  assert.equal(await page.locator('#volume').isVisible(),true,'demo pads should keep their volume control in the focused editor');
   assert.equal(await page.locator('#speed').isVisible(),false,'media-only controls should stay hidden for demo pads');
+  await page.locator('#close-sample-editor').click();
   await page.locator('#demo-button').click();
-  assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'false','demo sounds should remain switchable from the sample workspace');
+  assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'false','demo sounds should remain switchable from the Playground');
+  await page.locator('#pad-grid .pad-hit').nth(2).click();
   assert.equal(await page.locator('#volume').isVisible(),false,'empty pads should keep advanced controls hidden when demo is off');
+  await page.locator('#close-sample-editor').click();
+  await page.locator('#pad-edit-mode').click();
   await page.setViewportSize({width:390,height:844});
   if(!await page.locator('#loop-settings').evaluate(element=>element.open))await page.locator('#loop-settings > summary').click();
   await page.locator('#layout-select').selectOption('4x4');
@@ -198,25 +198,28 @@ try {
   if(!await page.locator('#loop-settings').evaluate(element=>element.open))await page.locator('#loop-settings > summary').click();
   await page.locator('#layout-select').selectOption('3x4');
   if(await page.locator('#loop-settings').evaluate(element=>element.open))await page.locator('#loop-settings > summary').click();
-  assert.equal(await page.locator('#quick-import').isVisible(),true,'quick import should be available from the first-run actions');
+  assert.equal(await page.locator('#studio-intro').isHidden(),true,'the first screen should keep the help card tucked away');
+  await page.locator('#show-help').click();
+  assert.equal(await page.locator('#quick-import').isVisible(),true,'quick import should be available from the optional Help card');
   assert.equal(await page.locator('#quick-record').isVisible(),true,'quick recording should be available from the first-run actions');
   const mobileHome=await page.evaluate(()=>{
     const record=document.querySelector('#quick-record').getBoundingClientRect();
     const demo=document.querySelector('#quick-demo').getBoundingClientRect();
     const pads=document.querySelector('#pad-grid .pad:not([hidden])').getBoundingClientRect();
-    return {recordTop:record.top,demoTop:demo.top,padsBottom:pads.bottom,viewport:innerHeight,introHeight:document.querySelector('#studio-intro').getBoundingClientRect().height,columns:getComputedStyle(document.querySelector('#pad-grid')).gridTemplateColumns.split(' ').length};
+    return {recordTop:record.top,demoTop:demo.top,padsBottom:pads.bottom,barTop:document.querySelector('.transport-panel').getBoundingClientRect().top,viewport:innerHeight,introHeight:document.querySelector('#studio-intro').getBoundingClientRect().height,columns:getComputedStyle(document.querySelector('#pad-grid')).gridTemplateColumns.split(' ').length};
   });
-  assert.ok(mobileHome.recordTop<mobileHome.demoTop,'recording should be the primary first-run action on phones');
-  assert.ok(mobileHome.introHeight<140,`mobile copy should leave more room for the sampler: ${JSON.stringify(mobileHome)}`);
-  assert.ok(mobileHome.padsBottom<mobileHome.viewport,`the first pad row should be visible without scrolling on a phone: ${JSON.stringify(mobileHome)}`);
+  assert.equal(await page.locator('#quick-demo').evaluate(button=>button.classList.contains('primary-action')),true,'the optional starter beat should be the primary Help action');
+  assert.ok(mobileHome.introHeight<220,`optional mobile Help should remain compact: ${JSON.stringify(mobileHome)}`);
+  assert.ok(mobileHome.padsBottom<mobileHome.barTop,`the first pad row should be visible above the bottom transport without scrolling: ${JSON.stringify(mobileHome)}`);
+  await page.locator('#dismiss-intro').click();
   assert.equal(mobileHome.columns,3,'the default phone pad layout should use three finger-sized columns');
   await page.locator('#loop-settings > summary').click();
   const settingsPopover=await page.locator('.transport-settings').evaluate(popover=>{const rect=popover.getBoundingClientRect(),bar=document.querySelector('.transport-panel').getBoundingClientRect();return {visible:rect.width>0,top:rect.top,bottom:rect.bottom,barTop:bar.top,width:rect.width,viewport:innerWidth};});
   assert.equal(settingsPopover.visible,true,'the bottom bar Settings control should expose layout and tempo options');
   assert.ok(settingsPopover.bottom<=settingsPopover.barTop,`transport settings should open above the fixed bar: ${JSON.stringify(settingsPopover)}`);
   assert.ok(settingsPopover.width<=settingsPopover.viewport,`transport settings should fit a narrow phone: ${JSON.stringify(settingsPopover)}`);
-  await page.locator('#studio-nav').hover();
-  await page.mouse.wheel(0,80);
+  await page.evaluate(()=>window.scrollTo(0,80));
+  await page.waitForTimeout(50);
   assert.equal(await page.locator('#loop-settings').evaluate(element=>element.open),false,'scrolling away from the settings popover should dismiss it');
   await page.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));
   await page.waitForTimeout(100);
@@ -233,11 +236,14 @@ try {
     await page.locator(`[data-studio-screen="${screen}"]`).click();
     await page.waitForFunction(value=>document.body.dataset.screen===value,screen);
     if(screen==='beats'){
-      for(const id of ['beat-advanced','video-director-details']){
-        const details=page.locator(`#${id}`);
-        if(!await details.evaluate(element=>element.open))await details.locator('summary').click();
-      }
+      const details=page.locator('#beat-advanced');
+      if(!await details.evaluate(element=>element.open))await details.locator('summary').click();
     }
+  };
+  const openVideoDirector=async()=>{
+    if(await page.locator('body').getAttribute('data-screen')!=='export')await openScreen('export');
+    const details=page.locator('#video-director-details');
+    if(!await details.evaluate(element=>element.open))await details.locator('summary').click();
   };
   await openScreen('voice');
   assert.equal(await page.locator('#voice-speech-tool').isVisible(),true,'Voice Lab should initially focus Speech & words');
@@ -262,31 +268,30 @@ try {
   await page.setViewportSize({width:1280,height:900});
   await openScreen('sounds');
   await page.locator('#pad-grid .pad-cell').first().hover();
-  await page.locator('#pad-grid .pad-cell').first().locator('.edit-pad').click();
-  assert.equal(await page.locator('#sample-editor-dialog').evaluate(dialog=>dialog.open),false,'desktop editing should keep using the visible inspector rather than opening a phone modal');
-  assert.equal(await page.locator('#sample-inspector').evaluate(element=>element.parentElement.id),'studio-workspace','desktop editing should leave the inspector in the side panel');
-  assert.equal(await page.locator('#source-advanced').evaluate(element=>element.open),false,'optional sources should stay behind a disclosure');
+  const desktopEdit=page.locator('#pad-grid .pad-cell').first().locator('.edit-pad');
+  await desktopEdit.click();
+  assert.equal(await page.locator('#sample-editor-dialog').evaluate(dialog=>dialog.open),true,'desktop Edit should open the focused sample editor');
+  assert.equal(await page.locator('#sample-inspector').evaluate(element=>element.parentElement.id),'sample-editor-dialog','the focused editor should keep one set of controls in the modal');
+  assert.equal(await page.locator('#source-advanced').evaluate(element=>element.open),false,'optional sources should start behind a disclosure');
   await page.locator('#source-advanced > summary').click();
   const flowMusicLink=page.getByRole('link',{name:'Google Flow Music'});
-  assert.equal(await flowMusicLink.getAttribute('href'),'https://www.flowmusic.app/','Sounds should link to Google Labs’ current Flow Music destination');
+  assert.equal(await flowMusicLink.getAttribute('href'),'https://www.flowmusic.app/','the editor should link to Google Labs’ current Flow Music destination');
   assert.match(await page.locator('#sample-inspector').textContent(),/manual file handoff/i,'Flow Music use should be explained as a manual import, not an account integration');
   assert.equal(await page.locator('#voice-lab').isHidden(),true,'Voice Lab should be a separate screen');
-  assert.equal(await page.locator('#sample-inspector').isVisible(),true,'Sound discovery should expose sample editing');
+  assert.equal(await page.locator('#sample-inspector').isVisible(),true,'the focused editor should expose sample discovery');
   assert.equal(await page.locator('#editor-empty-hint').isVisible(),true,'empty sample should explain when editing tools appear');
-  assert.equal(await page.locator('#sample-inspector .region-editor').isHidden(),true,'unused trimming controls should not overwhelm first-time users');
+  assert.equal(await page.locator('#sample-inspector .region-editor').evaluateAll(elements=>elements.every(element=>getComputedStyle(element).display==='none')),true,'unused trim and discovery controls should not overwhelm first-time users');
   assert.equal(await page.locator('#sample-inspector .sliders').isHidden(),true,'unused pitch and tuning controls should not overwhelm first-time users');
   for(const id of ['google-drive','google-photos']){
     assert.equal(await page.locator(`#${id}`).isDisabled(),true,`${id} should be disabled until the optional Google integration is configured`);
     assert.match(await page.locator(`#${id}`).locator('small').textContent(),/Setup required/);
     assert.match(await page.locator(`#${id}`).getAttribute('aria-label'),/Use Device \/ Files or Record on Pad/);
   }
-  await page.locator('#source-advanced > summary').click();
+  await page.locator('#close-sample-editor').click();
   await page.locator('.pad-hit').first().click();
   assert.equal(await page.locator('#pad-source-dialog').isVisible(),true,'empty pads should offer a source picker');
-  assert.equal(await page.locator('#pad-google-drive').isVisible(),true,'Drive should be available in the source picker');
-  assert.equal(await page.locator('#pad-google-photos').isVisible(),true,'Photos should be available in the source picker');
-  assert.equal(await page.locator('#pad-google-drive').isDisabled(),true,'the pad source picker must not offer a dead Google Drive action');
-  assert.equal(await page.locator('#pad-google-photos').isDisabled(),true,'the pad source picker must not offer a dead Google Photos action');
+  assert.equal(await page.locator('#pad-google-drive').isHidden(),true,'unconfigured Google Drive should stay out of the source picker');
+  assert.equal(await page.locator('#pad-google-photos').isHidden(),true,'unconfigured Google Photos should stay out of the source picker');
   await page.locator('#pad-source-cancel').click();
   const configuredPage=await context.newPage();
   await configuredPage.addInitScript(()=>{
@@ -341,15 +346,20 @@ try {
   assert.ok(beatGeometry.sequencerTop<beatGeometry.gridTop&&beatGeometry.padHeight<125,`Beat Grid should prioritise the sequencer and compact the pads: ${JSON.stringify(beatGeometry)}`);
   await page.locator('#beat-pad-select').selectOption('2');
   assert.equal(await page.locator('.pad[data-id="2"]').evaluate(pad=>pad.classList.contains('selected')),true,'pad selector should change the edited beat lane without scrolling');
-  assert.equal(await page.locator('#video-director').isVisible(),true,'Beat Grid should expose Video Director');
+  assert.equal(await page.locator('#video-director').isHidden(),true,'video direction should stay out of the Sequence workspace');
+  await openVideoDirector();
+  assert.equal(await page.locator('#video-director').isVisible(),true,'Video & Export should expose the optional video director');
   assert.equal(await page.locator('#director-steps button').count(),16,'video direction should have one shot per sequencer step');
+  await openScreen('beats');
   const desktopBeatOrder=await page.evaluate(()=>({sequencer:document.querySelector('#sequencer').getBoundingClientRect().top,pads:document.querySelector('.performance-area').getBoundingClientRect().top}));
-  assert.ok(desktopBeatOrder.sequencer<desktopBeatOrder.pads,`Beat Grid should place the sequencer before the pad grid on desktop: ${JSON.stringify(desktopBeatOrder)}`);
+  assert.ok(desktopBeatOrder.sequencer<desktopBeatOrder.pads,`Sequence should place the sequencer before the pad grid on desktop: ${JSON.stringify(desktopBeatOrder)}`);
   await page.locator('.pad[data-id="2"]').hover();
   await page.locator('.pad-cell[data-pad-id="2"] .edit-pad').click();
   await page.waitForFunction(()=>document.body.dataset.screen==='sounds');
   assert.equal(await page.locator('.pad[data-id="2"]').evaluate(pad=>pad.classList.contains('selected')),true,'pad-card Edit from Beat Grid should open Sounds with that pad selected');
-  await openScreen('beats');
+  assert.equal(await page.locator('#sample-editor-dialog').evaluate(dialog=>dialog.open),true,'pad-card Edit should open the focused sample editor');
+  await page.locator('#close-sample-editor').click();
+  await openVideoDirector();
   await page.locator('#director-mode').selectOption('solo');
   await page.locator('#director-pads input[value="0"]').check();
   assert.match(await page.locator('#director-status').textContent(),/show pad 1/);
@@ -358,11 +368,14 @@ try {
   await page.locator('#director-pads input[value="0"]').check();
   await page.locator('#director-pads input[value="1"]').check();
   assert.match(await page.locator('#director-status').textContent(),/show pads 1, 2/);
+  await openScreen('beats');
   await page.locator('#track-view').click();
   assert.equal(await page.locator('#track-grid .track-row').count(),12,'all-tracks view should expose each lane in the 12-pad layout');
   await page.locator('.track-row[data-pad="2"] .track-edit').click();
   await page.waitForFunction(()=>document.body.dataset.screen==='sounds');
   assert.equal(await page.locator('.pad[data-id="2"]').evaluate(pad=>pad.classList.contains('selected')),true,'Beat Grid Edit should select the correct pad in Sounds');
+  assert.equal(await page.locator('#sample-editor-dialog').evaluate(dialog=>dialog.open),true,'track Edit should open the focused sample editor');
+  await page.locator('#close-sample-editor').click();
   await openScreen('beats');
   await page.locator('#loop-settings > summary').click();
   for (const [layout,count] of [['2x2',4],['4x4',16],['3x4',12]]) {
@@ -446,7 +459,8 @@ try {
   await page.locator('#pattern-quantize').selectOption('nearest');
   await page.locator('#record-pattern').click();
   await page.waitForFunction(()=>document.querySelector('#record-pattern').textContent.includes('STOP TAKE'));
-  await page.locator('.pad-hit').first().evaluate(button=>button.click());
+  await page.waitForTimeout(60000/Number(await page.locator('#bpm-input').inputValue())*4+250);
+  await page.locator('.pad-hit').nth(2).click();
   await page.waitForFunction(()=>document.querySelectorAll('#steps .step[aria-pressed="true"]').length>1);
   await page.locator('#record-pattern').click();
   const overdubbedPattern=await activeSteps();
@@ -457,7 +471,8 @@ try {
   await page.locator('#pattern-take-mode').selectOption('replace');
   await page.locator('#record-pattern').click();
   await page.waitForFunction(()=>document.querySelector('#record-pattern').textContent.includes('STOP TAKE'));
-  await page.locator('.pad-hit').first().evaluate(button=>button.click());
+  await page.waitForTimeout(60000/Number(await page.locator('#bpm-input').inputValue())*4+250);
+  await page.locator('.pad-hit').nth(2).click();
   await page.waitForFunction(()=>document.querySelectorAll('#steps .step[aria-pressed="true"]').length===1);
   await page.locator('#record-pattern').click();
   const replacementPattern=await activeSteps();
@@ -467,6 +482,7 @@ try {
   assert.deepEqual(await activeSteps(),originalPattern,'undo should restore the replaced pattern');
   await page.locator('#grid-division').selectOption('1/4');
   await page.locator('#steps .step').nth(1).click();
+  await openVideoDirector();
   await page.locator('#director-steps button').first().click();
   await page.locator('#director-mode').selectOption('solo');
   await page.locator('#director-pads input[value="0"]').check();
@@ -474,17 +490,21 @@ try {
   await page.locator('#director-mode').selectOption('grid');
   await page.locator('#director-pads input[value="0"]').check();
   await page.locator('#director-pads input[value="1"]').check();
+  await openScreen('beats');
   await page.locator('#scene-name').fill('Smoke Intro');
   await page.locator('#save-scene').click();
   await page.locator('#clear-steps').click();
+  await openVideoDirector();
   await page.locator('#director-steps button').first().click();
   await page.locator('#director-mode').selectOption('black');
   await page.locator('#director-steps button').nth(1).click();
   await page.locator('#director-mode').selectOption('auto');
+  await openScreen('beats');
   await page.waitForFunction(()=>document.querySelectorAll('#steps .step.on').length===0);
   assert.equal(await page.locator('#steps .step.on').count(),0,'clear should remove the selected pattern');
   await page.locator('#launch-scene').click();
   await page.waitForFunction(()=>document.querySelector('#steps .step.on'));
+  await openVideoDirector();
   assert.equal(await page.locator('#grid-division').inputValue(),'1/4','scene loading should restore its saved grid division');
   assert.equal(await page.locator('#steps .step.on').first().getAttribute('data-step'),'4','scene loading should restore its coarse-grid pattern');
   await page.locator('#director-steps button').first().click();
@@ -516,10 +536,12 @@ try {
     await page.locator('.pad-cell .edit-pad').nth(1).click();
     await page.locator('#media-input').setInputFiles({name:'synthetic-set.webm',mimeType:'video/webm',buffer:recordedVideo});
     await page.getByText(/synthetic-set\.webm.*stored on this device/).waitFor();
+    await page.locator('#close-sample-editor').click();
     await page.locator('.pad-hit').nth(1).click();
     await page.waitForTimeout(250);
     await page.locator('.pad').first().hover();
     await page.locator('.pad-cell .edit-pad').first().click();
+    await page.locator('#close-sample-editor').click();
     checkpoint('audiovisual set recording and local WebM playback');
   }else{
     console.log('Skipped audiovisual set recording: MediaRecorder or canvas captureStream is unavailable.');
@@ -555,26 +577,33 @@ try {
     console.log('Skipped audio-only mix export: MediaRecorder or AudioContext is unavailable.');
   }
   await openScreen('sounds');
+  await page.locator('.pad').first().hover();
+  await page.locator('.pad-cell .edit-pad').first().click();
   await page.locator('#media-input').setInputFiles({name:'synthetic.wav',mimeType:'audio/wav',buffer:wav});
   await page.getByText(/synthetic.wav.*stored on this device/).waitFor();
   const restoredMedia=await page.evaluate(async()=>{const {getValue}=await import('/storage.js');const file=await getValue('media:0');return {isFile:file instanceof File,name:file.name,type:file.type,size:file.size};});
   assert.deepEqual(restoredMedia,{isFile:true,name:'synthetic.wav',type:'audio/wav',size:wav.length},'local storage should restore imported media as a named File');
-  assert.equal(await page.locator('#sample-inspector .region-editor').isVisible(),true,'editing tools should appear once a sample is loaded');
+  assert.equal(await page.locator('#sample-inspector .region-editor:not(.region-discovery)').isVisible(),true,'trim tools should appear once a sample is loaded');
   assert.equal(await page.locator('#editor-empty-hint').isHidden(),true,'first-use hint should disappear after a sample loads');
+  await page.locator('#close-sample-editor').click();
+  await page.locator('#session-menu > summary').click();
   await page.locator('#project-title').fill('Smoke pack');
   await page.waitForTimeout(700); // App's 300ms debounced save must complete before reload.
   await page.reload();
-  await page.getByText(/synthetic.wav.*stored on this device/).waitFor();
+  await page.waitForFunction(()=>document.querySelector('#sample-info').textContent.includes('synthetic.wav · AUDIO · stored on this device'));
   assert.equal(await page.locator('#project-title').inputValue(), 'Smoke pack');
+  await page.locator('#session-menu > summary').click();
   await page.locator('#project-title').fill('Rapid save pack');
   await page.reload();
-  await page.getByText(/synthetic.wav.*stored on this device/).waitFor();
+  await page.waitForFunction(()=>document.querySelector('#sample-info').textContent.includes('synthetic.wav · AUDIO · stored on this device'));
   assert.equal(await page.locator('#project-title').inputValue(), 'Rapid save pack','leaving the page inside the save debounce should preserve the latest project edit');
+  await page.locator('#session-menu > summary').click();
   await page.locator('#project-title').fill('Smoke pack');
   await page.waitForTimeout(500);
   assert.equal(await page.locator('#scene-select option').count(),1,'named scenes should persist across reload');
-  assert.ok(await page.locator('#steps .step.on').count()>0,'scene pattern should persist across reload');
   await openScreen('beats');
+  await page.locator('#beat-pad-select').selectOption('2');
+  assert.ok(await page.locator('#steps .step.on').count()>0,'scene pattern should persist across reload');
   await page.locator('#grid-division').selectOption('1/16');
   await openScreen('voice');
   assert.equal(await page.locator('#voice-model-credits').getAttribute('href'),'/credits.html','Voice Lab should provide an easy path to model and license credits');
@@ -789,7 +818,7 @@ try {
   await page.waitForTimeout(500);
   await page.reload();
   await openScreen('sounds');
-  await page.getByText(/synthetic\.wav.*stored on this device/).waitFor();
+  await page.waitForFunction(()=>document.querySelector('#sample-info').textContent.includes('synthetic.wav · AUDIO · stored on this device'));
   await page.waitForFunction(()=>document.querySelectorAll('#voice-word-list .voice-word input[type=text]').length===4);
   assert.deepEqual(await page.locator('#voice-word-list .voice-word input[type=text]').evaluateAll(inputs=>inputs.map(input=>input.value)),['Hello','from','MadLadPad','by hand'],'transcribed and manually aligned words should persist locally');
   assert.equal(await page.locator('#voice-word-list .voice-word').nth(3).locator('input[aria-label="Word 4 start seconds"]').inputValue(),'0.05','manual word start time should persist');
@@ -809,6 +838,7 @@ try {
   assert.equal(await page.locator('#melody-harmony-interval').inputValue(),'3','harmony interval should persist locally');
   assert.equal(await page.locator('#melody-follow-beat').isChecked(),true,'melody sequence recording option should persist locally');
   assert.equal(await page.locator('#voice-phrases .voice-phrase').count(),3,'saved story montage should persist without removing its source phrases');
+  await openVideoDirector();
   await page.locator('#director-steps button').first().click();
   assert.equal(await page.locator('#director-mode').inputValue(),'solo','first video step should retain its full-screen cut');
   await page.locator('#director-steps button').nth(1).click();
@@ -844,7 +874,8 @@ try {
   assert.equal(await regionStartHandle.getAttribute('aria-valuetext'),'1.85 seconds','timeline handle should expose its current time accessibly');
   const startHandleSize=await regionStartHandle.boundingBox(),endHandleSize=await regionEndHandle.boundingBox();
   assert.ok(startHandleSize.width>=44&&startHandleSize.height>=44,'selection handles should provide touch-friendly targets');
-  assert.ok(Math.abs((startHandleSize.y+startHandleSize.height/2)-(endHandleSize.y+endHandleSize.height/2))>=40,'nearby selection handles should be offset so their touch targets do not overlap');
+  const handlesDoNotOverlap=startHandleSize.x+startHandleSize.width<=endHandleSize.x||endHandleSize.x+endHandleSize.width<=startHandleSize.x||startHandleSize.y+startHandleSize.height<=endHandleSize.y||endHandleSize.y+endHandleSize.height<=startHandleSize.y;
+  assert.ok(handlesDoNotOverlap,'selection handles should keep their touch targets from overlapping');
   await regionStartHandle.focus();await page.keyboard.press('ArrowRight');
   assert.ok(Math.abs(Number(await page.locator('#region-start').inputValue())-1.9)<.01,'keyboard should move the selected start handle');
   await page.keyboard.press('ArrowLeft');
@@ -887,8 +918,10 @@ try {
   await page.getByText(/synthetic-region\.wav.*stored on this device/).waitFor();
   assert.equal(await page.locator('#trim-start').inputValue(),'1.85','manual region start should persist after reload');
   assert.equal(await page.locator('#trim-end').inputValue(),'2.25','manual region end should persist after reload');
+  await page.locator('#close-sample-editor').click();
   await page.locator('.pad').first().hover();
   await page.locator('.pad-cell .edit-pad').first().click();
+  await page.locator('#close-sample-editor').click();
   checkpoint('manual later-region preview/apply, local suggestions and reload persistence');
   const syntheticVideo=await page.evaluate(async()=>{
     if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream)throw new Error('WebM capture unavailable');
@@ -927,6 +960,10 @@ try {
   assert.equal(await page.locator('#sample-suggestions .suggestion').count(),0,'canceling a second run should discard stale suggestions');
   await page.evaluate(()=>window.forceWebmDecodeFailure=false);
   checkpoint('video playback analysis cancellation');
+  await page.locator('#close-sample-editor').click();
+  await page.locator('.pad').first().hover();
+  await page.locator('.pad-cell .edit-pad').first().click();
+  await page.locator('#close-sample-editor').click();
   if(audioRecordingSupported){
     await page.waitForFunction(()=>!document.querySelector('#pitch').disabled);
     const fixtureRms=await page.evaluate(async encoded=>{const bytes=Uint8Array.from(atob(encoded),character=>character.charCodeAt(0));const context=new AudioContext();const decoded=await context.decodeAudioData(bytes.buffer);const samples=decoded.getChannelData(0);const rms=Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length);await context.close();return {duration:decoded.duration,rms};},wav.toString('base64'));
@@ -1009,6 +1046,7 @@ try {
         page.once('dialog',dialog=>dialog.accept());
         await page.locator('#media-input').setInputFiles({name:'synthetic-pitch-video.webm',mimeType:'video/webm',buffer:Buffer.from(videoTone.base64,'base64')});
         await page.getByText(/synthetic-pitch-video\.webm.*stored on this device/).waitFor();
+        await page.locator('#close-sample-editor').click();
         await page.locator('.pad-hit').nth(1).click();
         await page.waitForFunction(()=>{const video=document.querySelectorAll('.pad video')[1];return video?.readyState>=2&&Number.isFinite(video.duration)&&video.duration>1.5;},null,{timeout:10000});
         await page.locator('.pad video').nth(1).evaluate(video=>{video.pause();video.currentTime=0;});
@@ -1031,13 +1069,15 @@ try {
     console.log('Skipped integrated Pitch export: MediaRecorder or AudioContext is unavailable.');
   }
   const downloadPromise = page.waitForEvent('download');
+  if(!await page.locator('#session-menu').evaluate(element=>element.open))await page.locator('#session-menu > summary').click();
   await page.locator('#export-button').click();
   const download = await downloadPromise;
   const pack = JSON.parse(await readFile(await download.path(), 'utf8'));
   assert.equal(pack.format, 'madladpad');
   assert.ok(pack.media[0].startsWith('data:audio/'));
   assert.equal(pack.project.pads[1].steps[4],true,'project pack should preserve the second lane pattern');
-  assert.equal(pack.project.pads[2].steps[8],true,'project pack should preserve the third lane pattern');
+  assert.equal(pack.project.pads[2].steps[4],true,'project pack should preserve the third lane pattern loaded from the saved scene');
+  assert.equal(pack.project.pads[2].steps[15],true,'project pack should preserve the third lane overdub');
   if(vocalOverdubSupported){assert.equal(pack.voiceMedia.length,1);assert.ok(pack.voiceMedia[0].startsWith('data:audio/'),'portable packs should preserve each vocal layer raw take');}
   if(recordingSupported)assert.ok(pack.media[1].startsWith('data:video/'),'portable pack should retain the synthetic video sample');
   await page.locator('#project-title').fill('Before restore');
@@ -1048,11 +1088,13 @@ try {
   assert.equal(await page.locator('#project-title').inputValue(), 'Smoke pack');
   if(vocalOverdubSupported){assert.equal(await page.locator('#voice-overdub-layers .vocal-layer-name').inputValue(),'Lead take','restoring a project pack should restore its vocal layer metadata');assert.match(await page.locator('#voice-overdub-layers .vocal-layer-meta').textContent(),/Raw take saved locally/,'restoring a project pack should restore its raw take');}
   await page.reload();
-  await page.getByText(/synthetic.wav.*stored on this device/).waitFor();
+  await page.waitForFunction(()=>document.querySelector('#sample-info').textContent.includes('synthetic.wav · AUDIO · stored on this device'));
   assert.equal(await page.locator('#project-title').inputValue(), 'Smoke pack');
   checkpoint('pack round-trip');
   const captureSupported=await page.evaluate(()=>Boolean(navigator.mediaDevices?.getUserMedia&&window.MediaRecorder));
   if(captureSupported){
+    await page.locator('.pad').first().hover();
+    await page.locator('.pad-cell .edit-pad').first().click();
     const trackCameraStreams=()=>page.evaluate(()=>{
       window.__cameraCaptureStreams=[];
       const getUserMedia=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
@@ -1101,9 +1143,10 @@ try {
     assert.ok(keptCaptureTrackStates.every(track=>track.readyState==='ended'),`keeping a camera take should stop every acquired audio/video track: ${JSON.stringify(keptCaptureTrackStates)}`);
     await page.reload();
     await openScreen('sounds');
-    await page.getByText(/synthetic.wav.*stored on this device/).waitFor();
+    await page.waitForFunction(()=>document.querySelector('#sample-info').textContent.includes('synthetic.wav · AUDIO · stored on this device'));
     await trackCameraStreams();
     const capturePackPromise=page.waitForEvent('download');
+    if(!await page.locator('#session-menu').evaluate(element=>element.open))await page.locator('#session-menu > summary').click();
     await page.locator('#export-button').click();
     const capturePack=JSON.parse(await readFile(await (await capturePackPromise).path(),'utf8'));
     assert.ok(capturePack.media[0].startsWith('data:audio/'),'saving a new capture must preserve the occupied pad');
@@ -1120,6 +1163,7 @@ try {
       await page.locator('.pad-cell .edit-pad').nth(target).click();
       await page.locator('#media-input').setInputFiles({name:'synthetic-long.webm',mimeType:'video/webm',buffer:longVideo});
       await page.getByText(/synthetic-long\.webm.*stored on this device/).waitFor();
+      await page.locator('#close-sample-editor').click();
     }
     await page.evaluate(()=>{
       const prototype=CanvasRenderingContext2D.prototype;
@@ -1135,7 +1179,8 @@ try {
         return fillRect.call(this,x,y,width,height);
       };
     });
-    await openScreen('export');
+    await openVideoDirector();
+    if(!await page.locator('#export-advanced').evaluate(element=>element.open))await page.locator('#export-advanced > summary').click();
     await page.locator('#record-layout').selectOption('follow-active');
     await page.locator('#video-aspect').selectOption('9:16');
     const performanceDownload=page.waitForEvent('download',{timeout:10000}).then(download=>({download}),error=>({error}));
@@ -1294,17 +1339,16 @@ try {
   assert.ok(rapFlowLayout.scrollWidth<=rapFlowLayout.width&&rapFlowLayout.pageWidth<=rapFlowLayout.viewportWidth,`rap flow should fit without horizontal overflow: ${JSON.stringify(rapFlowLayout)}`);
   await openScreen('sounds');
   if(await page.locator('#loop-settings').evaluate(element=>element.open))await page.locator('#loop-settings > summary').click();
-  await page.locator('.pad-cell:has(.pad:not([hidden])) .edit-pad').first().scrollIntoViewIfNeeded();
-  const mobileEdit=await page.locator('.pad-cell:has(.pad:not([hidden])) .edit-pad').first().boundingBox();
-  assert.ok(mobileEdit.width>=44&&mobileEdit.height>=44,`mobile Edit pad hit area should be at least 44 × 44px: ${JSON.stringify(mobileEdit)}`);
-  const mobileEditTarget=await page.locator('.edit-pad').first().evaluate(button=>{
-    const rect=button.getBoundingClientRect(),points=[[rect.left+2,rect.top+20],[rect.left+22,rect.top+5]];
-    const describe=(x,y)=>{const hit=document.elementFromPoint(x,y);return {label:hit?.closest('button')?.getAttribute('aria-label'),tag:hit?.tagName,className:typeof hit?.className==='string'?hit.className:'',stack:document.elementsFromPoint(x,y).slice(0,4).map(node=>({tag:node.tagName,className:typeof node.className==='string'?node.className:'',label:node.getAttribute('aria-label')}))};};
-    return {label:button.getAttribute('aria-label'),width:rect.width,height:rect.height,visibility:getComputedStyle(button).visibility,pointerEvents:getComputedStyle(button).pointerEvents,hits:points.map(([x,y])=>describe(x,y))};
-  });
-  assert.ok(mobileEditTarget.width>=44&&mobileEditTarget.height>=44,'mobile Edit Pad should expose a 44px hit area');
-  assert.ok(mobileEditTarget.hits.every(hit=>hit.label===mobileEditTarget.label),`mobile Edit Pad should accept taps just outside its visible chip: ${JSON.stringify(mobileEditTarget)}`);
+  const mobileEdit=await page.locator('#pad-edit-mode').boundingBox();
+  assert.ok(mobileEdit.width>=44&&mobileEdit.height>=44,`mobile Edit pads toggle should be at least 44 × 44px: ${JSON.stringify(mobileEdit)}`);
+  await page.locator('#pad-edit-mode').click();
+  assert.equal(await page.locator('#pad-edit-mode').getAttribute('aria-pressed'),'true','mobile editing should expose an explicit Edit pads mode');
+  await page.locator('.pad-cell:has(.pad:not([hidden])) .pad-hit').first().click();
+  assert.equal(await page.locator('#sample-editor-dialog').evaluate(dialog=>dialog.open),true,'tapping a pad in Edit mode should open the sample editor');
+  await page.locator('#close-sample-editor').click();
+  await page.locator('#pad-edit-mode').click();
   assert.equal((await page.locator('#voice-lab .section-label').first().textContent()).trim().startsWith('03 /'),true,'Voice Lab workspace numbering should match its navigation step');
+  await page.locator('#show-help').click();
   await page.evaluate(()=>{
     const input=document.querySelector('#media-input');
     window.quickImportOpened=false;
@@ -1315,6 +1359,7 @@ try {
   });
   await page.locator('#quick-import').click();
   assert.equal(await page.evaluate(()=>window.quickImportOpened),true,'quick import should invoke the existing device/file picker');
+  await page.locator('#show-help').click();
   await page.locator('#quick-record').click();
   assert.equal(await page.evaluate(()=>window.quickRecordOpened),true,'quick record should invoke the existing camera/microphone path');
   assert.deepEqual(errors, []);

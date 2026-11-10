@@ -57,6 +57,9 @@ try{
   assert.equal(await page.locator('[data-voice-jump="rap-title"]').getAttribute('aria-pressed'),'true');
 
   await page.locator('[data-studio-screen="sounds"]').click();
+  await page.locator('#pad-edit-mode').click();
+  await page.locator('#pad-grid .pad-hit').first().click();
+  assert.equal(await page.locator('#sample-editor-dialog').evaluate(dialog=>dialog.open),true,'WebKit edit mode should open the focused sample editor');
   const wav=makeWav();
   await page.locator('#media-input').setInputFiles({name:'webkit-synthetic.wav',mimeType:'audio/wav',buffer:wav});
   await page.getByText(/webkit-synthetic\.wav.*stored on this device/i).waitFor({timeout:15000});
@@ -71,7 +74,7 @@ try{
   assert.equal(saved.size,wav.length);
 
   await page.reload({waitUntil:'networkidle'});
-  await page.getByText(/webkit-synthetic\.wav.*stored on this device/i).waitFor({timeout:15000});
+  await page.waitForFunction(()=>document.querySelector('#sample-info').textContent.includes('webkit-synthetic.wav · AUDIO · stored on this device'),null,{timeout:15000});
   const restored=await page.evaluate(async()=>{
     const {getValue}=await import('/storage.js');
     const file=await getValue('media:0');
@@ -81,25 +84,25 @@ try{
 
   const canPlayTestVideo=await page.evaluate(()=>Boolean(document.createElement('video').canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"')));
   if(canPlayTestVideo){
-    const editPad=page.locator('.pad-cell .edit-pad').nth(1);
     const sampleEditor=page.locator('#sample-editor-dialog');
     const openSampleEditor=async()=>{
       if(!await sampleEditor.evaluate(dialog=>dialog.open)){
-        await editPad.click();
+        if(await page.locator('#pad-edit-mode').getAttribute('aria-pressed')!=='true')await page.locator('#pad-edit-mode').click();
+        await page.locator('#pad-grid .pad-hit').nth(1).click();
         await page.waitForFunction(()=>document.querySelector('#sample-editor-dialog').open);
       }
     };
     const closeSampleEditor=async()=>{
       if(await sampleEditor.evaluate(dialog=>dialog.open)){
         await page.locator('#close-sample-editor').click();
-        await page.waitForFunction(()=>!document.querySelector('#sample-editor-dialog').open&&document.querySelector('#sample-inspector').parentElement.id==='studio-workspace');
+        await page.waitForFunction(()=>!document.querySelector('#sample-editor-dialog').open);
       }
+      if(await page.locator('#pad-edit-mode').getAttribute('aria-pressed')==='true')await page.locator('#pad-edit-mode').click();
     };
     const videoFixture=await readFile(resolve('tests/fixtures/webkit-stop-boundary.mp4'));
     assert.ok(videoFixture.length>100,'the deterministic synthetic video fixture should be present');
     console.log(`WebKit synthetic video fixture: video/mp4 (${videoFixture.length} bytes).`);
-    await page.locator('.pad').nth(1).hover();
-    await page.locator('.pad-cell .edit-pad').nth(1).click();
+    await openSampleEditor();
     page.once('dialog',dialog=>dialog.accept());
     const extension='mp4';
     await page.locator('#media-input').setInputFiles({name:`webkit-playback.${extension}`,mimeType:'video/mp4',buffer:videoFixture});
