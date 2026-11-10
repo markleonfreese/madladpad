@@ -74,10 +74,12 @@ let activeVoiceTool='transcript-title';
 function showStudioScreen() {
   const requested = location.hash.slice(1);
   const screen = STUDIO_SCREENS.has(requested) ? requested : 'sounds';
+  $('loop-settings').open = false;
+  if(screen!=='sounds'&&padEditMode)setPadEditMode(false);
   if(screen!=='sounds' && $('sample-editor-dialog')?.open)closeSampleEditor();
   if (screen !== 'voice') voiceLab?.stopTuner?.('Voice Lab closed. Microphone is off.');
   document.body.dataset.screen = screen;
-  // Keep the sequencer first in reading and tab order on Beat Grid/Overdub.
+  // Keep the sequencer first in reading and tab order on Sequence/Overdub.
   const workspace=$('studio-workspace'),sequencer=$('sequencer');
   if(screen==='beats'||screen==='overdub')workspace.before(sequencer);
   else workspace.after(sequencer);
@@ -87,10 +89,10 @@ function showStudioScreen() {
   }
   const moreTools=$('studio-more-tools'),moreSummary=moreTools.querySelector('summary');
   if(screen==='voice'||screen==='overdub'){
-    moreSummary.textContent=`Lab · ${screen==='voice'?'Voice Lab':'Overdub'}`;
+    moreSummary.textContent=`Experimental · ${screen==='voice'?'Voice Lab':'Overdub'}`;
     moreSummary.setAttribute('aria-current','page');
   }else{
-    moreSummary.textContent='Lab';
+    moreSummary.textContent='Experimental';
     moreSummary.removeAttribute('aria-current');
   }
   moreTools.open=false;
@@ -381,7 +383,9 @@ function buildGrid() {
 function restoreSampleEditorFocus() {
   const trigger = sampleEditorTrigger;
   sampleEditorTrigger = null;
-  if (trigger?.isConnected && !trigger.closest('[hidden]')) trigger.focus({preventScroll:true});
+  requestAnimationFrame(()=>{
+    if (trigger?.isConnected && !trigger.closest('[hidden]')) trigger.focus({preventScroll:true});
+  });
 }
 
 function renderPad(id) {
@@ -1515,7 +1519,14 @@ function bindControls() {
   // Keep specialist video direction beside the capture choices it controls.
   $('export-lab').append($('video-director-details'));
   window.addEventListener('hashchange',showStudioScreen);
+  document.addEventListener('pointerdown',event=>{if($('loop-settings').open&&!$('loop-settings').contains(event.target))$('loop-settings').open=false;});
+  window.addEventListener('scroll',()=>{
+    const settings=$('loop-settings'),fields=settings.querySelector('.transport-settings');
+    if(settings.open&&!fields.contains(document.activeElement))settings.open=false;
+  },{passive:true});
+  $('close-sample-editor').addEventListener('click',closeSampleEditor);
   $('sample-editor-dialog').addEventListener('close',restoreSampleEditorFocus);
+  $('sample-editor-dialog').addEventListener('close',()=>{cancelOnsetAnalysis(false);$('region-preview').pause();});
   $('sample-editor-dialog').addEventListener('click',event=>{
     if(event.target===$('sample-editor-dialog'))$('sample-editor-dialog').close();
   });

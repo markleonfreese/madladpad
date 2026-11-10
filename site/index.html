@@ -34,11 +34,11 @@
     </header>
 
     <nav id="studio-nav" class="studio-nav" aria-label="Studio">
-      <a href="#sounds" data-studio-screen="sounds" aria-current="page">Playground</a>
-      <a href="#beats" data-studio-screen="beats">Beat Maker</a>
-      <a href="#export" data-studio-screen="export">Video & Export</a>
+      <a href="#sounds" data-studio-screen="sounds" aria-current="page"><span>01</span> Playground</a>
+      <a href="#beats" data-studio-screen="beats"><span>02</span> Sequence</a>
+      <a href="#export" data-studio-screen="export"><span>03</span> Video & Export</a>
       <details class="studio-more-tools" id="studio-more-tools">
-        <summary>Lab</summary>
+        <summary>Experimental</summary>
         <div class="studio-more-links">
           <a href="#voice" data-studio-screen="voice">Voice Lab</a>
           <a href="#overdub" data-studio-screen="overdub">Overdub</a>
@@ -64,7 +64,7 @@
       <div class="transport-controls">
         <button class="play-button" id="studio-play" type="button" aria-pressed="false">▶ PLAY LOOP</button>
         <details class="control-disclosure" id="loop-settings">
-          <summary>Loop settings</summary>
+          <summary>Settings</summary>
           <div class="transport-settings">
             <label class="field">PAD LAYOUT<select id="layout-select"><option value="3x4">12 PADS</option><option value="2x2">4 PADS</option><option value="4x4">16 PADS</option></select></label>
             <label class="field">TEMPO · BPM<input id="bpm-input" type="number" min="40" max="240" value="120"></label>
@@ -157,7 +157,7 @@
         <div><h2>Make it a loop.</h2><p>Tap a step to add a sound. Press Play when you’re ready.</p></div>
         <div class="seq-buttons">
           <button class="play-button" id="play-seq" aria-pressed="false">▶ PLAY</button>
-          <label class="beat-pad-choice">PAD TO SEQUENCE<select id="beat-pad-select" aria-label="Pad to edit in the beat grid"></select></label>
+          <label class="beat-pad-choice">PAD TO SEQUENCE<select id="beat-pad-select" aria-label="Pad to edit in Sequence"></select></label>
           <button class="pill-button" id="auto-beat">SURPRISE ME</button>
           <details class="control-disclosure beat-advanced" id="beat-advanced">
             <summary>Advanced beats</summary>
@@ -243,7 +243,7 @@
             <p id="tuner-status" class="voice-status" role="status">Microphone is off. Start the tuner when ready.</p>
           </section>
           <div class="voice-actions"><button class="pill-button" id="melody-add">ADD NOTE</button><label class="voice-label">HARMONY INTERVAL<select id="melody-harmony-interval"><option value="3">+3 · minor third</option><option value="4">+4 · major third</option><option value="5">+5 · fourth</option><option value="7">+7 · fifth</option><option value="12">+12 · octave</option><option value="-3">−3 · minor third</option><option value="-4">−4 · major third</option><option value="-5">−5 · fourth</option><option value="-7">−7 · fifth</option><option value="-12">−12 · octave</option></select></label><button class="pill-button" id="melody-harmony-add">ADD HARMONY LINE</button><button class="pill-button" id="melody-play">▶ PLAY MELODY</button><button class="pill-button" id="melody-export">EXPORT MIDI</button></div>
-          <label class="consent-line"><input id="melody-follow-beat" type="checkbox"> Loop the melody and harmony automatically with Beat Grid and include them in recorded mixes.</label>
+          <label class="consent-line"><input id="melody-follow-beat" type="checkbox"> Loop the melody and harmony automatically with Sequence and include them in recorded mixes.</label>
           <div id="melody-notes" class="melody-notes" role="group" aria-label="Melody notes"></div>
         </section>
 
@@ -265,7 +265,7 @@
       <p class="voice-intro">Start the loop, record a new take, then adjust levels or mute and solo layers. Each microphone take stays on this device and is aligned to the nearest sixteenth note.</p>
       <section class="voice-card" aria-labelledby="vocal-layers-title">
         <h3 id="vocal-layers-title">Vocal overdubs</h3>
-        <p class="voice-note">Use the beat grid below as a backing track. Recordings are stored as separate, editable local layers. When you are ready, move to Finish & Export to capture the full mix.</p>
+        <p class="voice-note">Use Sequence below as a backing track. Recordings are stored as separate, editable local layers. When you are ready, move to Finish & Export to capture the full mix.</p>
         <div class="voice-actions"><button class="pill-button" id="voice-overdub-record" disabled>● RECORD VOCAL OVERDUB</button><button class="pill-button" id="voice-overdub-stop" hidden>■ STOP AND SAVE TAKE</button></div>
         <p id="voice-overdub-status" class="voice-status" role="status" aria-live="polite">Start the sequencer to record a vocal layer.</p>
         <div class="voice-actions"><label class="voice-label">VOCAL HARMONY<select id="vocal-harmony-interval"><option value="4">+4 · major third</option><option value="3">+3 · minor third</option><option value="7">+7 · fifth</option><option value="-3">−3 · minor third</option><option value="-4">−4 · major third</option><option value="-7">−7 · fifth</option><option value="12">+12 · octave</option><option value="-12">−12 · octave</option></select></label><button id="vocal-add-harmony" class="pill-button">ADD PITCHED HARMONY TO LATEST RAW TAKE</button></div>

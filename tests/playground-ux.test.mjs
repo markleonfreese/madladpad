@@ -7,14 +7,18 @@ const app=readFileSync(new URL('../site/app.js',import.meta.url),'utf8');
 const css=readFileSync(new URL('../site/styles.css',import.meta.url),'utf8');
 
 test('the primary studio surface exposes a simple playable progression',()=>{
-  assert.match(html,/<a href="#sounds" data-studio-screen="sounds"[^>]*>Playground<\/a>/);
-  assert.match(html,/<a href="#beats" data-studio-screen="beats">Beat Maker<\/a>/);
-  assert.match(html,/<a href="#export" data-studio-screen="export">Video &amp; Export<\/a>|<a href="#export" data-studio-screen="export">Video & Export<\/a>/);
+  assert.match(html,/<a href="#sounds" data-studio-screen="sounds"[^>]*><span>01<\/span>\s*Playground<\/a>/);
+  assert.match(html,/<a href="#beats" data-studio-screen="beats"[^>]*><span>02<\/span>\s*Sequence<\/a>/);
+  assert.match(html,/<a href="#export" data-studio-screen="export"[^>]*><span>03<\/span>\s*Video &amp; Export<\/a>|<a href="#export" data-studio-screen="export"[^>]*><span>03<\/span>\s*Video & Export<\/a>/);
+  assert.match(html,/<summary>Experimental<\/summary>/);
   assert.match(html,/<section class="intro" id="studio-intro"[^>]*hidden>/);
   assert.match(html,/<button[^>]*id="pad-edit-mode"[^>]*aria-pressed="false"/);
   assert.match(html,/<button[^>]*id="studio-play"/);
   assert.match(html,/<details class="control-disclosure" id="loop-settings">/);
   assert.match(css,/\.pad \.pad-hit\{touch-action:none/);
+  assert.match(css,/\.transport-panel\{[^}]*position:fixed/);
+  assert.match(css,/\.transport-controls\{[^}]*display:grid/);
+  assert.match(app,/\$\('loop-settings'\)\.open = false/);
 });
 
 test('editing is modal, trim-first and advanced tools remain reachable',()=>{
