@@ -29,6 +29,14 @@ The command refuses to publish from another branch, a dirty checkout, or a `main
 
 After publishing, verify the new production deployment with `npx wrangler pages deployment list --project-name madladpad` and fetch the app URL plus key assets. Record deployment ID and source SHA in Issue #2. Keep Pages Functions absent and do not change domains, DNS or account configuration as part of this release.
 
+## Roll back the Pages app
+
+Cloudflare's [Pages rollback procedure](https://developers.cloudflare.com/pages/configuration/rollbacks/) uses the Pages project's Deployments page. Open `madladpad` → **Deployments** → **All deployments**, identify a successful **Production** deployment, and choose **Rollback to this deployment** from its actions menu. Confirm only when intentionally restoring production; preview deployments are not valid rollback targets.
+
+The previous known-good production target is deployment `8996bdb8-855e-476c-928f-048db46074c8`, branch `main`, source `f44e50aeb5d814f24556a7b1285c85fe14bd361d`. Check the deployment ID, production environment, and source SHA in the dashboard before selecting it. Do not roll back to the legacy Workers release.
+
+After rollback, refresh the deployment list and verify `https://madladpad.pages.dev` plus `/app.js`, `/sw.js`, `/voice.js`, `/voice-inference-worker.js`, and `/ort-wasm-simd-threaded.wasm`. Record the resulting production deployment ID and source SHA in Issue #2. This procedure was documented only; no rollback was performed.
+
 The repository checks are:
 
 ```sh
