@@ -511,13 +511,17 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
             cancelTranscription('Source or consent changed. The stale draft was discarded.');
             return;
           }
-          const words = boundTranscriptWordTimes(data.words, buffer.duration).slice(0, MAX_TRANSCRIPT_WORDS).map((word, index) => ({ ...word, id: `${Date.now()}-${index}`, selected: false, score: null }));
+          const modelWords = Array.isArray(data.words) ? data.words : [];
+          const boundedWords = boundTranscriptWordTimes(modelWords, buffer.duration);
+          const omittedWords = Math.max(0, modelWords.length - boundedWords.length);
+          const words = boundedWords.slice(0, MAX_TRANSCRIPT_WORDS).map((word, index) => ({ ...word, id: `${Date.now()}-${index}`, selected: false, score: null }));
           if (!words.length) {
             cancelTranscription('No usable timestamped words fit within this clip. Try again or add words and timestamps manually.');
             return;
           }
           project.voice.transcripts.push({ id: `${Date.now()}`, sourcePad: padId, words }); project.voice.transcripts = project.voice.transcripts.slice(-16);
-          save(); $('voice-status').textContent = `Draft transcript has ${words.length} timestamped words. Confidence is not provided; check wording and timing.`;
+          const omissionNotice = omittedWords ? ` ${omittedWords} returned word${omittedWords === 1 ? ' had' : 's had'} unusable or out-of-clip timing and ${omittedWords === 1 ? 'was' : 'were'} omitted. Review the clip and add any missing words manually.` : '';
+          save(); $('voice-status').textContent = `Draft transcript has ${words.length} timestamped words. Confidence is not provided; check wording and timing.${omissionNotice}`;
           cancelTranscription(); render();
         }
       };
