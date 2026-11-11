@@ -337,9 +337,9 @@ try {
     for(const screen of ['sounds','beats','voice','overdub','export']){
       await openScreen(screen);
       if(screen==='beats'){
-        const beatOrder=await page.evaluate(()=>({transport:getComputedStyle(document.querySelector('.transport-panel')).position,sequencer:document.querySelector('#sequencer').getBoundingClientRect().top,pads:document.querySelector('.performance-area').getBoundingClientRect().top}));
+        const beatOrder=await page.evaluate(()=>({transport:getComputedStyle(document.querySelector('.transport-panel')).position,sequencer:document.querySelector('#sequencer').getBoundingClientRect().top}));
         assert.equal(beatOrder.transport,'fixed',`the phone transport should stay in its bottom bar at ${width}px`);
-        assert.ok(beatOrder.sequencer<beatOrder.pads,`Sequence should show its step grid before the performance pads at ${width}px: ${JSON.stringify(beatOrder)}`);
+        assert.equal(await page.locator('#studio-workspace').isHidden(),true,`Sequence should hide the optional pad gallery by default at ${width}px`);
       }
       await page.waitForFunction(()=>{const toast=document.querySelector('#toast');return !toast.classList.contains('show')||Number(getComputedStyle(toast).opacity)>=.99;});
       const stageAudit=await page.evaluate(async()=>axe.run(document));
@@ -362,9 +362,14 @@ try {
   assert.deepEqual(errors, [], 'demo pad should not produce a page error');
   await openScreen('beats');
   assert.equal(await page.locator('#sequencer').isVisible(),true,'Beat Grid should expose sequencer');
+  assert.equal(await page.locator('#studio-workspace').isHidden(),true,'Sequence should focus on steps without a second full pad gallery');
   assert.equal(await page.locator('#sequencer').evaluate(el=>Boolean(el.compareDocumentPosition(document.querySelector('#studio-workspace'))&Node.DOCUMENT_POSITION_FOLLOWING)),true,'Beat Maker should appear before the full pad gallery in reading order');
+  await page.locator('#sequence-pad-toggle').click();
+  assert.equal(await page.locator('#sequence-pad-toggle').getAttribute('aria-expanded'),'true','performers can reveal the pad gallery when they need it');
   const beatGeometry=await page.locator('#sequencer').evaluate(el=>({sequencerTop:el.getBoundingClientRect().top,gridTop:document.querySelector('#studio-workspace').getBoundingClientRect().top,padHeight:document.querySelector('.pad:not([hidden])').getBoundingClientRect().height}));
   assert.ok(beatGeometry.sequencerTop<beatGeometry.gridTop&&beatGeometry.padHeight<125,`Beat Grid should prioritise the sequencer and compact the pads: ${JSON.stringify(beatGeometry)}`);
+  await page.locator('#sequence-pad-toggle').click();
+  assert.equal(await page.locator('#studio-workspace').isHidden(),true,'the optional pad gallery should collapse without clearing the pattern');
   await page.locator('#beat-pad-select').selectOption('2');
   assert.equal(await page.locator('.pad[data-id="2"]').evaluate(pad=>pad.classList.contains('selected')),true,'pad selector should change the edited beat lane without scrolling');
   assert.equal(await page.locator('#video-director').isHidden(),true,'video direction should stay out of the Sequence workspace');
@@ -372,6 +377,7 @@ try {
   assert.equal(await page.locator('#video-director').isVisible(),true,'Video & Export should expose the optional video director');
   assert.equal(await page.locator('#director-steps button').count(),16,'video direction should have one shot per sequencer step');
   await openScreen('beats');
+  await page.locator('#sequence-pad-toggle').click();
   const desktopBeatOrder=await page.evaluate(()=>({sequencer:document.querySelector('#sequencer').getBoundingClientRect().top,pads:document.querySelector('.performance-area').getBoundingClientRect().top}));
   assert.ok(desktopBeatOrder.sequencer<desktopBeatOrder.pads,`Sequence should place the sequencer before the pad grid on desktop: ${JSON.stringify(desktopBeatOrder)}`);
   await page.locator('.pad[data-id="2"]').hover();
@@ -539,19 +545,22 @@ try {
   const recordingSupported=await page.evaluate(()=>Boolean(window.MediaRecorder&&HTMLCanvasElement.prototype.captureStream));
   if(recordingSupported){
     const setDownload=page.waitForEvent('download',{timeout:5000});
-    await openScreen('export');
-    await page.locator('#start-record').click();
+    await openScreen('sounds');
+    await page.locator('#studio-record').click();
+    await page.waitForFunction(()=>document.querySelector('#studio-record').getAttribute('aria-pressed')==='true'&&document.querySelector('#studio-record').textContent.includes('Stop video'));
     await openScreen('beats');
+    assert.equal(await page.locator('#studio-record').getAttribute('aria-pressed'),'true','recording controls should stay visible after changing screens');
     await page.locator('.pad-hit').first().click();
     await page.waitForTimeout(450);
-    await openScreen('export');
-    await page.locator('#start-record').click();
+    await page.locator('#studio-record').click();
     const recording=await setDownload;
     const recordingPath=await recording.path();
     assert.ok(recordingPath,'set recording should produce a downloadable media file');
     const recordedVideo=await readFile(recordingPath);
     assert.ok(recordedVideo.length>100,'set recording should contain encoded media');
+    await openScreen('export');
     await page.locator('#export-video-preview').waitFor({state:'visible'});
+    assert.equal(await page.locator('#studio-record').getAttribute('aria-pressed'),'false','the global record control must return to idle after stop');
     await openScreen('sounds');
     await page.locator('.pad').nth(1).hover();
     await page.locator('.pad-cell .edit-pad').nth(1).click();

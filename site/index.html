@@ -63,6 +63,7 @@
     <section class="transport-panel" aria-label="Performance controls">
       <div class="transport-controls">
         <button class="play-button" id="studio-play" type="button" aria-pressed="false">▶ PLAY LOOP</button>
+        <button class="pill-button performance-record-button" id="studio-record" type="button" aria-pressed="false" aria-label="Record video performance">● Record video</button>
         <details class="control-disclosure" id="loop-settings">
           <summary>Settings</summary>
           <div class="transport-settings">
@@ -79,7 +80,7 @@
         <div class="section-label playground-heading"><span id="grid-section-label">PLAYGROUND · 12 PADS</span><div class="playground-actions"><button id="demo-button" class="pill-button" type="button" aria-pressed="false" aria-label="Toggle synthesized demo sounds on empty pads">Demo sounds</button><button type="button" id="pad-edit-mode" aria-pressed="false" aria-label="Switch to Edit pads mode">Edit pads</button></div></div>
         <div id="pad-grid" class="pad-grid layout-3x4" role="group" aria-label="Playable sample pads"></div>
         <div class="pad-bottom">
-          <p id="pad-help">Tap to play. Tap + to add a sound. Hold a sound to play until you release.</p>
+          <p id="pad-help">Hold an empty pad to open the camera, or tap + to choose a clip. Tap a loaded pad to play; hold to stop on release.</p>
         </div>
       </section>
 
@@ -88,6 +89,8 @@
         <div class="section-label editor-dialog-heading"><span id="selected-number">PAD 01 · EDIT SAMPLE</span><button type="button" class="quiet-button" id="close-sample-editor">Done</button></div>
         <div class="inspector-head"><div class="selected-circle" id="selected-circle">01</div><div><label for="pad-name">EDITING SAMPLE</label><input id="pad-name" maxlength="45" value="Pad 01" aria-label="Pad name"></div></div>
         <p class="sample-info" id="sample-info">No media loaded. Add a clip to get started.</p>
+        <details class="editor-sources" id="editor-sources" open>
+        <summary id="editor-sources-title" hidden>Replace this clip</summary>
         <div class="source-buttons">
           <button id="add-file" class="source-button main-source"><span class="source-icon">+</span> DEVICE / FILES <small>incl. iCloud Drive</small></button>
           <button id="camera-button" class="source-button"><span class="source-icon">◎</span> RECORD ON PAD <small>Camera + mic</small></button>
@@ -99,6 +102,7 @@
           <button id="google-photos" class="source-button" disabled aria-label="Google Photos import unavailable: optional setup required. Use Device / Files or Record on Pad."><span class="source-icon">▧</span> GOOGLE PHOTOS <small>Setup required</small></button>
           </div>
           <p class="voice-note">Create a backing track in <a href="https://www.flowmusic.app/" target="_blank" rel="noopener noreferrer">Google Flow Music</a>, download its audio, then use Device / Files to import it here. This is a manual file handoff: MadLadPad does not access your Flow account or send your recordings there.</p>
+        </details>
         </details>
         <p id="editor-empty-hint" class="editor-empty-hint">Record or import a sound, then select the moment you want to play.</p>
         <section class="region-editor" aria-labelledby="region-title">
@@ -124,6 +128,7 @@
             <button id="region-reset" type="button" disabled>Reset</button>
           </div>
         </section>
+        <div class="copy-sample"><label for="copy-target">USE THIS RECORDING ON ANOTHER PAD</label><select id="copy-target" aria-label="Destination for copied sample"></select><button id="copy-pad" type="button" class="pill-button">Copy to pad</button><p id="copy-status" role="status">Keep this pad unchanged, then trim a different moment on the copy.</p></div>
         <details class="sample-advanced" id="sample-advanced">
           <summary>Fine tune, find sounds &amp; MIDI</summary>
         <section class="region-editor region-discovery" aria-label="Find useful sound regions">
@@ -142,7 +147,6 @@
           <label>START <output id="start-out">0.00 s</output><input id="trim-start" type="range" min="0" max="10" step="0.05" value="0"></label>
           <label>END <output id="end-out">2.00 s</output><input id="trim-end" type="range" min="0.05" max="10" step="0.05" value="2"></label>
         </div>
-        <div class="copy-sample"><label for="copy-target">COPY CLIP AND TRIM TO</label><select id="copy-target" aria-label="Destination for copied sample"></select><button id="copy-pad" type="button" class="pill-button">Copy to empty pad</button><p id="copy-status" role="status">Keep the original clip; copy a different moment to another pad.</p></div>
         <div class="inspector-actions"><button id="clear-pad" class="text-button">Clear sample</button><button id="connect-midi" class="text-button">Connect MIDI</button></div>
         </details>
         <div class="info-note"><strong>PRIVATE BY DEFAULT</strong><p>Your clips are saved locally on this device. Export a pack to back them up or share them.</p></div>
@@ -158,6 +162,7 @@
           <button class="play-button" id="play-seq" aria-pressed="false">▶ PLAY</button>
           <label class="beat-pad-choice">PAD TO SEQUENCE<select id="beat-pad-select" aria-label="Pad to edit in Sequence"></select></label>
           <button class="pill-button" id="auto-beat">SURPRISE ME</button>
+          <button class="pill-button" id="sequence-pad-toggle" type="button" aria-expanded="false" aria-controls="studio-workspace">Show performance pads</button>
           <details class="control-disclosure beat-advanced" id="beat-advanced">
             <summary>Advanced beats</summary>
             <div class="beat-advanced-controls">
