@@ -331,9 +331,9 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
   .project-name{min-width:0}
   .project-name label{margin-bottom:3px;font-size:9px}
   .project-name input{max-width:none;font-size:15px}
-  .transport-controls{width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px}
-  .transport-controls #studio-play{width:100%;min-height:46px}
-  #loop-settings{min-width:105px}
+  .transport-controls{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:center;gap:8px}
+  .transport-controls #studio-play,.transport-controls #studio-record{width:100%;min-height:46px}
+  .transport-controls #loop-settings{grid-column:2;justify-self:end;min-width:105px}
   #loop-settings>summary{min-height:46px;justify-content:center}
   #loop-settings[open] .transport-settings{position:absolute;right:0;bottom:calc(100% + 16px);display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;width:min(100%,360px);padding:13px;border:1px solid var(--line);border-radius:13px;background:#19221c;box-shadow:0 10px 26px #080d0adc}
 }

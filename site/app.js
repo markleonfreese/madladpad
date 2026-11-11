@@ -1237,7 +1237,6 @@ async function toggleSetRecording() {
     $('start-record').classList.add('recording');$('start-record').textContent='■ STOP RECORDING';
     $('start-record').setAttribute('aria-pressed','true');
     syncPerformanceRecordButton();
-    document.activeElement?.blur?.();
     notify('Recording your audiovisual performance. Play pads here or on Sequence; stop with the Record video control.');
   } catch(error) {
     if(!takeActivity.current(token))return;

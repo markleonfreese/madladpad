@@ -334,6 +334,14 @@ try {
   const desktopViewport=page.viewportSize();
   for(const width of [320,390]){
     await page.setViewportSize({width,height:844});
+    const transportLayout=await page.evaluate(()=>{
+      const rect=id=>document.querySelector(id).getBoundingClientRect();
+      const play=rect('#studio-play'),record=rect('#studio-record'),settings=rect('#loop-settings');
+      return {play:{x:play.x,y:play.y,width:play.width,height:play.height},record:{x:record.x,y:record.y,width:record.width,height:record.height},settings:{x:settings.x,y:settings.y,width:settings.width,height:settings.height}};
+    });
+    assert.ok(Math.abs(transportLayout.play.y-transportLayout.record.y)<2,`Play and Record should share the first mobile row at ${width}px: ${JSON.stringify(transportLayout)}`);
+    assert.ok(transportLayout.settings.y>=transportLayout.play.y+transportLayout.play.height,`Settings should have its own secondary row at ${width}px: ${JSON.stringify(transportLayout)}`);
+    assert.ok(transportLayout.record.width>=44&&transportLayout.record.height>=44,`Record must remain a usable touch target at ${width}px`);
     for(const screen of ['sounds','beats','voice','overdub','export']){
       await openScreen(screen);
       if(screen==='beats'){
