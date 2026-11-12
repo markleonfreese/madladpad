@@ -628,6 +628,26 @@ try {
   assert.equal(await page.locator('#sample-inspector .region-editor:not(.region-discovery)').isVisible(),true,'trim tools should appear once a sample is loaded');
   assert.equal(await page.locator('#editor-empty-hint').isHidden(),true,'first-use hint should disappear after a sample loads');
   await page.locator('#close-sample-editor').click();
+  await page.evaluate(()=>{
+    window.__padVoices=[];window.__padStops=[];
+    window.__nativePadVoiceStart=AudioBufferSourceNode.prototype.start;
+    window.__nativePadVoiceStop=AudioBufferSourceNode.prototype.stop;
+    AudioBufferSourceNode.prototype.start=function(...args){if(this.buffer)window.__padVoices.push(this);return window.__nativePadVoiceStart.apply(this,args);};
+    AudioBufferSourceNode.prototype.stop=function(...args){if(window.__padVoices.includes(this))window.__padStops.push(this);return window.__nativePadVoiceStop.apply(this,args);};
+  });
+  await page.locator('.pad-hit').first().click();
+  await page.waitForFunction(()=>window.__padVoices.length===1);
+  await page.waitForTimeout(180);
+  await page.locator('.pad-hit').nth(1).click();
+  await page.waitForFunction(()=>!document.querySelector('.pad[data-id="1"] video').paused);
+  assert.equal(await page.evaluate(()=>window.__padStops.includes(window.__padVoices[0])),false,'starting the second pad must not stop the first pad voice');
+  await page.locator('.pad-hit').first().click();
+  await page.waitForFunction(()=>window.__padVoices.length===2&&window.__padStops.includes(window.__padVoices[0]));
+  await page.locator('.pad-hit').first().click();
+  await page.waitForFunction(()=>window.__padVoices.length===3&&window.__padStops.includes(window.__padVoices[1]));
+  assert.equal(await page.evaluate(()=>window.__padVoices.length),3,'three completed pad gestures must start exactly three decoded audio voices, with no synthesized-click duplicates');
+  await page.evaluate(()=>{AudioBufferSourceNode.prototype.start=window.__nativePadVoiceStart;AudioBufferSourceNode.prototype.stop=window.__nativePadVoiceStop;});
+  checkpoint('pad polyphony and one-voice same-pad retrigger');
   await page.locator('#session-menu > summary').click();
   await page.locator('#project-title').fill('Smoke pack');
   await page.waitForTimeout(700); // App's 300ms debounced save must complete before reload.

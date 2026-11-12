@@ -255,6 +255,10 @@ export class SamplerAudio {
     const rate = clamp(pad.speed ?? 1, .5, 2);
     this.setPadPitch(id,pad.pitch??0,rate,when);
     if (source.buffer) {
+      // Keep each pad monophonic while allowing separate pads to overlap. A
+      // single pad hit should restart its previous voice instead of stacking
+      // attacks, which is especially noticeable on rapid phone taps.
+      source.stopPlayback?.(when);
       const audio = this.context.createBufferSource();
       audio.buffer = source.buffer;
       audio.playbackRate.setValueAtTime(rate, when);
@@ -272,11 +276,34 @@ export class SamplerAudio {
       gain.gain.setValueAtTime(clamp(pad.volume,0,1.5),audibleStart+Math.max(attack,duration/rate-.006));
       gain.gain.linearRampToValueAtTime(0,audibleStart+duration/rate);
       if(pitchNode){audio.connect(pitchNode);pitchNode.connect(gain);}else audio.connect(gain);
-      gain.connect(this.master);audio.onended=()=>{
+      gain.connect(this.master);
+      let finished=false;
+      const stopPlayback=(atTime=this.context.currentTime)=>{
+        if(finished)return;
+        finished=true;
+        if(source.stopPlayback===stopPlayback)source.stopPlayback=null;
+        const now=this.context.currentTime;
+        if(when>now){
+          try{audio.stop(now);}catch{}
+        }else{
+          const stopAt=Math.max(now,atTime);
+          const parameter=gain.gain;
+          if(typeof parameter.cancelScheduledValues==='function'&&typeof parameter.setValueAtTime==='function'&&typeof parameter.linearRampToValueAtTime==='function'){
+            parameter.cancelScheduledValues(stopAt);
+            parameter.setValueAtTime(clamp(parameter.value,0,1.5),stopAt);
+            parameter.linearRampToValueAtTime(0,stopAt+.006);
+          }else parameter.value=0;
+          try{audio.stop(stopAt+.008);}catch{}
+        }
+      };
+      source.stopPlayback=stopPlayback;
+      audio.onended=()=>{
+        finished=true;
+        if(source.stopPlayback===stopPlayback)source.stopPlayback=null;
         if(gesture && this.momentaryPlayback.get(id)===gesture)this.momentaryPlayback.delete(id);
         audio.disconnect();pitchNode?.disconnect();gain.disconnect();
       };
-      if(gesture)gesture.stop=()=>audio.stop();
+      if(gesture)gesture.stop=()=>stopPlayback();
       // Let the processor drain its look-ahead ring after the selected clip
       // ends. The gain envelope still ends at the requested trim boundary.
       audio.start(when, offset, duration + (pitchNode ? latency * rate : 0));

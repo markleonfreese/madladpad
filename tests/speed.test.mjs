@@ -30,7 +30,7 @@ test('copying a clip preserves independent pad identity, patterns and mute state
   assert.throws(()=>copyPadSound(makeProject().pads[0],destination),/source media/i);
 });
 
-test('a held buffer sample stops on release, while a one-shot remains independent', () => {
+test('a held buffer sample stops on release and same-pad retriggers replace the previous hit', () => {
   const nodes=[];
   const param=()=>({setValueAtTime(){},linearRampToValueAtTime(){}});
   const sampler=Object.create(SamplerAudio.prototype);
@@ -41,10 +41,30 @@ test('a held buffer sample stops on release, while a one-shot remains independen
   assert.equal(sampler.trigger(0,pad,()=>{},0),true);
   assert.equal(sampler.trigger(0,pad,()=>{},0,{momentary:true}),true);
   sampler.stopPadMomentary(0);
-  assert.equal(nodes[0].stopped,undefined,'the tap one-shot should finish naturally');
+  assert.equal(nodes[0].stopped,true,'a new same-pad gesture should replace the previous voice');
   assert.equal(nodes[1].stopped,true,'a held sample should be gated on release');
   assert.equal(sampler.momentaryPlayback.size,0,'releasing a pad clears its gesture handle');
   sampler.stopPadMomentary(0);
+});
+
+test('buffer playback overlaps different pads but restarts the same pad with a short fade', () => {
+  const nodes=[];
+  const param=()=>({value:1,events:[],cancelScheduledValues(time){this.events.push(['cancel',time]);},setValueAtTime(value,time){this.value=value;this.events.push(['set',value,time]);},linearRampToValueAtTime(value,time){this.value=value;this.events.push(['ramp',value,time]);}});
+  const sampler=Object.create(SamplerAudio.prototype);
+  sampler.context={currentTime:1,createBufferSource(){const node={playbackRate:param(),connect(){return this;},start(...args){this.startArgs=args;},stop(time){this.stopTime=time;},disconnect(){}};nodes.push(node);return node;},createGain(){return {gain:param(),connect(){return this;},disconnect(){}};}};
+  sampler.master={};sampler.sources=new Map([[0,{file:{},buffer:{duration:3}}],[1,{file:{},buffer:{duration:.5}}]]);sampler.demoEnabled=false;
+  const pad=(end)=>({kind:'audio',start:0,end,speed:1,pitch:0,volume:1});
+
+  sampler.trigger(0,pad(3),()=>{},1);
+  sampler.trigger(1,pad(.5),()=>{},1.2);
+  assert.equal(nodes[0].stopTime,undefined,'a different pad must not stop the three-second voice');
+  sampler.context.currentTime=1.4;
+  sampler.trigger(0,pad(3),()=>{},1.4);
+
+  assert.equal(nodes.length,3,'each trigger should start one buffer voice');
+  assert.equal(nodes[0].stopTime,1.408,'same-pad restart should allow a short fade before stopping');
+  assert.equal(nodes[1].stopTime,undefined,'the other pad should remain polyphonic');
+  assert.equal(typeof sampler.sources.get(0).stopPlayback,'function','the new voice remains independently stoppable');
 });
 
 test('speed alone sets media playbackRate while pitch metadata is ignored', async () => {
@@ -100,6 +120,31 @@ test('pitched media fades at the selected boundary and resets its gain on retrig
   assert.equal(element.paused,true,'each ended media hit should leave the element stopped');
 });
 
+test('media-element fallback keeps separate pad clips playing concurrently',async()=>{
+  const makeElement=()=>{
+    const listeners=new Map();
+    return {duration:4,currentTime:0,playbackRate:1,preservesPitch:false,paused:true,playCount:0,pauseCount:0,
+      addEventListener(type,listener){listeners.set(type,listener);},
+      removeEventListener(type,listener){if(listeners.get(type)===listener)listeners.delete(type);},
+      pause(){this.paused=true;this.pauseCount++;},
+      play(){this.paused=false;this.playCount++;return Promise.resolve();}};
+  };
+  const first=makeElement(),second=makeElement();
+  const sampler=Object.create(SamplerAudio.prototype);
+  sampler.context={currentTime:1};sampler.sources=new Map([[0,{file:{},element:first,gain:{gain:{value:1}}}],[1,{file:{},element:second,gain:{gain:{value:1}}}]]);sampler.demoEnabled=false;
+  const pad=end=>({kind:'video',start:0,end,speed:1,pitch:0,volume:1});
+
+  sampler.trigger(0,pad(3),()=>{},1);
+  sampler.trigger(1,pad(.5),()=>{},1);
+  await new Promise(resolve=>setTimeout(resolve,10));
+
+  assert.equal(first.playCount,1,'pad A should start its media element');
+  assert.equal(second.playCount,1,'pad B should start without interrupting pad A');
+  assert.equal(first.paused,false,'the long first clip should still be playing');
+  assert.equal(second.paused,false,'the second clip should play at the same time');
+  sampler.sources.get(0).stopPlayback?.();sampler.sources.get(1).stopPlayback?.();
+});
+
 test('video playback reaches the selected end after delayed media startup', async () => {
   const listeners=new Map();let playbackTimer=null;
   const element={
@@ -150,7 +195,7 @@ test('short trimmed media stops on media time without waiting for sparse timeupd
   assert.ok(position>=.035&&position<=.12,`stop should stay close to the 50 ms trim boundary, got ${position}`);
 });
 
-test('decodable audio keeps low-latency polyphonic buffer playback at Speed only', () => {
+test('decodable audio keeps low-latency buffer playback at Speed only and restarts the same pad', () => {
   const nodes=[];
   const param=()=>({
     events:[],
@@ -161,7 +206,7 @@ test('decodable audio keeps low-latency polyphonic buffer playback at Speed only
   sampler.context={
     currentTime:0,
     createBufferSource(){
-      const node={playbackRate:param(),connect(){return this;},start(...args){this.startArgs=args;}};
+      const node={playbackRate:param(),connect(){return this;},start(...args){this.startArgs=args;},stop(time){this.stopTime=time;}};
       nodes.push(node);
       return node;
     },
@@ -176,7 +221,8 @@ test('decodable audio keeps low-latency polyphonic buffer playback at Speed only
   sampler.trigger(0,pad,()=>{},0);
   sampler.trigger(0,pad,()=>{},0);
 
-  assert.equal(nodes.length,2,'retriggering should create overlapping buffer voices');
+  assert.equal(nodes.length,2,'each tap should create exactly one buffer voice');
+  assert.equal(nodes[0].stopTime,.008,'same-pad retrigger should fade and stop the previous voice');
   assert.deepEqual(nodes.map(node=>node.playbackRate.events[0][1]),[1.5,1.5],
     'legacy pitch must not alter the Speed rate');
   assert.deepEqual(nodes.map(node=>node.startArgs),[[0,0,2],[0,0,2]]);
