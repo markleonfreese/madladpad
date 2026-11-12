@@ -27,7 +27,7 @@ const toggleGlobalDemo=async page=>{
   const settings=page.locator('#loop-settings');
   const wasOpen=await settings.evaluate(element=>element.open);
   if(!wasOpen)await page.locator('#loop-settings > summary').click();
-  await toggleGlobalDemo(page);
+  await page.locator('#demo-button').click();
   if(!wasOpen&&await settings.evaluate(element=>element.open))await page.locator('#loop-settings > summary').click();
 };
 
