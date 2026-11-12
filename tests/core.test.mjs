@@ -43,6 +43,11 @@ test('demo sound mode survives project normalisation and older projects default 
   assert.equal(normaliseProject({demoEnabled:true}).demoEnabled,true);
   assert.equal(normaliseProject({}).demoEnabled,false);
 });
+test('per-pad demo choices persist only for sounds in the local bank',()=>{
+  assert.equal(normaliseProject({pads:[{demoSound:'sub-bass'}]}).pads[0].demoSound,'sub-bass');
+  assert.equal(normaliseProject({pads:[{demoSound:'https://example.test/sample.wav'}]}).pads[0].demoSound,'');
+  assert.equal(normaliseProject({pads:[{}]}).pads[0].demoSound,'');
+});
 test('malformed project metadata is bounded and cannot inject extra pads', () => {
   const project = normaliseProject({layout: '100x100', bpm: 999, pads: [{pitch: -500, volume: 9, steps: [1,0]}]});
   assert.equal(project.layout, '3x4');

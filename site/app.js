@@ -1,4 +1,4 @@
-import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, directedPads, makeProject, normaliseProject, normaliseRegion, copyPadSound, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, AsyncActivity, suggestActiveRegion, captureRegionStatus, isPadAudible, captureStepPosition, stepTriggerTime, nextBarTime, videoVisualDurationMs } from './core.js';
+import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, DEMO_SOUNDS, directedPads, makeProject, normaliseProject, normaliseRegion, copyPadSound, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, AsyncActivity, suggestActiveRegion, captureRegionStatus, isPadAudible, captureStepPosition, stepTriggerTime, nextBarTime, videoVisualDurationMs } from './core.js';
 import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, collectVoiceMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
 import { isGooglePickerConfigured, pickFromDrive, pickFromPhotos } from './google.js';
@@ -322,7 +322,7 @@ function buildGrid() {
     let gesture=null,ignoreNextClick=false,recordTimer=null,longRecordReady=false;
     hit.addEventListener('pointerdown',event=>{
       if(event.button!==0||padEditMode)return;
-      if(!mediaFiles.has(id)&&!audio.demoEnabled){
+      if(!mediaFiles.has(id)&&!audio.demoEnabled&&!project.pads[id].demoSound){
         recordTimer=setTimeout(()=>{
           recordTimer=null;
           longRecordReady=true;
@@ -364,7 +364,7 @@ function buildGrid() {
       if(ignoreNextClick&&event.detail!==0){ignoreNextClick=false;return;}
       ignoreNextClick=false;
       if(padEditMode){openSampleEditor(id);return;}
-      if(!mediaFiles.has(id)&&!audio.demoEnabled)openSource();
+      if(!mediaFiles.has(id)&&!audio.demoEnabled&&!project.pads[id].demoSound)openSource();
       else playPad(id);
     });
     edit.addEventListener('click', () => openSampleEditor(id, edit));
@@ -398,14 +398,15 @@ function renderPad(id) {
   const config = project.pads[id];
   const {card,video,image} = pads[id];
   const hasMedia = mediaFiles.has(id);
+  const demo=DEMO_SOUNDS.find(sound=>sound.id===config.demoSound);
   card.hidden = id >= PAD_COUNT[project.layout];
   card.classList.toggle('empty',!hasMedia);
-  card.classList.toggle('demo',audio.demoEnabled&&!hasMedia);
+  card.classList.toggle('demo',Boolean(demo)||audio.demoEnabled&&!hasMedia);
   card.classList.toggle('selected',selected===id);
   card.classList.toggle('editable',hasMedia);
   card.classList.toggle('playing', (activeUntil.get(id)||0)>performance.now());
-  card.querySelector('.pad-title').textContent = hasMedia ? config.name : (audio.demoEnabled ? 'DEMO '+String(id+1).padStart(2,'0') : 'ADD SAMPLE');
-  card.querySelector('.pad-hit').setAttribute('aria-label',`${hasMedia || audio.demoEnabled ? 'Play' : 'Load'} ${config.name}`);
+  card.querySelector('.pad-title').textContent = hasMedia ? config.name : demo?.name || (audio.demoEnabled ? 'DEMO '+String(id+1).padStart(2,'0') : 'ADD SAMPLE');
+  card.querySelector('.pad-hit').setAttribute('aria-label',`${hasMedia || demo || audio.demoEnabled ? 'Play' : 'Load'} ${config.name}`);
   if(padEditMode)card.querySelector('.pad-hit').setAttribute('aria-label',`Edit ${config.name}`);
   video.hidden = config.kind !== 'video';
   image.hidden = config.kind !== 'image';
@@ -425,7 +426,9 @@ function renderBeatPadChoice(){
     let option=picker.options[id];
     if(!option){option=document.createElement('option');picker.append(option);}
     option.value=String(id);
-    option.textContent=`${String(id+1).padStart(2,'0')} · ${mediaFiles.has(id)?project.pads[id].name:audio.demoEnabled?'Demo synth':'Empty pad'}`;
+    const demo=DEMO_SOUNDS.find(sound=>sound.id===project.pads[id].demoSound);
+    const label=mediaFiles.has(id)?project.pads[id].name:demo?.name||(audio.demoEnabled?'Demo synth':'Empty pad');
+    option.textContent=`${String(id+1).padStart(2,'0')} · ${label}`;
   }
   while(picker.options.length>count)picker.remove(picker.options.length-1);
   picker.value=String(selected);
@@ -437,6 +440,31 @@ function selectPad(id) {
   selected=id;
   renderGrid(); renderControls(); renderSteps();
   syncRegionPreview();
+}
+
+function renderDemoSoundBank(){
+  const category=$('demo-category').value;
+  const host=$('demo-sound-options');host.replaceChildren();
+  for(const sound of DEMO_SOUNDS.filter(item=>item.category===category)){
+    const button=document.createElement('button');button.type='button';button.className='source-button demo-sound-option';
+    button.textContent=sound.name;button.setAttribute('aria-label',`Use ${sound.name} ${sound.category.toLowerCase()} demo sound`);
+    button.addEventListener('click',()=>assignDemoSound(sourcePad??selected,sound));host.append(button);
+  }
+}
+
+function openDemoSoundBank(id){
+  sourcePad=id;
+  $('demo-category').value=DEMO_SOUNDS.find(sound=>sound.id===project.pads[id].demoSound)?.category||'Drums';
+  renderDemoSoundBank();$('demo-bank-dialog').showModal();
+}
+
+function assignDemoSound(id,sound){
+  if(!Number.isInteger(id)||!DEMO_SOUNDS.some(item=>item.id===sound.id))return;
+  const pad=project.pads[id];pad.demoSound=sound.id;pad.name=sound.name;pad.fileName='';pad.kind='';pad.start=0;pad.end=2;
+  selectPad(id);renderGrid();renderTrackGrid();renderControls();queueSave();
+  if($('demo-bank-dialog').open)$('demo-bank-dialog').close();
+  if($('pad-source-dialog').open)$('pad-source-dialog').close();
+  notify(`${sound.name} added to pad ${id+1}.`);
 }
 
 function renderCopyTargets() {
@@ -639,6 +667,7 @@ function padIsAudible(id){return isPadAudible(project.pads.slice(0,PAD_COUNT[pro
 function renderControls() {
   const config = project.pads[selected];
   const hasMedia=mediaFiles.has(selected);
+  const demo=DEMO_SOUNDS.find(sound=>sound.id===config.demoSound);
   $('sample-inspector').classList.toggle('has-media',hasMedia);
   const sources=$('editor-sources');
   if(sources.dataset.mediaLoaded!==String(hasMedia)){
@@ -646,12 +675,15 @@ function renderControls() {
     sources.open=!hasMedia;
     $('editor-sources-title').hidden=!hasMedia;
   }
-  $('sample-inspector').classList.toggle('demo-enabled',audio.demoEnabled&&!mediaFiles.has(selected));
+  $('sample-inspector').classList.toggle('demo-enabled',Boolean(demo)||audio.demoEnabled&&!mediaFiles.has(selected));
+  $('demo-bank-editor').hidden=hasMedia;
   renderCopyTargets();
   $('selected-number').textContent = `PAD ${String(selected+1).padStart(2,'0')}`;
   $('selected-circle').textContent = String(selected+1).padStart(2,'0');
   $('pad-name').value = config.name;
-  $('sample-info').textContent = mediaFiles.has(selected) ? `${config.fileName} · ${config.kind.toUpperCase()} · stored on this device` : audio.demoEnabled ? 'Demo synth ready to play. No clip is loaded: import or record your own sound to edit its trim, speed and pitch.' : 'No media loaded. Add a clip to get started.';
+  $('sample-info').textContent = hasMedia ? `${config.fileName} · ${config.kind.toUpperCase()} · stored on this device` : demo ? `${demo.name} · generated locally. Choose another demo, record, or import a clip.` : audio.demoEnabled ? 'Demo synth ready to play. No clip is loaded: import or record your own sound to edit its trim, speed and pitch.' : 'No media loaded. Add a clip to get started.';
+  $('clear-pad').textContent=hasMedia?'Clear sample':demo?'Clear demo':'Clear sample';
+  $('clear-pad').disabled=!hasMedia&&!demo;
   $('volume').value = config.volume*100;
   $('pitch').value = config.pitch;
   const pitchAvailable=audio.canPitch(selected);
@@ -709,7 +741,8 @@ function renderTrackGrid(){
   for(let id=0;id<count;id++){
     const pad=project.pads[id],row=document.createElement('div');row.className=`track-row${pad.muted?' muted':''}${pad.solo?' solo':''}`;row.dataset.pad=id;row.setAttribute('role','group');
     const head=document.createElement('div');head.className='track-head';
-    const trackLabel=mediaFiles.has(id)?pad.name:(audio.demoEnabled?`Demo synth ${String(id+1).padStart(2,'0')}`:'Empty pad');row.setAttribute('aria-label',`Pattern lane ${id+1}: ${trackLabel}`);
+    const demo=DEMO_SOUNDS.find(sound=>sound.id===pad.demoSound);
+    const trackLabel=mediaFiles.has(id)?pad.name:demo?.name||(audio.demoEnabled?`Demo synth ${String(id+1).padStart(2,'0')}`:'Empty pad');row.setAttribute('aria-label',`Pattern lane ${id+1}: ${trackLabel}`);
     const name=document.createElement('button');name.type='button';name.className='track-name';name.textContent=`${String(id+1).padStart(2,'0')} · ${trackLabel}`;name.setAttribute('aria-label',`Select pad ${id+1}, ${trackLabel}`);name.addEventListener('click',()=>selectPad(id));head.append(name);
     const edit=document.createElement('button');edit.type='button';edit.dataset.control='edit';edit.className='track-edit';edit.textContent='EDIT';edit.setAttribute('aria-label',`Edit pad ${id+1}`);edit.addEventListener('click',()=>openSampleEditor(id));head.append(edit);
     for(const [key,label] of [['muted','M'],['solo','S']]){const button=document.createElement('button');button.type='button';button.dataset.control=key;button.className=`track-toggle${pad[key]?' active':''}`;button.textContent=label;button.setAttribute('aria-label',`${pad[key]?'Disable':'Enable'} ${key} for pad ${id+1}`);button.setAttribute('aria-pressed',String(pad[key]));button.addEventListener('click',()=>{pad[key]=!pad[key];renderTrackGrid();queueSave();});head.append(button);}
@@ -844,7 +877,7 @@ async function playPad(id, scheduledAt, momentary=false) {
   if(!padIsAudible(id))return;
   await audio.unlock();
   audio.setTransport(project.bpm,project.quantize);
-  if(!audio.demoEnabled&&!audio.sources.get(id)?.file){notify('This pad is empty. Add a clip or switch on demo sounds.');return;}
+  if(!audio.demoEnabled&&!project.pads[id].demoSound&&!audio.sources.get(id)?.file){notify('This pad is empty. Add a clip or choose a demo sound.');return;}
   if(patternRecording)capturePatternTap(id);
   if (!audio.trigger(id,project.pads[id],flashPad,scheduledAt,{momentary})) {
     notify('This pad is empty. Add a clip or switch on demo sounds.');
@@ -923,6 +956,7 @@ async function addMedia(id,file,persist=true) {
     throw error;
   }
   mediaFiles.set(id,file);
+  config.demoSound='';
   config.kind=kind;
   config.fileName=file.name;
   config.name=file.name.replace(/\.[^/.]+$/,'').slice(0,45) || `Pad ${id+1}`;
@@ -1689,11 +1723,16 @@ function bindControls() {
   $('quick-import').addEventListener('click',()=>{dismissIntro();$('add-file').click();});
   $('quick-record').addEventListener('click',()=>{dismissIntro();$('camera-button').click();});
   $('add-file').addEventListener('click',()=>{fileTarget=selected;$('media-input').click();});
+  $('demo-bank-editor').addEventListener('click',()=>openDemoSoundBank(selected));
   $('import-project-button').addEventListener('click',()=>$('project-input').click());
   $('export-button').addEventListener('click',exportPack);
   $('camera-button').addEventListener('click',()=>openCamera(selected));
   $('pad-record').addEventListener('click',()=>{const target=sourcePad;$('pad-source-dialog').close();if(target!==null)openCamera(target);});
   $('pad-files').addEventListener('click',()=>{fileTarget=sourcePad;$('pad-source-dialog').close();$('media-input').click();});
+  $('pad-demo-bank').addEventListener('click',()=>openDemoSoundBank(sourcePad??selected));
+  $('demo-category').addEventListener('change',renderDemoSoundBank);
+  $('demo-bank-cancel').addEventListener('click',()=>$('demo-bank-dialog').close());
+  $('demo-bank-dialog').addEventListener('cancel',()=>{sourcePad=null;});
   for(const [button,picker] of [['pad-google-drive','google-drive'],['pad-google-photos','google-photos']]){
     $(button).addEventListener('click',()=>{$('pad-source-dialog').close();$(picker).click();});
   }
@@ -1710,12 +1749,13 @@ function bindControls() {
   $('camera-close').addEventListener('click',closeCamera);
   $('camera-dialog').addEventListener('cancel',event=>{event.preventDefault();if(!cameraSaving)closeCamera();});
   $('clear-pad').addEventListener('click',async()=>{
-    if(!mediaFiles.has(selected))return;
-    if(!confirm('Remove this sample from local storage?'))return;
-    audio.unload(selected);mediaFiles.delete(selected);durations.delete(selected);
+    const hasMedia=mediaFiles.has(selected),demo=project.pads[selected].demoSound;
+    if(!hasMedia&&!demo)return;
+    if(!confirm(hasMedia?'Remove this sample from local storage?':'Clear this demo sound from the pad?'))return;
+    if(hasMedia){audio.unload(selected);mediaFiles.delete(selected);durations.delete(selected);}
     const previous=project.pads[selected],original=makeProject().pads[selected];
     project.pads[selected]={...original,steps:previous.steps,stepOffsets:previous.stepOffsets,muted:previous.muted,solo:previous.solo};
-    await deleteValue(`media:${selected}`);renderPad(selected);renderTrackGrid();renderControls();syncRegionPreview();queueSave();
+    if(hasMedia)await deleteValue(`media:${selected}`);renderPad(selected);renderTrackGrid();renderControls();syncRegionPreview();queueSave();
   });
   $('demo-button').addEventListener('click',()=>{
     audio.demoEnabled=!audio.demoEnabled;
