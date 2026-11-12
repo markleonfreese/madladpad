@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withModelReferrerPolicy } from '../site/voice-model-fetch.js';
-import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, midiFrequency, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, midiFrequency, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes } from '../site/core.js';
 
 test('Whisper model fetch omits the app referrer only for Hugging Face assets', async () => {
   const calls = [];
@@ -78,6 +78,10 @@ test('scene launch schedules on the next bar and scenes normalize safely',()=>{
   assert.deepEqual(p.scenes[0].pads[0].stepOffsets.slice(0,2),[.25,.9999]);
   assert.deepEqual(makeProject().scenes,[]);
   assert.equal(p.scenes[0].gridDivision,'1/16','legacy scenes should default to the full 16th-note grid');
+  assert.equal(p.scenes[0].pads[0].stepPlaybackMode,'full','legacy scenes should preserve full-sample one-shot playback');
+  const modeProject=normaliseProject({pads:[{stepPlaybackMode:'one-step'}],scenes:[{pads:[{stepPlaybackMode:'one-step'}]}]});
+  assert.equal(modeProject.pads[0].stepPlaybackMode,'one-step');
+  assert.equal(modeProject.scenes[0].pads[0].stepPlaybackMode,'one-step');
   assert.equal(normaliseProject({gridDivision:'1/4',scenes:[{gridDivision:'1/8'}]}).gridDivision,'1/4');
   assert.equal(normaliseProject({gridDivision:'triplet'}).gridDivision,'1/16');
   assert.equal(normaliseProject({scenes:[{gridDivision:'1/8'}]}).scenes[0].gridDivision,'1/8');
@@ -99,6 +103,9 @@ test('pattern capture can snap or retain timing offsets within a step',()=>{
   assert.deepEqual(captureStepPosition(.1,120,'off',4),{step:0,offset:.8},'free timing stays at sixteenth-note resolution');
   assert.equal(stepTriggerTime(5,120,.8),5.1);
   assert.equal(stepTriggerTime(5,120,2),5+.9999*.125);
+  assert.equal(stepGateDuration(120),.125);
+  assert.equal(stepGateDuration(120,.25),.09375);
+  assert.equal(stepGateDuration(240),.0625);
 });
 test('legacy pads receive safe per-step timing offsets',()=>{
   const pad=normaliseProject({pads:[{steps:[true],stepOffsets:[.25,4,-2,'bad']}] }).pads[0];

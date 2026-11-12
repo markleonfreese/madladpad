@@ -1,4 +1,4 @@
-import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, DEMO_SOUNDS, directedPads, makeProject, normaliseProject, normaliseRegion, copyPadSound, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, AsyncActivity, suggestActiveRegion, captureRegionStatus, isPadAudible, captureStepPosition, stepTriggerTime, nextBarTime, videoVisualDurationMs } from './core.js';
+import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, DEMO_SOUNDS, directedPads, makeProject, normaliseProject, normaliseRegion, copyPadSound, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, AsyncActivity, suggestActiveRegion, captureRegionStatus, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, nextBarTime, videoVisualDurationMs } from './core.js';
 import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, collectVoiceMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
 import { isGooglePickerConfigured, pickFromDrive, pickFromPhotos } from './google.js';
@@ -665,6 +665,18 @@ async function findGoodSounds(){
 }
 
 function padIsAudible(id){return isPadAudible(project.pads.slice(0,PAD_COUNT[project.layout]),id);}
+function releasePad(id,atTime=audio.context.currentTime){
+  const now=audio.context.currentTime;
+  audio.stopPadVoices(id,atTime);
+  if(atTime<=now){visualUntil.delete(id);activeUntil.delete(id);return;}
+  const deadline=performance.now()+(atTime-now)*1000;
+  if(visualUntil.has(id))visualUntil.set(id,Math.min(visualUntil.get(id),deadline));
+  if(activeUntil.has(id))activeUntil.set(id,Math.min(activeUntil.get(id),deadline));
+}
+function stopInaudiblePadVoices(){
+  const pads=project.pads.slice(0,PAD_COUNT[project.layout]),hasSolo=pads.some(pad=>pad.solo&&!pad.muted);
+  for(const pad of pads)if(pad.muted||hasSolo&&!pad.solo)releasePad(pad.id);
+}
 
 function renderControls() {
   const config = project.pads[selected];
@@ -718,6 +730,7 @@ function updateSequenceFocusMixer(){
   }
   $('sequence-focus-volume').value=String(Math.round(pad.volume*100));
   $('sequence-focus-volume-out').textContent=`${Math.round(pad.volume*100)}%`;
+  $('sequence-focus-playback').value=pad.stepPlaybackMode;
 }
 
 function openSequenceFocus(id){
@@ -765,6 +778,7 @@ function renderSteps() {
     button.disabled=Boolean(patternRecording);
     button.addEventListener('click', () => {
       if(patternRecording)return;
+      releasePad(selected);
       patternUndoSnapshot=null;renderPatternRecordingState();
       project.pads[selected].steps[i] = !project.pads[selected].steps[i];
       project.pads[selected].stepOffsets[i]=0;
@@ -790,8 +804,10 @@ function renderTrackGrid(){
     row.setAttribute('aria-label',compact?`Pattern lane ${id+1}: ${trackLabel}; ${enabledCount} of ${positions.length} steps active. Select lane name to edit.`:`Pattern lane ${id+1}: ${trackLabel}`);
     const name=document.createElement('button');name.type='button';name.dataset.control='name';name.className='track-name';name.textContent=`${String(id+1).padStart(2,'0')} · ${trackLabel}`;name.setAttribute('aria-label',compact?`Edit pattern for pad ${id+1}, ${trackLabel}`:`Select pad ${id+1}, ${trackLabel}`);name.addEventListener('click',()=>compact?openSequenceFocus(id):selectPad(id));head.append(name);
     const edit=document.createElement('button');edit.type='button';edit.dataset.control='edit';edit.className='track-edit';edit.textContent='EDIT';edit.setAttribute('aria-label',`Edit pad ${id+1}`);edit.addEventListener('click',()=>openSampleEditor(id));head.append(edit);
-    for(const [key,label] of [['muted','M'],['solo','S']]){const button=document.createElement('button');button.type='button';button.dataset.control=key;button.className=`track-toggle${pad[key]?' active':''}`;button.textContent=label;button.setAttribute('aria-label',`${pad[key]?'Disable':'Enable'} ${key} for pad ${id+1}`);button.setAttribute('aria-pressed',String(pad[key]));button.addEventListener('click',()=>{pad[key]=!pad[key];renderTrackGrid();queueSave();});head.append(button);}
-    const gain=document.createElement('input');gain.type='range';gain.min='0';gain.max='150';gain.value=String(Math.round(pad.volume*100));gain.className='track-gain';gain.setAttribute('aria-label',`Volume for pad ${id+1}`);gain.addEventListener('input',()=>{pad.volume=Number(gain.value)/100;if(selected===id){$('volume').value=gain.value;$('volume-out').textContent=`${gain.value}%`;}queueSave();});head.append(gain);row.append(head);
+    for(const [key,label] of [['muted','M'],['solo','S']]){const button=document.createElement('button');button.type='button';button.dataset.control=key;button.className=`track-toggle${pad[key]?' active':''}`;button.textContent=label;button.setAttribute('aria-label',`${pad[key]?'Disable':'Enable'} ${key} for pad ${id+1}`);button.setAttribute('aria-pressed',String(pad[key]));button.addEventListener('click',()=>{pad[key]=!pad[key];stopInaudiblePadVoices();renderTrackGrid();queueSave();});head.append(button);}
+    const gain=document.createElement('input');gain.type='range';gain.min='0';gain.max='150';gain.value=String(Math.round(pad.volume*100));gain.className='track-gain';gain.setAttribute('aria-label',`Volume for pad ${id+1}`);gain.addEventListener('input',()=>{pad.volume=Number(gain.value)/100;if(selected===id){$('volume').value=gain.value;$('volume-out').textContent=`${gain.value}%`;}queueSave();});head.append(gain);
+    if(!compact){const mode=document.createElement('select');mode.dataset.control='playback';mode.className='track-playback';mode.setAttribute('aria-label',`Step playback mode for pad ${id+1}`);mode.title='Full sound can ring across later steps; one sound per step stops at the next 16th.';for(const [value,label] of [['full','FULL'],['one-step','ONE STEP']]){const option=document.createElement('option');option.value=value;option.textContent=label;mode.append(option);}mode.value=pad.stepPlaybackMode;mode.addEventListener('change',()=>{pad.stepPlaybackMode=mode.value==='one-step'?'one-step':'full';if(selected===id)$('sequence-focus-playback').value=pad.stepPlaybackMode;queueSave();});head.append(mode);}
+    row.append(head);
     const cells=document.createElement('div');cells.className=compact?'track-steps compact-overview':'track-steps';cells.style.setProperty('--track-step-count',String(positions.length));
     if(!compact)cells.addEventListener('scroll',()=>{for(const other of holder.querySelectorAll('.track-steps'))if(other!==cells&&other.scrollLeft!==cells.scrollLeft)other.scrollLeft=cells.scrollLeft;},{passive:true});
     positions.forEach(index=>{
@@ -803,7 +819,7 @@ function renderTrackGrid(){
         step.type='button';step.textContent=String(index+1).padStart(2,'0');
         step.setAttribute('aria-label',`Pad ${id+1}, step ${index+1} ${enabled?'on':'off'} at ${project.gridDivision} grid`);
         step.setAttribute('aria-pressed',String(enabled));step.disabled=Boolean(patternRecording);
-        step.addEventListener('click',()=>{if(patternRecording)return;patternUndoSnapshot=null;renderPatternRecordingState();pad.steps[index]=!pad.steps[index];pad.stepOffsets[index]=0;renderSteps();queueSave();});
+        step.addEventListener('click',()=>{if(patternRecording)return;releasePad(id);patternUndoSnapshot=null;renderPatternRecordingState();pad.steps[index]=!pad.steps[index];pad.stepOffsets[index]=0;renderSteps();queueSave();});
       }
       cells.append(step);
     });row.append(cells);
@@ -868,7 +884,7 @@ function showDirectorPlayingStep(step){
 }
 
 function sceneSnapshot(name){
-  return {name,gridDivision:project.gridDivision,pads:project.pads.map(pad=>({steps:[...pad.steps],stepOffsets:[...pad.stepOffsets]})),videoShots:project.video.shots.map(shot=>({mode:shot.mode,pads:[...shot.pads]}))};
+  return {name,gridDivision:project.gridDivision,pads:project.pads.map(pad=>({steps:[...pad.steps],stepOffsets:[...pad.stepOffsets],stepPlaybackMode:pad.stepPlaybackMode})),videoShots:project.video.shots.map(shot=>({mode:shot.mode,pads:[...shot.pads]}))};
 }
 
 function renderScenes(){
@@ -887,13 +903,15 @@ function renderScenes(){
   $('delete-scene').disabled=selectedSceneIndex<0;
 }
 
-function applyScene(scene){
+function applyScene(scene,atTime=audio.context.currentTime){
+  for(const pad of project.pads)releasePad(pad.id,atTime);
   project.gridDivision=['1/4','1/8','1/16'].includes(scene.gridDivision)?scene.gridDivision:'1/16';
   $('grid-division').value=project.gridDivision;
   project.pads.forEach((pad,id)=>{
     const lane=scene.pads[id]||{};
     pad.steps=Array.from({length:16},(_,step)=>Boolean(lane.steps?.[step]));
     pad.stepOffsets=Array.from({length:16},(_,step)=>clamp(lane.stepOffsets?.[step]??0,0,.9999));
+    pad.stepPlaybackMode=lane.stepPlaybackMode==='one-step'?'one-step':'full';
   });
   if(Array.isArray(scene.videoShots))project.video.shots=scene.videoShots.map(shot=>({mode:shot.mode,pads:[...shot.pads]}));
   renderSteps();renderVideoDirector();queueSave();
@@ -984,13 +1002,16 @@ async function togglePatternRecording(){
 
 function undoPatternRecording(){
   if(!patternUndoSnapshot||patternRecording)return;
+  audio.stopAllPadVoices();
+  visualUntil.clear();activeUntil.clear();
   project.pads.forEach((pad,id)=>{pad.steps=[...patternUndoSnapshot[id].steps];pad.stepOffsets=[...patternUndoSnapshot[id].stepOffsets];});
   patternUndoSnapshot=null;renderSteps();renderPatternRecordingState();queueSave();notify('Last pattern take undone.');
 }
 
-function flashPad(id) {
+function flashPad(id,maxDuration=null) {
   activeUntil.set(id,performance.now()+180);
-  const config=project.pads[id];visualUntil.set(id,performance.now()+videoVisualDurationMs(config.start,config.end,config.speed));
+  const config=project.pads[id],duration=videoVisualDurationMs(config.start,config.end,config.speed);
+  visualUntil.set(id,performance.now()+(Number.isFinite(maxDuration)&&maxDuration>0?Math.min(duration,maxDuration*1000):duration));
   pads[id].card.classList.add('playing');
   setTimeout(() => { if ((activeUntil.get(id)||0) <= performance.now()) pads[id].card.classList.remove('playing'); },210);
 }
@@ -1113,11 +1134,14 @@ function startSequencer() {
     const tick=() => {
       while (nextStepTime<audio.context.currentTime+.12) {
         const time=nextStepTime;
-        if(pendingScene&&time>=pendingScene.at-1e-4){const queued=pendingScene;pendingScene=null;applyScene(queued.scene);renderScenes();notify(`Scene “${queued.scene.name}” launched.`);}
+        if(pendingScene&&time>=pendingScene.at-1e-4){const queued=pendingScene;pendingScene=null;applyScene(queued.scene,time);renderScenes();notify(`Scene “${queued.scene.name}” launched.`);}
         const step=nextStep%16;
         const stride=gridStride();
         project.pads.slice(0,PAD_COUNT[project.layout]).forEach(pad => {
-          if (step%stride===0&&pad.steps[step]&&padIsAudible(pad.id)) audio.trigger(pad.id,pad,flashPad,stepTriggerTime(time,project.bpm,pad.stepOffsets?.[step]||0));
+          if(step%stride!==0||!pad.steps[step]||!padIsAudible(pad.id))return;
+          const offset=pad.stepOffsets?.[step]||0,triggerAt=stepTriggerTime(time,project.bpm,offset);
+          const maxDuration=pad.stepPlaybackMode==='one-step'?stepGateDuration(project.bpm,offset):null;
+          audio.trigger(pad.id,pad,flashPad,triggerAt,{maxDuration});
         });
         const absoluteStep=nextStep;
         voiceLab?.scheduleMelodyStep(absoluteStep,time,project.bpm);
@@ -1152,6 +1176,8 @@ function updateBeatIndicator(step) {
 function stopSequencer() {
   transportActivity.cancel();
   clearInterval(transportTimer); transportTimer=null;
+  audio.stopAllPadVoices();
+  visualUntil.clear();activeUntil.clear();
   voiceLab?.transportStopped();
   directorPlayingStep=null;
   $('director-steps').querySelectorAll('.current').forEach(node=>node.classList.remove('current'));
@@ -1165,6 +1191,7 @@ function stopSequencer() {
 function surpriseBeat() {
   const count=PAD_COUNT[project.layout];
   if (!count) return;
+  for(const pad of project.pads.slice(0,count))releasePad(pad.id);
   patternUndoSnapshot=null;
   const a=project.pads.slice(0,count);
   for (const pad of a){pad.steps.fill(false);pad.stepOffsets.fill(0);}
@@ -1829,7 +1856,7 @@ function bindControls() {
   $('sequence-pad-toggle').addEventListener('click',()=>{sequencePadsVisible=!sequencePadsVisible;showStudioScreen();});
   $('make-video').addEventListener('click',()=>{location.hash='#export';});
   $('auto-beat').addEventListener('click',surpriseBeat);
-  $('clear-steps').addEventListener('click',()=>{project.pads[selected].steps.fill(false);project.pads[selected].stepOffsets.fill(0);patternUndoSnapshot=null;renderSteps();renderPatternRecordingState();queueSave();});
+  $('clear-steps').addEventListener('click',()=>{releasePad(selected);project.pads[selected].steps.fill(false);project.pads[selected].stepOffsets.fill(0);patternUndoSnapshot=null;renderSteps();renderPatternRecordingState();queueSave();});
   $('record-pattern').addEventListener('click',togglePatternRecording);
   $('undo-pattern').addEventListener('click',undoPatternRecording);
   $('scene-select').addEventListener('change',event=>{selectedSceneIndex=Number(event.target.value);renderScenes();});
@@ -1842,10 +1869,11 @@ function bindControls() {
   $('sequence-focus-close').addEventListener('click',closeSequenceFocus);
   $('sequence-focus-dialog').addEventListener('cancel',event=>{event.preventDefault();closeSequenceFocus();});
   for(const [key,id] of [['muted','sequence-focus-mute'],['solo','sequence-focus-solo']]){
-    $(id).addEventListener('click',()=>{project.pads[selected][key]=!project.pads[selected][key];renderTrackGrid();updateSequenceFocusMixer();queueSave();});
+    $(id).addEventListener('click',()=>{project.pads[selected][key]=!project.pads[selected][key];stopInaudiblePadVoices();renderTrackGrid();updateSequenceFocusMixer();queueSave();});
   }
   $('sequence-focus-volume').addEventListener('input',event=>{const value=Number(event.target.value);project.pads[selected].volume=value/100;$('sequence-focus-volume-out').textContent=`${value}%`;queueSave();});
   $('sequence-focus-volume').addEventListener('change',()=>{renderTrackGrid();renderControls();});
+  $('sequence-focus-playback').addEventListener('change',event=>{project.pads[selected].stepPlaybackMode=event.target.value==='one-step'?'one-step':'full';renderTrackGrid();queueSave();});
   window.matchMedia('(max-width:740px)').addEventListener?.('change',()=>{if(!compactSequenceOverview())closeSequenceFocus();renderTrackGrid();});
   $('start-record').addEventListener('click',toggleSetRecording);
   $('studio-record').addEventListener('click',toggleSetRecording);
