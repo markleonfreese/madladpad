@@ -779,8 +779,24 @@ try {
   await page.locator('.pad-hit').first().click();
   await page.waitForFunction(()=>window.__padVoices.length===3&&window.__padStops.includes(window.__padVoices[1]));
   assert.equal(await page.evaluate(()=>window.__padVoices.length),3,'three completed pad gestures must start exactly three decoded audio voices, with no synthesized-click duplicates');
+  const heldPad=page.locator('.pad-hit').first();
+  await heldPad.dispatchEvent('pointerdown',{pointerId:41,button:0,buttons:1,isPrimary:true});
+  await page.waitForFunction(()=>window.__padVoices.length===4);
+  await page.waitForTimeout(300);
+  await heldPad.dispatchEvent('pointerup',{pointerId:41,button:0,buttons:0,isPrimary:true});
+  await heldPad.dispatchEvent('click',{detail:1});
+  await page.waitForFunction(()=>window.__padStops.includes(window.__padVoices[3]));
+  await page.waitForTimeout(50);
+  assert.equal(await page.evaluate(()=>window.__padVoices.length),4,'a held pointer gesture must start one voice and suppress its synthesized click');
+  const cancelledPad=page.locator('.pad-hit').first();
+  await cancelledPad.dispatchEvent('pointerdown',{pointerId:42,button:0,buttons:1,isPrimary:true});
+  await page.waitForFunction(()=>window.__padVoices.length===5);
+  await page.waitForTimeout(300);
+  await cancelledPad.dispatchEvent('pointercancel',{pointerId:42,button:0,buttons:0,isPrimary:true});
+  await page.waitForFunction(()=>window.__padStops.includes(window.__padVoices[4]));
+  assert.equal(await page.evaluate(()=>window.__padVoices.length),5,'pointer cancellation must stop the held voice without a second attack');
   await page.evaluate(()=>{AudioBufferSourceNode.prototype.start=window.__nativePadVoiceStart;AudioBufferSourceNode.prototype.stop=window.__nativePadVoiceStop;});
-  checkpoint('pad polyphony and one-voice same-pad retrigger');
+  checkpoint('pad polyphony, retrigger and held-gesture release/cancel');
   await page.locator('#session-menu > summary').click();
   await page.locator('#project-title').fill('Smoke pack');
   await page.waitForTimeout(700); // App's 300ms debounced save must complete before reload.
