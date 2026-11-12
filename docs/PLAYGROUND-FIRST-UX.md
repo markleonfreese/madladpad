@@ -1,6 +1,6 @@
 # Playground-first UX review and implementation (10 November 2026)
 
-Status: merged in PR #119; the Playground changes and follow-up video-pack import fix remain in current main. Production is `e4b80e8d5a78910692e0dd45ce7b1d3840ab0f98` at Pages deployment `5ba6f2f7-37f6-4cde-9f1e-0a14a5bed07e`; this does not update the separate legacy Workers URL. Remaining physical-device, screen-reader and listening checks are listed in [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md). This is a response to the in-person UX discussion, not a new audio engine or storage format.
+Status: merged in PR #119; PR #142 moves the global fallback demo toggle into Settings, leaving Edit pads as the single Playground toolbar action, and dismisses the Project menu when navigating or tapping outside. Production is `926b41f6fd0919f706407284344c674fa421894b` at Pages deployment `37447fcd-120b-4d5b-a0e8-02e815ac82d1`; this does not update the separate legacy Workers URL. Remaining physical-device, screen-reader and listening checks are listed in [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md). This is a response to the in-person UX discussion, not a new audio engine or storage format.
 
 ## Design decision
 
