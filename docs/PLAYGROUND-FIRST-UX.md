@@ -1,6 +1,6 @@
 # Playground-first UX review and implementation (10 November 2026)
 
-Status: merged in PR #119; the Playground changes and follow-up video-pack import fix are included in current main `3831776f2dce3beae9012bc2b070558bf1bcaa80`. The static app is published at <https://madladpad.pages.dev> (Pages deployment `de571da2-33a6-4d7a-b290-8c7d035ef779`); this does not update the separate legacy Workers URL. Remaining physical-device, screen-reader and listening checks are listed in [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md). This is a response to the in-person UX discussion, not a new audio engine or storage format.
+Status: merged in PR #119; the Playground changes and follow-up video-pack import fix remain in current main. Production is `e4b80e8d5a78910692e0dd45ce7b1d3840ab0f98` at Pages deployment `5ba6f2f7-37f6-4cde-9f1e-0a14a5bed07e`; this does not update the separate legacy Workers URL. Remaining physical-device, screen-reader and listening checks are listed in [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md). This is a response to the in-person UX discussion, not a new audio engine or storage format.
 
 ## Design decision
 

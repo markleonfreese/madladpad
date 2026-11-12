@@ -2,9 +2,10 @@
 
 Use this checklist to close the physical-device and human-review gates recorded in [GitHub Issue #2](https://github.com/markleonfreese/madladpad/issues/2). It supplements [`tests/BROWSER-SMOKE.md`](../tests/BROWSER-SMOKE.md), which is synthetic desktop Chromium evidence.
 
-## Current published app — 11 November 2026
+## Current published app — 12 November 2026
 
-- **Test this URL:** <https://madladpad.pages.dev>. Cloudflare Pages deployment `de571da2-33a6-4d7a-b290-8c7d035ef779` is on production branch `main`, source `3831776f2dce3beae9012bc2b070558bf1bcaa80`. It is a static deployment with no Pages Functions. This is the current app release for acceptance.
+- **Test this URL:** <https://madladpad.pages.dev>. Cloudflare Pages deployment `5ba6f2f7-37f6-4cde-9f1e-0a14a5bed07e` is on production branch `main`, source `e4b80e8d5a78910692e0dd45ce7b1d3840ab0f98`. It is a static deployment with no Pages Functions.
+- **Verified after publish:** GitHub main Verify `43203839008` passed before deployment. The production root, `/app.js`, and `/sw.js` return HTTP 200. SHA-256 of live `/`, app.js, sw.js, styles.css, voice.js, inference worker, ONNX WASM and bundle matched the build from that source commit. This is hosted HTTP/artifact verification, not device or human acceptance.
 - **Hosted evidence on this release:** app, service worker, Voice Lab, inference worker, ONNX WASM and MIDI/rap workflows were fetched or exercised successfully. Hosted Chromium at 390×844 verified local Whisper transcription and warm full-shell offline reload with actual inference, melody/MIDI export and ABAB rap/TXT export. The imported speech clip remained local; the model's out-of-clip final word was omitted with a recovery notice. Details are in [Issue #2](https://github.com/markleonfreese/madladpad/issues/2#issuecomment-6776507338). This remains synthetic desktop evidence, not physical-device, human listening or screen-reader acceptance.
 - The older **Workers production URL** <https://madladpad.markleonfreese.workers.dev/> is unchanged and serves an older bundle (`/voice.js` returns 404). Do not use it to accept current `main`; use the Pages URL above. A recent read-only check returned 200 for the legacy shell and `/app.js`, but that does not change its stale release state or establish a cause for the earlier 503 report.
 - First-use speech transcription downloads about 65 MB of model/runtime files from Hugging Face. Plan the first speech test on an appropriate connection; the selected audio remains local.
