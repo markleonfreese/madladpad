@@ -163,11 +163,15 @@ try {
   await page.setViewportSize({width:390,height:844});
   await page.locator('[data-studio-screen="sounds"]').click();
   await page.waitForFunction(()=>document.body.dataset.screen==='sounds');
+  assert.equal(await page.locator('#grid-section-label').count(),0,'the Playground should not repeat its navigation label or pad count');
+  assert.equal(await page.locator('#demo-button').isVisible(),true,'the reversible global fallback demo control should remain available');
+  assert.equal(await page.locator('#pad-edit-mode').textContent(),'Edit pads','the pad editing toggle should name its current action');
   assert.equal(await page.locator('#pad-grid .pad-title').first().evaluate(element=>getComputedStyle(element).userSelect),'none','holding a pad should not select its label text');
   assert.notEqual(await page.locator('#pad-name').evaluate(element=>getComputedStyle(element).userSelect),'none','sample names should remain selectable while editing');
   const mobileEditButton=page.locator('#pad-edit-mode');
   await mobileEditButton.click();
   assert.equal(await mobileEditButton.getAttribute('aria-pressed'),'true','Playground should offer an explicit pad editing mode');
+  assert.equal(await mobileEditButton.textContent(),'Done editing','the active editing state should provide a clear exit action');
   assert.equal(await page.locator('#pad-grid .pad-hit').first().getAttribute('aria-label'),'Edit Pad 01','pad actions should explain their current Play/Edit mode');
   await page.locator('#pad-grid .pad-hit').first().click();
   assert.equal(await page.locator('#sample-editor-dialog').evaluate(dialog=>dialog.open),true,'Edit mode should open the selected pad editor without scrolling away from the grid');

@@ -103,7 +103,6 @@ function showStudioScreen() {
   $('show-help').setAttribute('aria-expanded',String(screen==='sounds'&&introOpen));
   $('studio-workspace').hidden = screen!=='sounds' && !(screen==='beats'&&sequencePadsVisible);
   $('studio-workspace').classList.toggle('wide-grid',screen==='beats');
-  $('grid-section-label').textContent = screen==='beats' ? 'PLAY ALONG' : 'PLAYGROUND · 12 PADS';
   $('sequence-pad-toggle').setAttribute('aria-expanded',String(sequencePadsVisible));
   $('sequence-pad-toggle').textContent=sequencePadsVisible?'Hide performance pads':'Show performance pads';
   $('pad-edit-mode').hidden = screen==='beats';
