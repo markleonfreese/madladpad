@@ -65,6 +65,7 @@ let padEditMode = false;
 let sequencePadsVisible = false;
 const lastTakes = { video:null, audio:null };
 const MAX_WAV_TAKE_SECONDS = 30;
+const MAX_CAMERA_TAKE_SECONDS = 30;
 const MAX_WAV_SOURCE_BYTES = 16 * 1024 * 1024;
 const MAX_WAV_OUTPUT_BYTES = 12 * 1024 * 1024;
 let directorEditStep=0;
@@ -1304,21 +1305,9 @@ function cameraReady() {
   video.play().catch(()=>{});
   $('camera-capture').hidden=false;$('camera-capture').disabled=!cameraStream;
   $('camera-retake').hidden=true;$('camera-keep').hidden=true;
-  $('camera-status').textContent='Camera and microphone active. Start when ready.';
-  $('camera-length-label').hidden=false;$('camera-review').hidden=true;
-  $('camera-length-summary').hidden=false;updateCameraLengthSummary();
+  $('camera-status').textContent='Camera and microphone active. Start recording when ready.';
+  $('camera-review').hidden=true;
   $('camera-capture').textContent='● START RECORDING';
-}
-
-function cameraLengthDetails(){
-  const selection=$('camera-length').value,match=/^bars-(1|2|4)$/.exec(selection);
-  if(match){const bars=Number(match[1]);return {bars,seconds:bars*4*60/project.bpm};}
-  return {bars:null,seconds:Number(selection)||5};
-}
-
-function updateCameraLengthSummary(){
-  const {bars,seconds}=cameraLengthDetails();
-  $('camera-length-summary').textContent=bars?`${bars} ${bars===1?'bar':'bars'} · ${seconds.toFixed(1)} seconds at ${project.bpm} BPM`:`One-shot · up to ${seconds} seconds`;
 }
 
 function finishCaptureTarget(target){
@@ -1394,20 +1383,19 @@ async function captureCamera() {
       if(!chunks.length || !/^video\/(mp4|webm)(;|$)/i.test(type)){closeCamera();notify('This browser did not provide a supported recording format.');return;}
       try {
         const file=new File(chunks,`capture-${Date.now()}.${extensionForMime(type)}`,{type});
-        if(file.size>MAX_MEDIA_BYTES)throw new Error('Recording exceeds the 80 MB per-clip limit. Choose a shorter recording length.');
+        if(file.size>MAX_MEDIA_BYTES)throw new Error('Recording exceeds the 80 MB per-clip limit. Try a shorter take.');
         if(!file.size || !cameraSession.review(token,file))throw new Error('No recording was captured.');
         cameraStream?.getTracks().forEach(track=>track.stop());cameraStream=null;
         const video=$('camera-preview');video.pause();video.srcObject=null;video.autoplay=false;cameraUrl=URL.createObjectURL(file);video.src=cameraUrl;video.muted=false;video.controls=true;video.load();
-        const setReviewRegion=()=>{if(!cameraSession.current(token)||cameraSession.phase!=='review'||cameraRegion.end>0)return;const duration=Number.isFinite(video.duration)&&video.duration>0?video.duration:cameraLengthDetails().seconds;const suggestion=suggestActiveRegion(levels,duration);cameraRegion=suggestion;$('camera-start').max=Math.max(0,duration-.05);$('camera-start').value=Math.min(suggestion.start,Number($('camera-start').max));$('camera-end').max=duration;$('camera-end').value=suggestion.end;updateCameraRegion();$('camera-keep').disabled=false;$('camera-status').textContent=captureRegionStatus(suggestion.detected);};
+        const setReviewRegion=()=>{if(!cameraSession.current(token)||cameraSession.phase!=='review'||cameraRegion.end>0)return;const duration=Number.isFinite(video.duration)&&video.duration>0?video.duration:MAX_CAMERA_TAKE_SECONDS;const suggestion=suggestActiveRegion(levels,duration);cameraRegion=suggestion;$('camera-start').max=Math.max(0,duration-.05);$('camera-start').value=Math.min(suggestion.start,Number($('camera-start').max));$('camera-end').max=duration;$('camera-end').value=suggestion.end;updateCameraRegion();$('camera-keep').disabled=false;$('camera-status').textContent=captureRegionStatus(suggestion.detected);};
         $('camera-keep').disabled=true;video.addEventListener('loadedmetadata',setReviewRegion,{once:true});setTimeout(setReviewRegion,1200);
         $('camera-capture').hidden=true;$('camera-retake').hidden=false;$('camera-keep').hidden=false;
-        $('camera-length-label').hidden=true;$('camera-review').hidden=false;$('camera-status').textContent='Camera and microphone stopped. Preparing a trim suggestion…';
+        $('camera-review').hidden=false;$('camera-status').textContent='Camera and microphone stopped. Preparing a trim suggestion…';
       } catch(error){closeCamera();notify(`Could not review take: ${error.message}`);}
     };
-    const length=cameraLengthDetails();
-    recorder.start(200);$('camera-length-label').hidden=true;$('camera-length-summary').hidden=true;$('camera-capture').disabled=false;$('camera-capture').textContent='■ STOP RECORDING';
-    $('camera-status').textContent=length.bars?`Recording ${length.bars} ${length.bars===1?'bar':'bars'} (${length.seconds.toFixed(1)} seconds at ${project.bpm} BPM)… tap Stop to finish early.`:'Recording… tap Stop when ready.';
-    cameraTimer=setTimeout(()=>{if(recorder.state!=='inactive')recorder.stop();},length.seconds*1000);
+    recorder.start(200);$('camera-capture').disabled=false;$('camera-capture').textContent='■ STOP RECORDING';
+    $('camera-status').textContent=`Recording… tap Stop when ready. Stops automatically after ${MAX_CAMERA_TAKE_SECONDS} seconds.`;
+    cameraTimer=setTimeout(()=>{if(recorder.state!=='inactive')recorder.stop();},MAX_CAMERA_TAKE_SECONDS*1000);
   } catch(error){cameraRecorder=null;closeCamera();notify(`Recording failed: ${error.message}`);}
 }
 
@@ -1427,7 +1415,7 @@ async function retakeCamera(){
   if(!cameraSession.retake(token))return;
   cameraRegion={start:0,end:0};
   if(cameraUrl){URL.revokeObjectURL(cameraUrl);cameraUrl=null;}
-  $('camera-review').hidden=true;$('camera-length-label').hidden=false;$('camera-capture').textContent='● START RECORDING';
+  $('camera-review').hidden=true;$('camera-capture').textContent='● START RECORDING';
   $('camera-retake').disabled=true;$('camera-keep').disabled=true;$('camera-status').textContent='Requesting camera and microphone access for a new take…';
   try {
     const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:true});
@@ -1654,7 +1642,6 @@ function bindControls() {
   });
   $('bpm-input').addEventListener('change',event=>{
     project.bpm=clamp(event.target.value,40,240);event.target.value=project.bpm;
-    updateCameraLengthSummary();
     audio.setTransport(project.bpm,project.quantize);if(transportTimer){stopSequencer();startSequencer();}queueSave();
   });
   $('quantize-select').addEventListener('change',event=>{project.quantize=event.target.value;audio.setTransport(project.bpm,project.quantize);queueSave();});
@@ -1705,7 +1692,6 @@ function bindControls() {
   $('import-project-button').addEventListener('click',()=>$('project-input').click());
   $('export-button').addEventListener('click',exportPack);
   $('camera-button').addEventListener('click',()=>openCamera(selected));
-  $('camera-length').addEventListener('change',updateCameraLengthSummary);
   $('pad-record').addEventListener('click',()=>{const target=sourcePad;$('pad-source-dialog').close();if(target!==null)openCamera(target);});
   $('pad-files').addEventListener('click',()=>{fileTarget=sourcePad;$('pad-source-dialog').close();$('media-input').click();});
   for(const [button,picker] of [['pad-google-drive','google-drive'],['pad-google-photos','google-photos']]){
