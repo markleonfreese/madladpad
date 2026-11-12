@@ -13,8 +13,10 @@ test('the primary studio surface exposes a simple playable progression',()=>{
   assert.match(html,/<summary>Experimental<\/summary>/);
   assert.match(html,/<section class="intro" id="studio-intro"[^>]*hidden>/);
   assert.doesNotMatch(html,/PLAYGROUND · 12 PADS|id="grid-section-label"/,'the Playground should not repeat its navigation label or pad count');
-  assert.match(html,/<div class="playground-actions"><button id="demo-button"[^>]*>Demo sounds<\/button><button type="button" id="pad-edit-mode"/,'pad actions should remain available without the redundant heading');
-  assert.doesNotMatch(html,/<div class="pad-bottom">[\s\S]*?<button id="demo-button"/,'demo sounds should be in the first-screen Playground controls');
+  assert.match(html,/<div class="playground-actions"><button type="button" id="pad-edit-mode"/,'Edit pads should be the primary Playground toolbar action');
+  assert.doesNotMatch(html,/<div class="playground-actions"><button id="demo-button"/,'global demo fallback should not clutter the Playground');
+  assert.match(html,/<div class="transport-settings">[\s\S]*?<button id="demo-button"[^>]*aria-pressed="false"/,'global demo fallback should remain reversible under Settings');
+  assert.match(css,/\.transport-settings #demo-button/,'the settings demo action should have dedicated touch styling');
   assert.match(html,/<button[^>]*id="pad-edit-mode"[^>]*aria-pressed="false"/);
   assert.match(html,/<button[^>]*id="studio-play"/);
   assert.match(html,/<button[^>]*id="studio-record"[^>]*aria-pressed="false"/);

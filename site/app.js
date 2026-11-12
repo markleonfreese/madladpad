@@ -77,6 +77,8 @@ function showStudioScreen() {
   const requested = location.hash.slice(1);
   const screen = STUDIO_SCREENS.has(requested) ? requested : 'sounds';
   $('loop-settings').open = false;
+  // Menus opened on a previous screen must never cover the current controls.
+  $('session-menu').open = false;
   if(screen!=='beats' && $('sequence-focus-dialog')?.open)closeSequenceFocus();
   if(screen!=='sounds'&&padEditMode)setPadEditMode(false);
   if(screen!=='sounds' && $('sample-editor-dialog')?.open)closeSampleEditor();
@@ -1624,7 +1626,10 @@ function bindControls() {
   // Keep specialist video direction beside the capture choices it controls.
   $('export-lab').append($('video-director-details'));
   window.addEventListener('hashchange',showStudioScreen);
-  document.addEventListener('pointerdown',event=>{if($('loop-settings').open&&!$('loop-settings').contains(event.target))$('loop-settings').open=false;});
+  document.addEventListener('pointerdown',event=>{
+    if($('loop-settings').open&&!$('loop-settings').contains(event.target))$('loop-settings').open=false;
+    if($('session-menu').open&&!$('session-menu').contains(event.target))$('session-menu').open=false;
+  });
   window.addEventListener('scroll',()=>{
     const settings=$('loop-settings'),fields=settings.querySelector('.transport-settings');
     if(settings.open&&!fields.contains(document.activeElement))settings.open=false;
