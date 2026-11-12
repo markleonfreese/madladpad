@@ -605,7 +605,14 @@ try {
   await page.locator('#director-mode').selectOption('grid');
   await page.locator('#director-pads input[value="0"]').check();
   await page.locator('#director-pads input[value="1"]').check();
+  const beforeModeViewport=await page.evaluate(()=>({width:innerWidth,height:innerHeight}));
+  await page.setViewportSize({width:390,height:844});
   await openScreen('beats');
+  if(await page.locator('#track-grid').isHidden())await page.locator('#track-view').click();
+  const modePadId=Number((await page.locator('#selected-number').textContent()).replace(/\D/g,''))-1;
+  await page.locator(`.track-row[data-pad="${modePadId}"] .track-name`).click();
+  await page.locator('#sequence-focus-playback').selectOption('one-step');
+  await page.locator('#sequence-focus-close').click();
   await page.locator('#scene-name').fill('Smoke Intro');
   await page.locator('#save-scene').click();
   await page.locator('#clear-steps').click();
@@ -617,8 +624,13 @@ try {
   await openScreen('beats');
   await page.waitForFunction(()=>document.querySelectorAll('#steps .step.on').length===0);
   assert.equal(await page.locator('#steps .step.on').count(),0,'clear should remove the selected pattern');
+  if((await page.locator('#play-seq').textContent()).includes('STOP'))await page.locator('#play-seq').click();
   await page.locator('#launch-scene').click();
   await page.waitForFunction(()=>document.querySelector('#steps .step.on'));
+  await page.locator(`.track-row[data-pad="${modePadId}"] .track-name`).click();
+  assert.equal(await page.locator('#sequence-focus-playback').inputValue(),'one-step','scene loading should restore the pad playback mode');
+  await page.locator('#sequence-focus-close').click();
+  await page.setViewportSize(beforeModeViewport);
   await openVideoDirector();
   assert.equal(await page.locator('#grid-division').inputValue(),'1/4','scene loading should restore its saved grid division');
   assert.equal(await page.locator('#steps .step.on').first().getAttribute('data-step'),'4','scene loading should restore its coarse-grid pattern');
@@ -1444,6 +1456,9 @@ try {
     await page.locator('.track-row[data-pad="0"] .track-name').click();
     assert.equal(await page.locator('#sequence-focus-dialog').evaluate(dialog=>dialog.open),true,'lane selection should open the focused step editor');
     assert.equal(await page.locator('#sequence-focus-dialog #steps .step').count(),16,'the focused editor should show all 16 editable steps');
+    assert.equal(await page.locator('#sequence-focus-playback').isVisible(),true,'focused mobile editing should expose the per-pad playback mode');
+    if(width===390)await page.locator('#sequence-focus-playback').selectOption('one-step');
+    else assert.equal(await page.locator('#sequence-focus-playback').inputValue(),'one-step','the per-pad mode should persist when reopening the focused editor');
     const stepDimensions=await page.locator('#sequence-focus-dialog #steps .step').first().evaluate(el=>({width:el.getBoundingClientRect().width,height:el.getBoundingClientRect().height}));
     assert.ok(stepDimensions.width>=44&&stepDimensions.height>=44,`focused step buttons must be touch sized: ${JSON.stringify(stepDimensions)}`);
     await page.locator('#sequence-focus-dialog #steps .step[data-step="15"]').click();
@@ -1455,6 +1470,10 @@ try {
     assert.equal(await page.locator('.track-row[data-pad="0"] .step-overview[data-step="15"]').evaluate(el=>el.classList.contains('on')),!wasOn,'focused step edits should update the whole-pattern overview');
     assert.equal(await page.locator('#track-grid .track-row').count(),12,'closing the focused editor should retain all pattern lanes');
   }
+  await page.setViewportSize({width:1280,height:844});
+  await page.waitForFunction(()=>document.querySelectorAll('.track-playback').length===12);
+  assert.equal(await page.locator('.track-playback').count(),12,'desktop all-track lanes should expose one playback selector per visible pad');
+  assert.equal(await page.locator('.track-playback').first().inputValue(),'one-step','the desktop lane selector should retain its pad mode');
   await page.setViewportSize({width:390,height:844});
   await openScreen('voice');
   const mobileTabs=await page.locator('#studio-nav > a').evaluateAll(links=>links.map(link=>({left:link.getBoundingClientRect().left,right:link.getBoundingClientRect().right,visible:link.getBoundingClientRect().width>0})));

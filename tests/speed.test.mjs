@@ -10,6 +10,9 @@ test('legacy projects default speed to 1 and preserve pitch metadata', () => {
   assert.equal(normaliseProject({pads:[{speed:4}]}).pads[0].speed, 2);
   assert.equal(normaliseProject({pads:[{speed:0.1}]}).pads[0].speed, 0.5);
   assert.equal(makeProject().pads[0].speed, 1);
+  assert.equal(makeProject().pads[0].stepPlaybackMode,'full');
+  assert.equal(normaliseProject({pads:[{stepPlaybackMode:'one-step'}]}).pads[0].stepPlaybackMode,'one-step');
+  assert.equal(normaliseProject({pads:[{stepPlaybackMode:'loop'}]}).pads[0].stepPlaybackMode,'full');
 });
 
 test('a selected local demo plays with the global demo toggle off',()=>{
@@ -17,9 +20,36 @@ test('a selected local demo plays with the global demo toggle off',()=>{
   Object.assign(sampler,{context:{currentTime:1},sources:new Map(),demoEnabled:false,momentaryPlayback:new Map()});
   const calls=[];sampler.playDemoSound=(...args)=>calls.push(args);sampler.playDemo=()=>assert.fail('global fallback must not replace a per-pad selection');
   assert.equal(sampler.trigger(3,{demoSound:'sub-bass',volume:.7},()=>{},1.1,{momentary:true}),true);
-  assert.deepEqual(calls,[['sub-bass',1.1,.7]]);
+  assert.deepEqual(calls,[['sub-bass',1.1,.7,null,3]]);
   assert.equal(sampler.momentaryPlayback.has(3),false,'a one-shot demo should not leave a hold gesture behind');
   assert.equal(sampler.trigger(4,{volume:.7},()=>{},1.1),false);
+});
+
+test('one-step buffer playback is capped by the remaining 16th-note window',()=>{
+  const nodes=[];
+  const param=()=>({value:1,events:[],cancelScheduledValues(time){this.events.push(['cancel',time]);},setValueAtTime(value,time){this.value=value;this.events.push(['set',value,time]);},linearRampToValueAtTime(value,time){this.value=value;this.events.push(['ramp',value,time]);}});
+  const sampler=Object.create(SamplerAudio.prototype);
+  sampler.context={currentTime:1,createBufferSource(){const node={playbackRate:param(),connect(){return this;},start(...args){this.startArgs=args;},stop(time){this.stopTime=time;},disconnect(){}};nodes.push(node);return node;},createGain(){return {gain:param(),connect(){return this;},disconnect(){}};}};
+  sampler.master={};sampler.sources=new Map([[0,{file:{},buffer:{duration:3}}]]);sampler.demoEnabled=false;
+  sampler.trigger(0,{kind:'audio',start:0,end:3,speed:2,pitch:0,volume:1},()=>{},1,{maxDuration:.125});
+  assert.equal(nodes.length,1);
+  assert.equal(nodes[0].startArgs[2],.25,'Web Audio source duration scales by Speed');
+});
+
+test('lookahead scheduling lets a same-pad hit sound until its scheduled retrigger',()=>{
+  const nodes=[];
+  const param=()=>({value:1,cancelScheduledValues(){},setValueAtTime(){},linearRampToValueAtTime(){}});
+  const sampler=Object.create(SamplerAudio.prototype);
+  sampler.context={currentTime:1,createBufferSource(){const node={playbackRate:param(),connect(){return this;},start(...args){this.startArgs=args;},stop(time){this.stopTime=time;},disconnect(){}};nodes.push(node);return node;},createGain(){return {gain:param(),connect(){return this;},disconnect(){}};}};
+  sampler.master={};sampler.sources=new Map([[0,{file:{},buffer:{duration:3}}]]);sampler.demoEnabled=false;
+  const pad={kind:'audio',start:0,end:3,speed:1,pitch:0,volume:1};
+  sampler.trigger(0,pad,()=>{},1.1);
+  sampler.trigger(0,pad,()=>{},1.2);
+  assert.equal(nodes[0].stopTime,1.208,'a lookahead-scheduled retrigger should release the current hit at the new hit time, not silence it immediately');
+  sampler.context.currentTime=1.15;
+  sampler.stopAllPadVoices();
+  assert.equal(nodes[0].stopTime,1.158,'Stop should shorten an active voice that was waiting for its scheduled retrigger');
+  assert.equal(nodes[1].stopTime,1.15,'Stop should cancel the pending next hit immediately');
 });
 
 test('copying a clip preserves independent pad identity, patterns and mute state', () => {
@@ -153,6 +183,32 @@ test('media-element fallback keeps separate pad clips playing concurrently',asyn
   assert.equal(first.paused,false,'the long first clip should still be playing');
   assert.equal(second.paused,false,'the second clip should play at the same time');
   sampler.sources.get(0).stopPlayback?.();sampler.sources.get(1).stopPlayback?.();
+});
+
+test('one-step media fallback ends at the scheduled step boundary even at 2x speed',async()=>{
+  const listeners=new Map();let position=0,startedAt=Date.now(),updates=null;
+  const element={duration:5,playbackRate:1,preservesPitch:false,paused:true,lastPausedAt:null,
+    get currentTime(){return this.paused?position:position+(Date.now()-startedAt)/1000*this.playbackRate;},
+    set currentTime(value){position=value;startedAt=Date.now();},
+    addEventListener(type,listener){listeners.set(type,listener);},removeEventListener(type,listener){if(listeners.get(type)===listener)listeners.delete(type);},
+    pause(){if(!this.paused)position=this.currentTime;this.lastPausedAt=position;this.paused=true;clearInterval(updates);},
+    play(){this.paused=false;startedAt=Date.now();updates=setInterval(()=>listeners.get('timeupdate')?.(),10);return Promise.resolve();}};
+  const sampler=Object.create(SamplerAudio.prototype);sampler.context={currentTime:0};sampler.sources=new Map([[0,{file:{},element,gain:{gain:{value:1}}}]]);sampler.demoEnabled=false;
+  sampler.trigger(0,{kind:'video',start:0,end:3,speed:2,pitch:0,volume:1},()=>{},0,{maxDuration:.125});
+  await new Promise(resolve=>setTimeout(resolve,180));
+  assert.equal(element.paused,true,'media fallback should stop at the one-step gate');
+  assert.ok(element.lastPausedAt>=.2&&element.lastPausedAt<=.26,`2x media time should stay within the 250ms clip-time gate, got ${element.lastPausedAt}`);
+});
+
+test('stopping transport cancels a pending media-element start',async()=>{
+  const element={duration:5,currentTime:0,playbackRate:1,preservesPitch:false,paused:true,playCount:0,addEventListener(){},removeEventListener(){},pause(){this.paused=true;},play(){this.paused=false;this.playCount++;return Promise.resolve();}};
+  const sampler=Object.create(SamplerAudio.prototype);sampler.context={currentTime:1};sampler.sources=new Map([[0,{file:{},element,gain:{gain:{value:1}}}]]);sampler.demoEnabled=false;
+  const visuals=[];
+  sampler.trigger(0,{kind:'video',start:0,end:3,speed:1,pitch:0,volume:1},(...args)=>visuals.push(args),1.1);
+  sampler.stopAllPadVoices();
+  await new Promise(resolve=>setTimeout(resolve,120));
+  assert.equal(element.playCount,0,'a stopped transport must not start a lookahead-scheduled media hit late');
+  assert.deepEqual(visuals,[],'a stopped transport must not flash a pad after its scheduled hit was canceled');
 });
 
 test('video playback reaches the selected end after delayed media startup', async () => {

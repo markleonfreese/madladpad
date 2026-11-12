@@ -40,6 +40,7 @@ Use this checklist to close the physical-device and human-review gates recorded 
 
 - Load three different samples. At 120 BPM, enable distinct steps in all three lanes and confirm simultaneous playback. Change between 1/4, 1/8, and 1/16 grids; confirm hidden finer steps are preserved.
 - Check each lane's volume, mute, solo, edit-to-Sounds action, and pattern capture/quantisation. Save two named scenes and launch one while playing; confirm it changes on the next bar and restores after reload.
+- Load a sample longer than one step. Compare **Play full sound** (the legacy default, allowed to ring) with **One sound per step** (retrigger each active cell and stop at the next 16th boundary). Repeat with a short clip, nonzero step offset, 1/4 and 1/8 grid, mute/solo, transport Stop, and saved-scene round-trip; confirm no late hit after Stop and that each lane's setting persists independently.
 - Record an audiovisual set with one active video pad, then two and three. Check the composition changes without frozen/stale frames, audio remains aligned, and fixed-grid/Video Director modes behave as selected.
 - Record and replay the audio-only mix and video take. Check the downloaded file's actual format matches its extension and that playback works in the device browser or a standard local player.
 

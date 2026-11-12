@@ -172,6 +172,7 @@ export const makePad = id => ({
   id, name: `Pad ${String(id + 1).padStart(2, '0')}`, fileName: '', kind: '',
   demoSound:'',
   volume: 0.9, pitch: 0, speed: 1, start: 0, end: 2, muted:false, solo:false,
+  stepPlaybackMode:'full',
   steps: Array(STEP_COUNT).fill(false), stepOffsets: Array(STEP_COUNT).fill(0)
 });
 // Reuse the same raw clip with independent trims, without copying patterns,
@@ -201,6 +202,7 @@ export function normaliseProject(value) {
       volume: clamp(source.volume ?? pad.volume, 0, 1.5),
       pitch: clamp(source.pitch ?? 0, -12, 12),
       speed: clamp(source.speed ?? 1, 0.5, 2),
+      stepPlaybackMode: source.stepPlaybackMode === 'one-step' ? 'one-step' : 'full',
       start: clamp(source.start ?? 0, 0, 3599.99),
       end: clamp(source.end ?? 2, 0.01, 3600),
       muted: Boolean(source.muted), solo: Boolean(source.solo),
@@ -213,7 +215,8 @@ export function normaliseProject(value) {
     gridDivision:['1/4','1/8','1/16'].includes(scene?.gridDivision)?scene.gridDivision:'1/16',
     pads:Array.from({length:16},(_,j)=>({
       steps:Array.from({length:STEP_COUNT},(_,k)=>Boolean(scene?.pads?.[j]?.steps?.[k])),
-      stepOffsets:Array.from({length:STEP_COUNT},(_,k)=>clamp(scene?.pads?.[j]?.stepOffsets?.[k]??0,0,.9999))
+      stepOffsets:Array.from({length:STEP_COUNT},(_,k)=>clamp(scene?.pads?.[j]?.stepOffsets?.[k]??0,0,.9999)),
+      stepPlaybackMode:scene?.pads?.[j]?.stepPlaybackMode==='one-step'?'one-step':'full'
     })),
     videoShots:Array.isArray(scene?.videoShots)?normaliseVideoDirection({shots:scene.videoShots}).shots:null
   })):[];
@@ -291,6 +294,9 @@ export function captureStepPosition(seconds,bpm,quantize='nearest',stride=1){
 }
 export function stepTriggerTime(stepTime,bpm,offset=0){
   return stepTime+clamp(offset,0,.9999)*(60/clamp(bpm,40,240)/4);
+}
+export function stepGateDuration(bpm,offset=0){
+  return (60/clamp(bpm,40,240)/4)*(1-clamp(offset,0,.9999));
 }
 export function nextBarTime(now,epoch,bpm){
   const bar=60/clamp(bpm,40,240)*4;

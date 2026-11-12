@@ -2,6 +2,11 @@
 
 Status: merged in PR #119; PR #142 moves the global fallback demo toggle into Settings, leaving Edit pads as the single Playground toolbar action, and dismisses the Project menu when navigating or tapping outside. Production is `926b41f6fd0919f706407284344c674fa421894b` at Pages deployment `37447fcd-120b-4d5b-a0e8-02e815ac82d1`; this does not update the separate legacy Workers URL. Remaining physical-device, screen-reader and listening checks are listed in [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md). This is a response to the in-person UX discussion, not a new audio engine or storage format.
 
+## Sequencer playback follow-up (12 November 2026)
+
+- **Play full sound** remains the default for existing and new pads. **One sound per step** is an optional per-pad setting, saved in projects and scenes; active sequencer steps start the trimmed region and gate it at the next canonical 16th-note boundary after its offset. Pattern Undo restores steps and offsets only, so it does not revert this sound setting.
+- Manual pad taps remain one-shot. The proposed held-step loop mode is not implemented; bar-wrap and scene behavior remain out of scope for this bounded mode.
+
 ## Design decision
 
 The application is an instrument first and an editor second. Default entry is the playable 12-pad Playground. Project management, advanced beat controls, camera settings, sample suggestions, pitch/MIDI tools, Voice Lab and Overdub remain available without occupying the first screen.
