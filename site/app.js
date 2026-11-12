@@ -10,7 +10,7 @@ const $ = id => document.getElementById(id);
 let project = makeProject();
 let selected = 0;
 let sampleEditorTrigger = null;
-let trackGridVisible = false;
+let trackGridVisible = true;
 let audio;
 let voiceLab = null;
 let transportTimer = null;
@@ -77,6 +77,7 @@ function showStudioScreen() {
   const requested = location.hash.slice(1);
   const screen = STUDIO_SCREENS.has(requested) ? requested : 'sounds';
   $('loop-settings').open = false;
+  if(screen!=='beats' && $('sequence-focus-dialog')?.open)closeSequenceFocus();
   if(screen!=='sounds'&&padEditMode)setPadEditMode(false);
   if(screen!=='sounds' && $('sample-editor-dialog')?.open)closeSampleEditor();
   if (screen !== 'voice') voiceLab?.stopTuner?.('Voice Lab closed. Microphone is off.');
@@ -705,6 +706,46 @@ function renderControls() {
   $('end-out').textContent = `${config.end.toFixed(2)} s`;
 }
 
+function compactSequenceOverview(){return window.matchMedia('(max-width:740px)').matches;}
+
+function updateSequenceFocusMixer(){
+  const pad=project.pads[selected];
+  for(const [key,id] of [['muted','sequence-focus-mute'],['solo','sequence-focus-solo']]){
+    const button=$(id);button.setAttribute('aria-pressed',String(Boolean(pad[key])));
+    button.classList.toggle('active',Boolean(pad[key]));
+    button.textContent=pad[key]?(key==='muted'?'Unmute':'Unsolo'):(key==='muted'?'Mute':'Solo');
+  }
+  $('sequence-focus-volume').value=String(Math.round(pad.volume*100));
+  $('sequence-focus-volume-out').textContent=`${Math.round(pad.volume*100)}%`;
+}
+
+function openSequenceFocus(id){
+  if(!compactSequenceOverview()){selectPad(id);return;}
+  selectPad(id);
+  $('sequence-focus-title').textContent=`Pad ${id+1} · edit steps`;
+  $('sequence-focus-steps').append($('steps'));
+  $('steps').hidden=false;
+  updateSequenceFocusMixer();
+  const dialog=$('sequence-focus-dialog');if(!dialog.open)dialog.showModal();
+}
+
+function closeSequenceFocus(){
+  const dialog=$('sequence-focus-dialog');if(!dialog.open)return;
+  dialog.close();
+  $('track-grid').before($('steps'));
+  $('steps').hidden=trackGridVisible;
+  document.querySelector(`.track-row[data-pad="${selected}"] .track-name`)?.focus();
+}
+
+function setTrackView(allTracks){
+  trackGridVisible=Boolean(allTracks);
+  $('steps').hidden=trackGridVisible;
+  $('track-grid').hidden=!trackGridVisible;
+  const toggle=$('track-view');toggle.textContent=trackGridVisible?'FOCUS A PAD':'ALL TRACKS';
+  toggle.setAttribute('aria-pressed',String(trackGridVisible));
+  if(trackGridVisible)renderTrackGrid();
+}
+
 function gridStride(){return project.gridDivision==='1/4'?4:project.gridDivision==='1/8'?2:1;}
 
 function renderSteps() {
@@ -737,18 +778,34 @@ function renderSteps() {
 function renderTrackGrid(){
   const holder=$('track-grid'),focused=holder.contains(document.activeElement)?{pad:document.activeElement.closest('.track-row')?.dataset.pad,step:document.activeElement.dataset.step,control:document.activeElement.dataset.control}:null,previousScroll=holder.querySelector('.track-steps')?.scrollLeft||0;holder.replaceChildren();
   const count=PAD_COUNT[project.layout],hasSolo=project.pads.slice(0,count).some(pad=>pad.solo);
+  const compact=compactSequenceOverview();
   const stride=gridStride(),positions=Array.from({length:16/stride},(_,index)=>index*stride);
   for(let id=0;id<count;id++){
     const pad=project.pads[id],row=document.createElement('div');row.className=`track-row${pad.muted?' muted':''}${pad.solo?' solo':''}`;row.dataset.pad=id;row.setAttribute('role','group');
     const head=document.createElement('div');head.className='track-head';
     const demo=DEMO_SOUNDS.find(sound=>sound.id===pad.demoSound);
-    const trackLabel=mediaFiles.has(id)?pad.name:demo?.name||(audio.demoEnabled?`Demo synth ${String(id+1).padStart(2,'0')}`:'Empty pad');row.setAttribute('aria-label',`Pattern lane ${id+1}: ${trackLabel}`);
-    const name=document.createElement('button');name.type='button';name.className='track-name';name.textContent=`${String(id+1).padStart(2,'0')} · ${trackLabel}`;name.setAttribute('aria-label',`Select pad ${id+1}, ${trackLabel}`);name.addEventListener('click',()=>selectPad(id));head.append(name);
+    const trackLabel=mediaFiles.has(id)?pad.name:demo?.name||(audio.demoEnabled?`Demo synth ${String(id+1).padStart(2,'0')}`:'Empty pad');
+    const enabledCount=positions.filter(step=>pad.steps[step]).length;
+    row.setAttribute('aria-label',compact?`Pattern lane ${id+1}: ${trackLabel}; ${enabledCount} of ${positions.length} steps active. Select lane name to edit.`:`Pattern lane ${id+1}: ${trackLabel}`);
+    const name=document.createElement('button');name.type='button';name.dataset.control='name';name.className='track-name';name.textContent=`${String(id+1).padStart(2,'0')} · ${trackLabel}`;name.setAttribute('aria-label',compact?`Edit pattern for pad ${id+1}, ${trackLabel}`:`Select pad ${id+1}, ${trackLabel}`);name.addEventListener('click',()=>compact?openSequenceFocus(id):selectPad(id));head.append(name);
     const edit=document.createElement('button');edit.type='button';edit.dataset.control='edit';edit.className='track-edit';edit.textContent='EDIT';edit.setAttribute('aria-label',`Edit pad ${id+1}`);edit.addEventListener('click',()=>openSampleEditor(id));head.append(edit);
     for(const [key,label] of [['muted','M'],['solo','S']]){const button=document.createElement('button');button.type='button';button.dataset.control=key;button.className=`track-toggle${pad[key]?' active':''}`;button.textContent=label;button.setAttribute('aria-label',`${pad[key]?'Disable':'Enable'} ${key} for pad ${id+1}`);button.setAttribute('aria-pressed',String(pad[key]));button.addEventListener('click',()=>{pad[key]=!pad[key];renderTrackGrid();queueSave();});head.append(button);}
     const gain=document.createElement('input');gain.type='range';gain.min='0';gain.max='150';gain.value=String(Math.round(pad.volume*100));gain.className='track-gain';gain.setAttribute('aria-label',`Volume for pad ${id+1}`);gain.addEventListener('input',()=>{pad.volume=Number(gain.value)/100;if(selected===id){$('volume').value=gain.value;$('volume-out').textContent=`${gain.value}%`;}queueSave();});head.append(gain);row.append(head);
-    const cells=document.createElement('div');cells.className='track-steps';cells.style.setProperty('--track-step-count',String(positions.length));cells.addEventListener('scroll',()=>{for(const other of holder.querySelectorAll('.track-steps'))if(other!==cells&&other.scrollLeft!==cells.scrollLeft)other.scrollLeft=cells.scrollLeft;},{passive:true});
-    positions.forEach(index=>{const enabled=pad.steps[index],button=document.createElement('button');button.type='button';button.dataset.step=String(index);button.className=`step${enabled?' on':''}`;button.textContent=String(index+1).padStart(2,'0');button.setAttribute('aria-label',`Pad ${id+1}, step ${index+1} ${enabled?'on':'off'} at ${project.gridDivision} grid`);button.setAttribute('aria-pressed',String(enabled));button.disabled=Boolean(patternRecording);button.addEventListener('click',()=>{if(patternRecording)return;patternUndoSnapshot=null;renderPatternRecordingState();pad.steps[index]=!pad.steps[index];pad.stepOffsets[index]=0;renderSteps();queueSave();});cells.append(button);});row.append(cells);
+    const cells=document.createElement('div');cells.className=compact?'track-steps compact-overview':'track-steps';cells.style.setProperty('--track-step-count',String(positions.length));
+    if(!compact)cells.addEventListener('scroll',()=>{for(const other of holder.querySelectorAll('.track-steps'))if(other!==cells&&other.scrollLeft!==cells.scrollLeft)other.scrollLeft=cells.scrollLeft;},{passive:true});
+    positions.forEach(index=>{
+      const enabled=pad.steps[index],step=document.createElement(compact?'span':'button');
+      step.dataset.step=String(index);
+      step.className=`${compact?'step-overview':'step'}${enabled?' on':''}`;
+      if(compact){step.setAttribute('aria-hidden','true');}
+      else {
+        step.type='button';step.textContent=String(index+1).padStart(2,'0');
+        step.setAttribute('aria-label',`Pad ${id+1}, step ${index+1} ${enabled?'on':'off'} at ${project.gridDivision} grid`);
+        step.setAttribute('aria-pressed',String(enabled));step.disabled=Boolean(patternRecording);
+        step.addEventListener('click',()=>{if(patternRecording)return;patternUndoSnapshot=null;renderPatternRecordingState();pad.steps[index]=!pad.steps[index];pad.stepOffsets[index]=0;renderSteps();queueSave();});
+      }
+      cells.append(step);
+    });row.append(cells);
     if(hasSolo&&!pad.solo)row.classList.add('solo-muted');holder.append(row);
   }
   if(focused?.pad!==undefined){
@@ -774,7 +831,7 @@ function renderSession() {
     button.classList.toggle('active',audio.demoEnabled);
     button.setAttribute('aria-pressed',String(audio.demoEnabled));
   }
-  renderGrid(); renderControls(); renderSteps(); renderScenes(); renderVideoDirector();
+  renderGrid(); renderControls(); renderSteps(); setTrackView(trackGridVisible); renderScenes(); renderVideoDirector();
   audio.setTransport(project.bpm,project.quantize);
   syncRegionPreview();
 }
@@ -1777,7 +1834,15 @@ function bindControls() {
   $('update-scene').addEventListener('click',updateScene);
   $('launch-scene').addEventListener('click',launchScene);
   $('delete-scene').addEventListener('click',deleteScene);
-  $('track-view').addEventListener('click',()=>{trackGridVisible=!trackGridVisible;$('steps').hidden=trackGridVisible;$('track-grid').hidden=!trackGridVisible;$('track-view').textContent=trackGridVisible?'SELECTED PAD':'ALL TRACKS';$('track-view').setAttribute('aria-pressed',String(trackGridVisible));if(trackGridVisible)renderTrackGrid();});
+  $('track-view').addEventListener('click',()=>{if(compactSequenceOverview()&&trackGridVisible){openSequenceFocus(selected);return;}setTrackView(!trackGridVisible);});
+  $('sequence-focus-close').addEventListener('click',closeSequenceFocus);
+  $('sequence-focus-dialog').addEventListener('cancel',event=>{event.preventDefault();closeSequenceFocus();});
+  for(const [key,id] of [['muted','sequence-focus-mute'],['solo','sequence-focus-solo']]){
+    $(id).addEventListener('click',()=>{project.pads[selected][key]=!project.pads[selected][key];renderTrackGrid();updateSequenceFocusMixer();queueSave();});
+  }
+  $('sequence-focus-volume').addEventListener('input',event=>{const value=Number(event.target.value);project.pads[selected].volume=value/100;$('sequence-focus-volume-out').textContent=`${value}%`;queueSave();});
+  $('sequence-focus-volume').addEventListener('change',()=>{renderTrackGrid();renderControls();});
+  window.matchMedia('(max-width:740px)').addEventListener?.('change',()=>{if(!compactSequenceOverview())closeSequenceFocus();renderTrackGrid();});
   $('start-record').addEventListener('click',toggleSetRecording);
   $('studio-record').addEventListener('click',toggleSetRecording);
   $('record-audio').addEventListener('click',toggleAudioRecording);
