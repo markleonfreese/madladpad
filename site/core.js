@@ -202,7 +202,7 @@ export function normaliseProject(value) {
       volume: clamp(source.volume ?? pad.volume, 0, 1.5),
       pitch: clamp(source.pitch ?? 0, -12, 12),
       speed: clamp(source.speed ?? 1, 0.5, 2),
-      stepPlaybackMode: source.stepPlaybackMode === 'one-step' ? 'one-step' : 'full',
+      stepPlaybackMode: ['one-step','loop'].includes(source.stepPlaybackMode) ? source.stepPlaybackMode : 'full',
       start: clamp(source.start ?? 0, 0, 3599.99),
       end: clamp(source.end ?? 2, 0.01, 3600),
       muted: Boolean(source.muted), solo: Boolean(source.solo),
@@ -216,7 +216,7 @@ export function normaliseProject(value) {
     pads:Array.from({length:16},(_,j)=>({
       steps:Array.from({length:STEP_COUNT},(_,k)=>Boolean(scene?.pads?.[j]?.steps?.[k])),
       stepOffsets:Array.from({length:STEP_COUNT},(_,k)=>clamp(scene?.pads?.[j]?.stepOffsets?.[k]??0,0,.9999)),
-      stepPlaybackMode:scene?.pads?.[j]?.stepPlaybackMode==='one-step'?'one-step':'full'
+      stepPlaybackMode:['one-step','loop'].includes(scene?.pads?.[j]?.stepPlaybackMode)?scene.pads[j].stepPlaybackMode:'full'
     })),
     videoShots:Array.isArray(scene?.videoShots)?normaliseVideoDirection({shots:scene.videoShots}).shots:null
   })):[];
@@ -297,6 +297,15 @@ export function stepTriggerTime(stepTime,bpm,offset=0){
 }
 export function stepGateDuration(bpm,offset=0){
   return (60/clamp(bpm,40,240)/4)*(1-clamp(offset,0,.9999));
+}
+export function stepLoopGateDuration(steps,step,bpm,offset=0,initialStep=false){
+  if(!Array.isArray(steps)||steps.length!==STEP_COUNT||!steps[step])return null;
+  const stepDuration=60/clamp(bpm,40,240)/4;
+  if(steps.every(Boolean))return initialStep?Infinity:null;
+  if(!initialStep&&steps[(step+STEP_COUNT-1)%STEP_COUNT])return null;
+  let count=0;
+  while(count<STEP_COUNT&&steps[(step+count)%STEP_COUNT])count++;
+  return Math.max(0,count-clamp(offset,0,.9999))*stepDuration;
 }
 export function nextBarTime(now,epoch,bpm){
   const bar=60/clamp(bpm,40,240)*4;

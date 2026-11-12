@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withModelReferrerPolicy } from '../site/voice-model-fetch.js';
-import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, midiFrequency, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes } from '../site/core.js';
 
 test('Whisper model fetch omits the app referrer only for Hugging Face assets', async () => {
   const calls = [];
@@ -82,6 +82,8 @@ test('scene launch schedules on the next bar and scenes normalize safely',()=>{
   const modeProject=normaliseProject({pads:[{stepPlaybackMode:'one-step'}],scenes:[{pads:[{stepPlaybackMode:'one-step'}]}]});
   assert.equal(modeProject.pads[0].stepPlaybackMode,'one-step');
   assert.equal(modeProject.scenes[0].pads[0].stepPlaybackMode,'one-step');
+  assert.equal(normaliseProject({pads:[{stepPlaybackMode:'loop'}],scenes:[{pads:[{stepPlaybackMode:'loop'}]}]}).pads[0].stepPlaybackMode,'loop');
+  assert.equal(normaliseProject({scenes:[{pads:[{stepPlaybackMode:'loop'}]}]}).scenes[0].pads[0].stepPlaybackMode,'loop');
   assert.equal(normaliseProject({gridDivision:'1/4',scenes:[{gridDivision:'1/8'}]}).gridDivision,'1/4');
   assert.equal(normaliseProject({gridDivision:'triplet'}).gridDivision,'1/16');
   assert.equal(normaliseProject({scenes:[{gridDivision:'1/8'}]}).scenes[0].gridDivision,'1/8');
@@ -90,6 +92,23 @@ test('scene launch schedules on the next bar and scenes normalize safely',()=>{
   assert.equal(directed.length,16);
   assert.deepEqual(directed[0],{mode:'grid',pads:[0,1]});
   assert.deepEqual(directed[1],{mode:'auto',pads:[2]});
+});
+
+test('loop-held gate spans contiguous cells and the 15-to-0 bar wrap',()=>{
+  const steps=Array(16).fill(false);steps[14]=steps[15]=steps[0]=steps[1]=true;
+  assert.equal(stepLoopGateDuration(steps,14,120),.5);
+  assert.equal(stepLoopGateDuration(steps,15,120),null,'a held run never restarts at step 15 after its step-14 start');
+  assert.equal(stepLoopGateDuration(steps,0,120),null,'the same run does not retrigger at step 0 after wrapping');
+  assert.equal(stepLoopGateDuration(steps,14,120,.5),.4375,'only the first-cell offset shortens the run');
+  assert.equal(stepLoopGateDuration(steps,2,120),null,'a gap ends the held gate');
+});
+
+test('loop-held all-on patterns start once and remain held across bar wrap',()=>{
+  const steps=Array(16).fill(true);
+  assert.equal(stepLoopGateDuration(steps,0,120),null,'later bar wraps do not restart the sustained gate');
+  assert.equal(stepLoopGateDuration(steps,1,120),null,'an all-on held pattern does not restart each step');
+  assert.equal(stepLoopGateDuration(steps,0,120,0,true),Infinity,'transport starts the all-on gate at step zero');
+  assert.equal(stepLoopGateDuration(steps,0,120,0,false),null);
 });
 test('pattern capture can snap or retain timing offsets within a step',()=>{
   assert.deepEqual(captureStepPosition(.1,120,'nearest'),{step:1,offset:0});

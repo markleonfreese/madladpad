@@ -1,11 +1,11 @@
 # Playground-first UX review and implementation (10 November 2026)
 
-Status: merged in PR #119; PR #142 moves the global fallback demo toggle into Settings, leaving Edit pads as the single Playground toolbar action, and dismisses the Project menu when navigating or tapping outside. PR #145 adds optional per-pad one-step gating while preserving full-sound defaults. Production is `1e64dbae9b9492265a5bd22baa1507d88e479ca5` at Pages deployment `26a65dee-b7e4-4469-9ef6-334e18499563`; this does not update the separate legacy Workers URL. Remaining physical-device, screen-reader and listening checks are listed in [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md). This is a response to the in-person UX discussion, not a new audio engine or storage format.
+Status: merged in PR #119; PR #142 moves the global fallback demo toggle into Settings, leaving Edit pads as the single Playground toolbar action, and dismisses the Project menu when navigating or tapping outside. PR #145 adds optional per-pad one-step gating while preserving full-sound defaults. Current main adds opt-in held-step looping in a focused follow-up; Pages still serves the earlier source until a new verified release. This does not update the separate legacy Workers URL. Remaining physical-device, screen-reader and listening checks are listed in [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md).
 
 ## Sequencer playback follow-up (12 November 2026)
 
-- **Play full sound** remains the default for existing and new pads. **One sound per step** is an optional per-pad setting, saved in projects and scenes; active sequencer steps start the trimmed region and gate it at the next canonical 16th-note boundary after its offset. Pattern Undo restores steps and offsets only, so it does not revert this sound setting.
-- Manual pad taps remain one-shot. The proposed held-step loop mode is not implemented; bar-wrap and scene behavior remain out of scope for this bounded mode.
+- **Play full sound** remains the default for existing and new pads. **One sound per step** and **Loop across held steps** are optional per-pad settings saved in projects and scenes. One-step starts the trim per active cell and gates at the next canonical 16th boundary; loop starts a contiguous run once, repeats short decoded audio and releases at a gap. Pattern Undo restores steps and offsets only, so it does not revert this sound setting.
+- A held run may span step 15→0; all-on patterns continue across bars until stopped or changed. Queued scene launch releases the old run at the bar boundary. Unsupported media uses a full one-shot with a limitation notice. Manual pad taps remain one-shot.
 
 ## Design decision
 

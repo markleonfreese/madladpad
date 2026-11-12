@@ -1,4 +1,4 @@
-const CACHE = 'madladpad-shell-v14';
+const CACHE = 'madladpad-shell-v15';
 const SHELL = ['/', '/styles.css', '/app.js', '/core.js', '/file-input.js', '/audio.js', '/pitch-dsp.js', '/pitch-shifter.js', '/tuning.js', '/storage.js', '/google.js', '/onsets.js', '/onsets-worker.js', '/voice.js', '/tuner.js', '/google-config.js', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png', '/credits.html', '/licenses/Apache-2.0.txt', '/licenses/MIT-OpenAI-Whisper.txt', '/licenses/MIT-ONNX-Runtime.txt'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
