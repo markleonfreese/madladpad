@@ -10,6 +10,19 @@ export const MAX_MELODY_NOTES = 128;
 export const HARMONY_INTERVALS = [-12, -7, -5, -4, -3, 3, 4, 5, 7, 12];
 export const RAP_BAR_COUNT = 16;
 export const VIDEO_ASPECTS = { '4:3':[960,720], '16:9':[960,540], '9:16':[540,960], '1:1':[720,720] };
+export const DEMO_SOUNDS = Object.freeze([
+  Object.freeze({id:'kick',name:'Kick',category:'Drums'}),
+  Object.freeze({id:'snare',name:'Snare',category:'Drums'}),
+  Object.freeze({id:'hat',name:'Hi-hat',category:'Drums'}),
+  Object.freeze({id:'clap',name:'Clap',category:'Drums'}),
+  Object.freeze({id:'tom',name:'Tom',category:'Drums'}),
+  Object.freeze({id:'sub-bass',name:'Sub bass',category:'Bass'}),
+  Object.freeze({id:'pluck-bass',name:'Pluck bass',category:'Bass'}),
+  Object.freeze({id:'chord',name:'Chord',category:'Keys'}),
+  Object.freeze({id:'bell',name:'Bell',category:'Keys'}),
+  Object.freeze({id:'sweep',name:'Sweep',category:'FX'})
+]);
+const DEMO_SOUND_IDS = new Set(DEMO_SOUNDS.map(sound=>sound.id));
 
 export const makeVideoDirection = () => ({ aspect:'4:3', shots:Array.from({length:STEP_COUNT},()=>({mode:'auto',pads:[]})) });
 export function normaliseVideoDirection(value) {
@@ -157,6 +170,7 @@ export function isPadAudible(pads,id){
 }
 export const makePad = id => ({
   id, name: `Pad ${String(id + 1).padStart(2, '0')}`, fileName: '', kind: '',
+  demoSound:'',
   volume: 0.9, pitch: 0, speed: 1, start: 0, end: 2, muted:false, solo:false,
   steps: Array(STEP_COUNT).fill(false), stepOffsets: Array(STEP_COUNT).fill(0)
 });
@@ -183,6 +197,7 @@ export function normaliseProject(value) {
       name: String(source.name || pad.name).slice(0, 45),
       fileName: String(source.fileName || '').slice(0, 200),
       kind: ['audio','video','image'].includes(source.kind) ? source.kind : '',
+      demoSound: DEMO_SOUND_IDS.has(source.demoSound) ? source.demoSound : '',
       volume: clamp(source.volume ?? pad.volume, 0, 1.5),
       pitch: clamp(source.pitch ?? 0, -12, 12),
       speed: clamp(source.speed ?? 1, 0.5, 2),

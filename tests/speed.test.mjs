@@ -12,6 +12,16 @@ test('legacy projects default speed to 1 and preserve pitch metadata', () => {
   assert.equal(makeProject().pads[0].speed, 1);
 });
 
+test('a selected local demo plays with the global demo toggle off',()=>{
+  const sampler=Object.create(SamplerAudio.prototype);
+  Object.assign(sampler,{context:{currentTime:1},sources:new Map(),demoEnabled:false,momentaryPlayback:new Map()});
+  const calls=[];sampler.playDemoSound=(...args)=>calls.push(args);sampler.playDemo=()=>assert.fail('global fallback must not replace a per-pad selection');
+  assert.equal(sampler.trigger(3,{demoSound:'sub-bass',volume:.7},()=>{},1.1,{momentary:true}),true);
+  assert.deepEqual(calls,[['sub-bass',1.1,.7]]);
+  assert.equal(sampler.momentaryPlayback.has(3),false,'a one-shot demo should not leave a hold gesture behind');
+  assert.equal(sampler.trigger(4,{volume:.7},()=>{},1.1),false);
+});
+
 test('copying a clip preserves independent pad identity, patterns and mute state', () => {
   const project=makeProject();
   const source=project.pads[0],destination=project.pads[4];

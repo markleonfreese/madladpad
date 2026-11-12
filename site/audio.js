@@ -243,10 +243,14 @@ export class SamplerAudio {
     const delay = Math.max(0, (when - now) * 1000);
     const gesture=momentary?{cancelled:false,stop:null}:null;
     if(gesture)this.momentaryPlayback.set(id,gesture);
-    if (!source?.file && !this.demoEnabled) return false;
-    if (!source?.file && this.demoEnabled) {
+    if (!source?.file && !this.demoEnabled && !pad.demoSound) {
       if(gesture)this.momentaryPlayback.delete(id);
-      this.playDemo(id, when, pad.volume);
+      return false;
+    }
+    if (!source?.file && (pad.demoSound || this.demoEnabled)) {
+      if(gesture)this.momentaryPlayback.delete(id);
+      if(pad.demoSound)this.playDemoSound(pad.demoSound,when,pad.volume);
+      else this.playDemo(id, when, pad.volume);
       setTimeout(() => onVisual?.(id), delay);
       return true;
     }
@@ -397,6 +401,49 @@ export class SamplerAudio {
       oscillator.frequency.exponentialRampToValueAtTime(42 + id*14, when+length);
       oscillator.connect(gain); oscillator.start(when); oscillator.stop(when+length);
     }
+  }
+
+  // Small, rights-safe instruments generated entirely in the local Web Audio
+  // graph. Per-pad choices stay available when the global demo toggle is off.
+  playDemoSound(sound, when, volume) {
+    const ctx=this.context;
+    const specs={
+      kick:{kind:'sweep',wave:'sine',from:150,to:42,length:.16,level:.65},
+      snare:{kind:'noise',filter:'bandpass',cutoff:1900,length:.17,level:.42,tone:185},
+      hat:{kind:'noise',filter:'highpass',cutoff:6200,length:.065,level:.28},
+      clap:{kind:'noise',filter:'bandpass',cutoff:1250,length:.2,level:.38,bursts:true},
+      tom:{kind:'sweep',wave:'triangle',from:210,to:82,length:.22,level:.5},
+      'sub-bass':{kind:'sweep',wave:'sine',from:58,to:48,length:.42,level:.55},
+      'pluck-bass':{kind:'tone',wave:'sawtooth',frequency:110,length:.24,level:.3,filter:1100},
+      chord:{kind:'chord',frequencies:[261.63,329.63,392],length:.48,level:.22},
+      bell:{kind:'tone',wave:'sine',frequency:880,length:.48,level:.28},
+      sweep:{kind:'sweep',wave:'sawtooth',from:180,to:1100,length:.42,level:.2,filter:2600}
+    }[sound];
+    if(!specs)return false;
+    const length=specs.length,peak=Math.max(.0001,Math.min(1.5,Number(volume)||0)*specs.level);
+    const gain=ctx.createGain();gain.gain.setValueAtTime(.0001,when);
+    gain.gain.exponentialRampToValueAtTime(peak,when+(specs.bursts?.004:.008));
+    gain.gain.exponentialRampToValueAtTime(.0001,when+length);gain.connect(this.master);
+    const connect=node=>{
+      if(specs.filter){const filter=ctx.createBiquadFilter();filter.type=specs.kind==='noise'?specs.filter:'lowpass';filter.frequency.value=specs.cutoff||specs.filter;node.connect(filter).connect(gain);}
+      else node.connect(gain);
+    };
+    if(specs.kind==='noise'){
+      const frames=Math.max(1,Math.ceil(ctx.sampleRate*length)),buffer=ctx.createBuffer(1,frames,ctx.sampleRate),channel=buffer.getChannelData(0);
+      for(let i=0;i<frames;i++)channel[i]=Math.random()*2-1;
+      const noise=ctx.createBufferSource();noise.buffer=buffer;connect(noise);noise.start(when);noise.stop(when+length);
+      if(specs.tone){const tone=ctx.createOscillator();tone.type='triangle';tone.frequency.setValueAtTime(specs.tone,when);tone.frequency.exponentialRampToValueAtTime(65,when+.1);tone.connect(gain);tone.start(when);tone.stop(when+.11);}
+      if(specs.bursts)for(const offset of [.035,.075,.115]){gain.gain.setValueAtTime(peak*.75,when+offset);gain.gain.exponentialRampToValueAtTime(.0001,when+offset+.035);}
+    }else{
+      const notes=specs.kind==='chord'?specs.frequencies:[specs.frequency||specs.from];
+      for(const frequency of notes){
+        const oscillator=ctx.createOscillator();oscillator.type=specs.wave||'triangle';
+        oscillator.frequency.setValueAtTime(frequency,when);
+        if(specs.kind==='sweep')oscillator.frequency.exponentialRampToValueAtTime(specs.to,when+length);
+        connect(oscillator);oscillator.start(when);oscillator.stop(when+length);
+      }
+    }
+    return true;
   }
 
   destroy() {
