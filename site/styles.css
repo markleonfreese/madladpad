@@ -170,15 +170,30 @@ body[data-screen="beats"] .pad-bg{font-size:18px}
 .camera-dialog .quiet-button small{display:block;margin-top:4px;color:var(--muted);font-size:10px;font-weight:400}
 
 @media(max-width:740px){
-  .track-grid{overflow-x:hidden}
-  .track-row{grid-template-columns:minmax(0,1fr);gap:6px;min-width:0;align-items:stretch}
-  .track-head{width:100%;grid-template-columns:minmax(60px,1fr) 36px 34px 34px 44px;gap:4px}
-  .track-name{min-height:40px;padding:4px}
-  .track-edit,.track-toggle{min-height:40px}
-  .track-gain{height:40px}
-  .track-steps{width:100%;min-width:0;overflow-x:auto;overscroll-behavior-x:contain;grid-template-columns:repeat(var(--track-step-count,16),44px);scrollbar-width:thin;scroll-snap-type:x proximity}
-  .track-steps .step{width:44px;min-width:44px;min-height:44px;scroll-snap-align:start}
+  /* A complete 16-step read-only overview fits each row; editing has its own touch-sized dialog. */
+  .track-grid{overflow-x:hidden;gap:4px}
+  .track-row{grid-template-columns:minmax(100px,38%) minmax(0,1fr);gap:5px;min-width:0;min-height:46px;align-items:center;padding:2px 4px}
+  .track-head{width:100%;grid-template-columns:minmax(0,1fr) 44px;gap:3px}
+  .track-name{min-height:44px;padding:3px;font-size:10px}
+  .track-edit{min-height:44px}
+  .track-toggle,.track-gain{display:none}
+  .track-steps.compact-overview{width:100%;min-width:0;overflow:hidden;grid-template-columns:repeat(var(--track-step-count,16),minmax(0,1fr));gap:2px;align-items:center}
+  .track-steps .step-overview{display:block;min-width:0;height:23px;border:1px solid #47604a;border-radius:2px;background:#263229}
+  .track-steps .step-overview.on{border-color:var(--acid);background:var(--acid)}
+  .track-steps .step-overview:nth-child(4n+1){border-left:2px solid #8aa987}
 }
+.sequence-focus-dialog{width:min(94vw,490px);padding:18px;max-height:85dvh}
+.sequence-focus-dialog>.sequence-focus-mixer{display:grid;grid-template-columns:72px 72px minmax(0,1fr);gap:8px;align-items:center;margin:15px 0}
+.sequence-focus-mixer .quiet-button{min-height:44px}
+.sequence-focus-mixer .quiet-button.active{border-color:var(--acid);color:var(--acid)}
+.sequence-focus-mixer label{display:grid;gap:3px;min-width:0;font:10px var(--mono);color:var(--muted)}
+.sequence-focus-mixer input{width:100%;min-width:0;accent-color:var(--acid)}
+.sequence-focus-dialog>#sequence-focus-steps{display:block;width:100%;margin-bottom:15px}
+.sequence-focus-dialog #steps{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:8px}
+.sequence-focus-dialog #steps .step{min-height:52px;min-width:44px;aspect-ratio:auto;font-size:13px}
+.sequence-focus-dialog #sequence-focus-close{min-height:44px;min-width:94px}
+@media(max-width:350px){.sequence-focus-dialog>.sequence-focus-mixer{grid-template-columns:1fr 1fr}.sequence-focus-mixer label{grid-column:1/-1}}
+
 .pad-cell{position:relative;min-width:0}.pad-cell>.pad{width:100%}.pad-cell:hover>.edit-pad,.pad.selected+.edit-pad,.edit-pad:focus-visible{visibility:visible}
 @media(max-width:740px){.pad-cell{display:grid;grid-template-rows:auto 44px;gap:0}.pad-cell>.edit-pad{position:static;right:auto;bottom:auto;justify-self:end;width:44px;height:44px;min-width:44px;min-height:44px;padding:0}}
 
