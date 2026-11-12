@@ -132,7 +132,11 @@ try {
     return toast.left<play.right&&toast.right>play.left&&toast.top<play.bottom&&toast.bottom>play.top;
   });
   assert.equal(firstRunToastOverlapsPlay,false,'first-run guidance should not cover Play at a narrow phone viewport');
-  await page.locator('#steps .step').nth(1).click();
+  assert.equal(await page.locator('#track-grid').isVisible(),true,'Sequence should open on the all-track overview');
+  await page.locator('.track-row[data-pad="0"] .track-name').click();
+  assert.equal(await page.locator('#sequence-focus-dialog').evaluate(dialog=>dialog.open),true,'tapping a lane should open a focused step editor on phone');
+  await page.locator('#sequence-focus-dialog #steps .step').nth(1).click();
+  await page.locator('#sequence-focus-close').click();
   await page.waitForTimeout(400);
   await page.reload();
   await wait(page,'#sequence-pad-toggle');
@@ -462,7 +466,7 @@ try {
   await page.locator('#director-pads input[value="1"]').check();
   assert.match(await page.locator('#director-status').textContent(),/show pads 1, 2/);
   await openScreen('beats');
-  await page.locator('#track-view').click();
+  assert.equal(await page.locator('#track-grid').isVisible(),true,'all-track Sequence should be the default on desktop');
   assert.equal(await page.locator('#track-grid .track-row').count(),12,'all-tracks view should expose each lane in the 12-pad layout');
   await page.locator('.track-row[data-pad="2"] .track-edit').click();
   await page.waitForFunction(()=>document.body.dataset.screen==='sounds');
@@ -1408,19 +1412,29 @@ try {
   if(await page.locator('#track-grid').isHidden())await page.locator('#track-view').click();
   for(const width of [390,320]){
     await page.setViewportSize({width,height:844});
-    const laneGeometry=await page.locator('.track-row').first().evaluate(row=>{const head=row.querySelector('.track-head'),headRect=head.getBoundingClientRect(),steps=row.querySelector('.track-steps'),stepsRect=steps.getBoundingClientRect(),step=steps.querySelector('.step'),stepRect=step.getBoundingClientRect();return {viewport:innerWidth,documentWidth:document.documentElement.scrollWidth,gridWidth:document.querySelector('#track-grid').clientWidth,rowWidth:row.getBoundingClientRect().width,headRight:headRect.right,headBottom:headRect.bottom,stepsLeft:stepsRect.left,stepsTop:stepsRect.top,stepsWidth:steps.clientWidth,stepsScrollWidth:steps.scrollWidth,stepWidth:stepRect.width,stepHeight:stepRect.height,laneName:row.getAttribute('aria-label')};});
+    const laneGeometry=await page.locator('.track-row').first().evaluate(row=>{
+      const head=row.querySelector('.track-head').getBoundingClientRect(),steps=row.querySelector('.track-steps'),preview=steps.querySelector('.step-overview');
+      return {viewport:innerWidth,documentWidth:document.documentElement.scrollWidth,gridWidth:document.querySelector('#track-grid').clientWidth,rowWidth:row.getBoundingClientRect().width,headRight:head.right,previewCount:steps.querySelectorAll('.step-overview').length,stepsWidth:steps.clientWidth,stepsScrollWidth:steps.scrollWidth,previewWidth:preview.getBoundingClientRect().width,laneName:row.getAttribute('aria-label')};
+    });
     assert.equal(laneGeometry.documentWidth,width,`all-tracks mobile layout should not overflow at ${width}px: ${JSON.stringify(laneGeometry)}`);
-    assert.ok(laneGeometry.rowWidth<=laneGeometry.gridWidth&&laneGeometry.headRight<=width&&laneGeometry.headBottom<=laneGeometry.stepsTop,`each mobile lane should retain its visible name and controls above its scrollable steps: ${JSON.stringify(laneGeometry)}`);
-    assert.ok(laneGeometry.stepsScrollWidth>laneGeometry.stepsWidth&&laneGeometry.stepWidth>=44&&laneGeometry.stepHeight>=44,`mobile step cells should scroll within their lane and keep 44px touch targets: ${JSON.stringify(laneGeometry)}`);
-    assert.match(laneGeometry.laneName,/Pattern lane 1:/,`screen readers should identify each lane: ${JSON.stringify(laneGeometry)}`);
-    await page.locator('.track-row[data-pad="0"] .track-steps').evaluate(el=>{el.scrollLeft=el.scrollWidth;});
-    await page.waitForFunction(()=>{const offsets=[...document.querySelectorAll('.track-row .track-steps')].map(lane=>lane.scrollLeft);return offsets[0]>0&&offsets.every(left=>left===offsets[0]);});
-    await page.locator('.track-row[data-pad="0"] [data-step="15"]').click();
-    const syncedScroll=await page.locator('.track-row').evaluateAll(rows=>rows.map(row=>row.querySelector('.track-steps').scrollLeft));
-    assert.ok(syncedScroll[0]>0&&syncedScroll.every(left=>left===syncedScroll[0]),`all mobile lanes should stay aligned after scrolling and editing a later step: ${JSON.stringify(syncedScroll)}`);
-    await page.locator('.track-row[data-pad="0"] [data-control="muted"]').click();
-    const headerFocusScroll=await page.locator('.track-row').evaluateAll(rows=>rows.map(row=>row.querySelector('.track-steps').scrollLeft));
-    assert.ok(headerFocusScroll[0]===syncedScroll[0]&&headerFocusScroll.every(left=>left===headerFocusScroll[0]),`header actions should retain the current mobile step position: ${JSON.stringify(headerFocusScroll)}`);
+    assert.ok(laneGeometry.rowWidth<=laneGeometry.gridWidth&&laneGeometry.headRight<=width,`each lane should fit with its name and clip editor: ${JSON.stringify(laneGeometry)}`);
+    assert.equal(laneGeometry.previewCount,16,'the full 16-step pattern should be visible in every mobile lane');
+    assert.ok(laneGeometry.stepsScrollWidth<=laneGeometry.stepsWidth+1,`phone overview must not horizontally scroll: ${JSON.stringify(laneGeometry)}`);
+    assert.match(laneGeometry.laneName,/Pattern lane 1:/,'the accessible lane name should identify its sample');
+    const wasOn=await page.locator('.track-row[data-pad="0"] .step-overview[data-step="15"]').evaluate(el=>el.classList.contains('on'));
+    await page.locator('.track-row[data-pad="0"] .track-name').click();
+    assert.equal(await page.locator('#sequence-focus-dialog').evaluate(dialog=>dialog.open),true,'lane selection should open the focused step editor');
+    assert.equal(await page.locator('#sequence-focus-dialog #steps .step').count(),16,'the focused editor should show all 16 editable steps');
+    const stepDimensions=await page.locator('#sequence-focus-dialog #steps .step').first().evaluate(el=>({width:el.getBoundingClientRect().width,height:el.getBoundingClientRect().height}));
+    assert.ok(stepDimensions.width>=44&&stepDimensions.height>=44,`focused step buttons must be touch sized: ${JSON.stringify(stepDimensions)}`);
+    await page.locator('#sequence-focus-dialog #steps .step[data-step="15"]').click();
+    await page.locator('#sequence-focus-mute').click();
+    assert.equal(await page.locator('#sequence-focus-mute').getAttribute('aria-pressed'),'true','focused lane mixer should expose mute state');
+    await page.locator('#sequence-focus-mute').click();
+    await page.locator('#sequence-focus-close').click();
+    assert.equal(await page.locator('#sequence-focus-dialog').evaluate(dialog=>dialog.open),false,'Done should close the step editor');
+    assert.equal(await page.locator('.track-row[data-pad="0"] .step-overview[data-step="15"]').evaluate(el=>el.classList.contains('on')),!wasOn,'focused step edits should update the whole-pattern overview');
+    assert.equal(await page.locator('#track-grid .track-row').count(),12,'closing the focused editor should retain all pattern lanes');
   }
   await page.setViewportSize({width:390,height:844});
   await openScreen('voice');
