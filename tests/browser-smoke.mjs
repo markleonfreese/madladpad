@@ -1232,6 +1232,7 @@ try {
   const pack = JSON.parse(await readFile(await download.path(), 'utf8'));
   assert.equal(pack.format, 'madladpad');
   assert.ok(pack.media[0].startsWith('data:audio/'));
+  assert.equal(pack.project.pads[modePadId].stepPlaybackMode,'one-step','portable project packs should include the per-pad playback mode');
   assert.equal(pack.project.pads[1].steps[4],true,'project pack should preserve the second lane pattern');
   assert.equal(pack.project.pads[2].steps[4],true,'project pack should preserve the third lane pattern loaded from the saved scene');
   assert.equal(pack.project.pads[2].steps[15],true,'project pack should preserve the third lane overdub');
@@ -1247,6 +1248,15 @@ try {
   await page.reload();
   await page.waitForFunction(()=>document.querySelector('#sample-info').textContent.includes('synthetic.wav · AUDIO · stored on this device'));
   assert.equal(await page.locator('#project-title').inputValue(), 'Smoke pack');
+  const beforePackModeViewport=await page.evaluate(()=>({width:innerWidth,height:innerHeight}));
+  await page.setViewportSize({width:390,height:844});
+  await openScreen('beats');
+  if(await page.locator('#track-grid').isHidden())await page.locator('#track-view').click();
+  await page.locator(`.track-row[data-pad="${modePadId}"] .track-name`).click();
+  assert.equal(await page.locator('#sequence-focus-playback').inputValue(),'one-step','project-pack import and reload should restore the per-pad playback mode');
+  await page.locator('#sequence-focus-close').click();
+  await page.setViewportSize(beforePackModeViewport);
+  await openScreen('sounds');
   checkpoint('pack round-trip');
   const captureSupported=await page.evaluate(()=>Boolean(navigator.mediaDevices?.getUserMedia&&window.MediaRecorder));
   if(captureSupported){
