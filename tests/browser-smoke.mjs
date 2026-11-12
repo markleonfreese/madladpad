@@ -1360,6 +1360,7 @@ try {
     checkpoint('adaptive performance capture transitions one-to-two-to-three clips');
 
     await openScreen('sounds');
+    assert.equal(await page.locator('#session-menu').evaluate(menu=>menu.open),false,'changing screens must close the Project menu so it cannot cover the playback Settings control');
     if(await page.locator('#demo-button').getAttribute('aria-pressed')==='true')await toggleGlobalDemo(page);
     const canceledPad=await page.locator('.pad').evaluateAll(cards=>cards.findIndex(card=>card.classList.contains('empty')&&!card.hidden));
     assert.notEqual(canceledPad,-1,'an empty pad should remain available for capture-cancel coverage');
