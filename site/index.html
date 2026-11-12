@@ -162,12 +162,12 @@
         <div class="seq-buttons">
           <button class="play-button" id="play-seq" aria-pressed="false">▶ PLAY</button>
           <label class="beat-pad-choice">PAD TO SEQUENCE<select id="beat-pad-select" aria-label="Pad to edit in Sequence"></select></label>
+          <button class="pill-button" id="track-view" aria-pressed="true">FOCUS A PAD</button>
           <button class="pill-button" id="auto-beat">SURPRISE ME</button>
           <button class="pill-button" id="sequence-pad-toggle" type="button" aria-expanded="false" aria-controls="studio-workspace">Show performance pads</button>
           <details class="control-disclosure beat-advanced" id="beat-advanced">
             <summary>Advanced beats</summary>
             <div class="beat-advanced-controls">
-              <button class="pill-button" id="track-view" aria-pressed="false">ALL TRACKS</button>
               <button class="pill-button" id="clear-steps">CLEAR SELECTED</button>
               <label class="pattern-setting">GRID<select id="grid-division"><option value="1/4">QUARTER · 4 STEPS</option><option value="1/8">EIGHTH · 8 STEPS</option><option value="1/16">SIXTEENTH · 16 STEPS</option></select></label>
               <label class="pattern-setting">TAKE<select id="pattern-take-mode"><option value="overdub">OVERDUB</option><option value="replace">REPLACE</option></select></label>
@@ -186,8 +186,8 @@
       </div>
       <p id="scene-status" class="pattern-record-status" role="status" aria-live="polite">Save the current pattern as a named scene.</p>
       <p id="pattern-record-status" class="pattern-record-status" role="status" aria-live="polite">Ready to record pad taps into the 16-step loop. Coarser grids hide finer steps but keep them saved.</p>
-      <div class="steps" id="steps" role="group" aria-label="Pattern steps for selected pad"></div>
-      <div class="track-grid" id="track-grid" hidden role="group" aria-label="Patterns for all pads"></div>
+      <div class="steps" id="steps" hidden role="group" aria-label="Pattern steps for selected pad"></div>
+      <div class="track-grid" id="track-grid" role="group" aria-label="Patterns for all pads"></div>
       <div class="timeline"><span>1</span><span>2</span><span>3</span><span>4</span></div>
       <div class="beat-next-step"><p>Happy with your loop?</p><button class="pill-button" id="make-video">Make a video</button></div>
     </section>
@@ -308,6 +308,7 @@
 
   <input hidden id="media-input" type="file" accept="video/*,audio/*,image/*" multiple>
   <input hidden id="project-input" type="file" accept=".madladpad,application/json">
+  <dialog id="sequence-focus-dialog" class="camera-dialog sequence-focus-dialog" aria-labelledby="sequence-focus-title" aria-describedby="sequence-focus-help"><h3 id="sequence-focus-title">Edit pattern</h3><p id="sequence-focus-help">Tap steps to build this pad's repeating pattern. Your other pads stay unchanged.</p><div class="sequence-focus-mixer"><button class="quiet-button" id="sequence-focus-mute" type="button" aria-pressed="false">Mute</button><button class="quiet-button" id="sequence-focus-solo" type="button" aria-pressed="false">Solo</button><label for="sequence-focus-volume">VOLUME <input id="sequence-focus-volume" aria-label="Volume for selected pattern pad" type="range" min="0" max="150" value="100"><output id="sequence-focus-volume-out">100%</output></label></div><div id="sequence-focus-steps"></div><div><button class="accent-button" id="sequence-focus-close" type="button">DONE</button></div></dialog>
   <dialog id="pad-source-dialog" class="camera-dialog"><h3 id="pad-source-title">Add a sample</h3><p>Record now, or choose an audio or video clip.</p><div><button class="accent-button" id="pad-record">RECORD ON PAD</button><button class="quiet-button" id="pad-files">DEVICE / FILES</button><button class="quiet-button" id="pad-demo-bank">DEMO SOUND BANK</button><button class="quiet-button" id="pad-google-drive" disabled aria-label="Google Drive import unavailable: optional setup required. Use Device / Files or Record on Pad.">GOOGLE DRIVE <small>Setup required</small></button><button class="quiet-button" id="pad-google-photos" disabled aria-label="Google Photos import unavailable: optional setup required. Use Device / Files or Record on Pad.">GOOGLE PHOTOS <small>Setup required</small></button><button class="quiet-button" id="pad-source-cancel">CANCEL</button></div></dialog>
   <dialog id="demo-bank-dialog" class="camera-dialog demo-bank-dialog" aria-labelledby="demo-bank-title" aria-describedby="demo-bank-help"><h3 id="demo-bank-title">Choose a demo sound</h3><p id="demo-bank-help">These short sounds are synthesized locally on this device. No sample files are downloaded.</p><label for="demo-category">SOUND TYPE</label><select id="demo-category"><option>Drums</option><option>Bass</option><option>Keys</option><option>FX</option></select><div id="demo-sound-options" class="demo-sound-options" role="group" aria-label="Available demo sounds"></div><div><button class="quiet-button" id="demo-bank-cancel">CANCEL</button></div></dialog>
   <dialog id="capture-target-dialog" class="camera-dialog" aria-labelledby="capture-target-title" aria-describedby="capture-target-status"><h3 id="capture-target-title">Choose where to save the take</h3><p id="capture-target-status">The current sample stays safe until you keep the new take.</p><label for="capture-target-select">SAVE AS NEW ON</label><select id="capture-target-select"></select><div><button class="accent-button" id="capture-target-replace">REPLACE THIS PAD AFTER REVIEW</button><button class="quiet-button" id="capture-target-new">SAVE AS NEW</button><button class="quiet-button" id="capture-target-cancel">CANCEL</button></div></dialog>
