@@ -1,6 +1,6 @@
 # Playground-first UX review and implementation (10 November 2026)
 
-Status: merged in PR #119; PR #142 moves the global fallback demo toggle into Settings, leaving Edit pads as the single Playground toolbar action, and dismisses the Project menu when navigating or tapping outside. Production is `926b41f6fd0919f706407284344c674fa421894b` at Pages deployment `37447fcd-120b-4d5b-a0e8-02e815ac82d1`; this does not update the separate legacy Workers URL. Remaining physical-device, screen-reader and listening checks are listed in [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md). This is a response to the in-person UX discussion, not a new audio engine or storage format.
+Status: merged in PR #119; PR #142 moves the global fallback demo toggle into Settings, leaving Edit pads as the single Playground toolbar action, and dismisses the Project menu when navigating or tapping outside. PR #145 adds optional per-pad one-step gating while preserving full-sound defaults. Production is `1e64dbae9b9492265a5bd22baa1507d88e479ca5` at Pages deployment `26a65dee-b7e4-4469-9ef6-334e18499563`; this does not update the separate legacy Workers URL. Remaining physical-device, screen-reader and listening checks are listed in [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md). This is a response to the in-person UX discussion, not a new audio engine or storage format.
 
 ## Sequencer playback follow-up (12 November 2026)
 
