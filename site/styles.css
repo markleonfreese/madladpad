@@ -333,7 +333,9 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
   .sample-editor-dialog .region-actions button{flex:1 1 110px}
   .sample-editor-dialog .source-button{font-size:10px}
   .sequencer-head{gap:10px}
-  .seq-buttons{width:100%;display:grid;grid-template-columns:1fr 1fr;justify-content:stretch;gap:7px}
+  .seq-buttons{width:100%;min-width:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));justify-content:stretch;gap:7px}
+  .seq-buttons>*{min-width:0;max-width:100%}
+  .seq-buttons>#track-view{white-space:normal;overflow-wrap:break-word;font-size:10px;padding:8px 5px;min-height:44px}
   .seq-buttons>.beat-pad-choice{min-width:0}
   .seq-buttons>.beat-pad-choice select{width:100%;min-width:0;max-width:100%}
   .seq-buttons>.beat-advanced{grid-column:1/-1;min-width:0}
