@@ -23,6 +23,14 @@ const server = createServer(async (req, res) => {
   catch { res.writeHead(404).end(); }
 });
 const wait = (page, selector) => page.waitForSelector(selector, {timeout: 10000});
+const toggleGlobalDemo=async page=>{
+  const settings=page.locator('#loop-settings');
+  const wasOpen=await settings.evaluate(element=>element.open);
+  if(!wasOpen)await page.locator('#loop-settings > summary').click();
+  await toggleGlobalDemo(page);
+  if(!wasOpen&&await settings.evaluate(element=>element.open))await page.locator('#loop-settings > summary').click();
+};
+
 const wavSampleRate=8000,wavFrames=8000;
 const wav=Buffer.alloc(44+wavFrames*2);
 wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);
@@ -66,16 +74,19 @@ try {
   await wait(firstRunPage,'.pad-hit');
   await firstRunPage.setViewportSize({width:320,height:720});
   const firstRunDemo=await firstRunPage.evaluate(()=>{
-    const demo=document.querySelector('#demo-button').getBoundingClientRect();
+    const edit=document.querySelector('#pad-edit-mode').getBoundingClientRect();
     const grid=document.querySelector('#pad-grid').getBoundingClientRect();
-    return {demoBottom:demo.bottom,gridTop:grid.top,viewportHeight:innerHeight,scrollWidth:document.documentElement.scrollWidth};
+    return {editBottom:edit.bottom,gridTop:grid.top,viewportHeight:innerHeight,scrollWidth:document.documentElement.scrollWidth};
   });
-  assert.ok(firstRunDemo.demoBottom<firstRunDemo.gridTop&&firstRunDemo.demoBottom<firstRunDemo.viewportHeight,'the demo sound action should be visible above the pad grid in the first 320×720 phone viewport');
-  assert.equal(firstRunDemo.scrollWidth,320,'the first-screen demo action should not cause horizontal overflow');
-  await firstRunPage.locator('#demo-button').click();
-  assert.equal(await firstRunPage.locator('#demo-button').getAttribute('aria-pressed'),'true','the first-screen demo action should enable synthesized sounds');
-  await firstRunPage.locator('#demo-button').click();
-  assert.equal(await firstRunPage.locator('#demo-button').getAttribute('aria-pressed'),'false','the first-screen demo action should remain reversible');
+  assert.ok(firstRunDemo.editBottom<firstRunDemo.gridTop&&firstRunDemo.editBottom<firstRunDemo.viewportHeight,'Edit pads remains the only visible Playground toolbar action above the 320×720 pad grid');
+  assert.equal(await firstRunPage.locator('.playground-actions #demo-button').count(),0,'the global demo fallback should not clutter the Playground');
+  assert.equal(await firstRunPage.locator('#loop-settings #demo-button').count(),1,'the reversible global demo switch should exist inside Settings');
+  assert.equal(await firstRunPage.locator('#demo-button').isVisible(),false,'the global demo switch should be collapsed by default');
+  assert.equal(firstRunDemo.scrollWidth,320,'the streamlined Playground should not cause horizontal overflow');
+  await toggleGlobalDemo(firstRunPage);
+  assert.equal(await firstRunPage.locator('#demo-button').getAttribute('aria-pressed'),'true','Settings should enable fallback demo sounds without moving the user away from Playground');
+  await toggleGlobalDemo(firstRunPage);
+  assert.equal(await firstRunPage.locator('#demo-button').getAttribute('aria-pressed'),'false','Settings should disable fallback demo sounds again');
   await firstRunContext.close();
   await page.addInitScript(() => {
     const NativeAudioContext=window.AudioContext;
@@ -164,7 +175,10 @@ try {
   await page.locator('[data-studio-screen="sounds"]').click();
   await page.waitForFunction(()=>document.body.dataset.screen==='sounds');
   assert.equal(await page.locator('#grid-section-label').count(),0,'the Playground should not repeat its navigation label or pad count');
-  assert.equal(await page.locator('#demo-button').isVisible(),true,'the reversible global fallback demo control should remain available');
+  assert.equal(await page.locator('#demo-button').isVisible(),false,'the global demo preference should be hidden while Settings is collapsed');
+  await page.locator('#loop-settings > summary').click();
+  assert.equal(await page.locator('#demo-button').isVisible(),true,'the reversible demo preference should be available from Settings');
+  await page.locator('#loop-settings > summary').click();
   assert.equal(await page.locator('#pad-edit-mode').textContent(),'Edit pads','the pad editing toggle should name its current action');
   assert.equal(await page.locator('#pad-grid .pad-title').first().evaluate(element=>getComputedStyle(element).userSelect),'none','holding a pad should not select its label text');
   assert.notEqual(await page.locator('#pad-name').evaluate(element=>getComputedStyle(element).userSelect),'none','sample names should remain selectable while editing');
@@ -214,8 +228,8 @@ try {
   assert.equal(await page.locator('#volume').isVisible(),true,'demo pads should keep their volume control in the focused editor');
   assert.equal(await page.locator('#speed').isVisible(),false,'media-only controls should stay hidden for demo pads');
   await page.locator('#close-sample-editor').click();
-  await page.locator('#demo-button').click();
-  assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'false','demo sounds should remain switchable from the Playground');
+  await toggleGlobalDemo(page);
+  assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'false','global demo fallback should remain switchable from Settings');
   await page.locator('#pad-grid .pad-hit').nth(2).click();
   assert.equal(await page.locator('#volume').isVisible(),false,'empty pads should keep advanced controls hidden when demo is off');
   await page.locator('#close-sample-editor').click();
@@ -429,8 +443,8 @@ try {
     await page.locator('#layout-select').selectOption(value);
     assert.equal(await page.locator('.pad:not([hidden])').count(), count);
   }
-  if(await page.locator('#demo-button').getAttribute('aria-pressed')==='false')await page.locator('#demo-button').evaluate(button=>button.click());
-  assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'true','demo sounds should remain switchable from the first-screen Playground controls');
+  if(await page.locator('#demo-button').getAttribute('aria-pressed')==='false')await toggleGlobalDemo(page);
+  assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'true','global demo fallback should remain switchable from Settings');
   await page.locator('.pad-hit').first().click();
   await page.waitForTimeout(250);
   assert.deepEqual(errors, [], 'demo pad should not produce a page error');
@@ -500,9 +514,9 @@ try {
   assert.equal(await page.locator('.track-row[data-pad="0"] [data-step="15"]').getAttribute('aria-pressed'),'true','hidden fine steps should remain stored when changing divisions');
   await page.locator('.track-row[data-pad="0"] [data-step="15"]').click();
   assert.ok((await page.locator('#track-grid .track-row').first().locator('.track-name').textContent()).includes('Demo synth 01'),'demo-enabled empty lanes should be identified as demo synths');
-  await page.locator('#demo-button').click();
+  await toggleGlobalDemo(page);
   assert.ok((await page.locator('#track-grid .track-row').first().locator('.track-name').textContent()).includes('Empty pad'),'turning demo sounds off should refresh visible lane labels');
-  await page.locator('#demo-button').click();
+  await toggleGlobalDemo(page);
   assert.ok((await page.locator('#track-grid .track-row').first().locator('.track-name').textContent()).includes('Demo synth 01'),'turning demo sounds back on should restore lane labels');
   assert.equal(await page.locator('#track-grid .track-row').first().locator('.track-steps .step').count(),16);
   for(const [pad,step] of [[0,0],[1,4],[2,8]])await page.locator(`.track-row[data-pad="${pad}"] [data-step="${step}"]`).click();
@@ -1346,7 +1360,7 @@ try {
     checkpoint('adaptive performance capture transitions one-to-two-to-three clips');
 
     await openScreen('sounds');
-    if(await page.locator('#demo-button').getAttribute('aria-pressed')==='true')await page.locator('#demo-button').click();
+    if(await page.locator('#demo-button').getAttribute('aria-pressed')==='true')await toggleGlobalDemo(page);
     const canceledPad=await page.locator('.pad').evaluateAll(cards=>cards.findIndex(card=>card.classList.contains('empty')&&!card.hidden));
     assert.notEqual(canceledPad,-1,'an empty pad should remain available for capture-cancel coverage');
     await page.locator('.pad-hit').nth(canceledPad).click();
