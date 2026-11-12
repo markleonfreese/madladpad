@@ -613,6 +613,7 @@ try {
   await page.locator(`.track-row[data-pad="${modePadId}"] .track-name`).click();
   await page.locator('#sequence-focus-playback').selectOption('one-step');
   await page.locator('#sequence-focus-close').click();
+  assert.equal(await page.evaluate(id=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.pads?.[id]?.stepPlaybackMode,modePadId),'one-step','the project recovery snapshot should persist the per-pad playback mode');
   await page.locator('#scene-name').fill('Smoke Intro');
   await page.locator('#save-scene').click();
   await page.locator('#clear-steps').click();
