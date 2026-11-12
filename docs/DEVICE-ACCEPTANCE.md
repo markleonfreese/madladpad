@@ -22,6 +22,8 @@ Use this checklist to close the physical-device and human-review gates recorded 
 ## 1. Install, storage, and offline use
 
 - Install the PWA where supported, launch it, and confirm all five studio stages are reachable.
+- On Playground, confirm Edit pads is the only toolbar action and the global Demo sounds preference starts collapsed inside Settings. Toggle it on/off, reload, and verify the preference persists; confirm an individually assigned pad sound remains usable independently of this fallback setting.
+- Open Project and tap outside the menu; confirm it closes. Reopen Project, navigate to Sequence or Video & Export, and confirm the menu closes without covering the new screen's controls.
 - Create a project, change its name and a pad, close/reload immediately, and confirm the edits survive.
 - Export a project pack, clear site data only after retaining the exported pack, import it, and confirm media, pad settings, patterns, transcript, melody, rap, and overdub metadata restore. Include a captured video whose MIME type has a comma-separated codec list, and confirm its media restores too.
 - After the shell and speech model have loaded once, enable airplane mode, relaunch, reopen the project, and confirm cached workflows still work. Record which operations appropriately require network access, such as the first model download.
@@ -68,6 +70,7 @@ Preview URL / verified Git SHA:
 Network: cold online / warm online / offline
 
 Install/storage/offline: Pass / Fail / Blocked — evidence:
+Playground/settings/Project menu: Pass / Fail / Blocked — evidence:
 Import/region/suggestions: Pass / Fail / Blocked — evidence:
 Camera/mic permissions and direct capture: Pass / Fail / Blocked — evidence:
 Touch/rotation/codecs: Pass / Fail / Blocked — evidence:
