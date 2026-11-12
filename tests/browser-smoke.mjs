@@ -135,6 +135,9 @@ try {
   await page.locator('#steps .step').nth(1).click();
   await page.waitForTimeout(400);
   await page.reload();
+  await wait(page,'#sequence-pad-toggle');
+  assert.equal(await page.locator('#studio-workspace').isHidden(),true,'the optional Sequence pad gallery should start collapsed after reload');
+  await page.locator('#sequence-pad-toggle').click();
   await wait(page,'.pad-hit');
   assert.equal(await page.locator('#demo-button').getAttribute('aria-pressed'),'true','demo kit mode should restore with the project');
   assert.equal(await page.locator('#pad-grid .pad').first().locator('.pad-title').textContent(),'DEMO 01','the restored starter loop should retain playable demo pads');
@@ -347,7 +350,8 @@ try {
       if(screen==='beats'){
         const beatOrder=await page.evaluate(()=>({transport:getComputedStyle(document.querySelector('.transport-panel')).position,sequencer:document.querySelector('#sequencer').getBoundingClientRect().top}));
         assert.equal(beatOrder.transport,'fixed',`the phone transport should stay in its bottom bar at ${width}px`);
-        assert.equal(await page.locator('#studio-workspace').isHidden(),true,`Sequence should hide the optional pad gallery by default at ${width}px`);
+        if(!await page.locator('#studio-workspace').isHidden())await page.locator('#sequence-pad-toggle').click();
+        assert.equal(await page.locator('#studio-workspace').isHidden(),true,`Sequence should collapse the optional pad gallery at ${width}px`);
       }
       await page.waitForFunction(()=>{const toast=document.querySelector('#toast');return !toast.classList.contains('show')||Number(getComputedStyle(toast).opacity)>=.99;});
       const stageAudit=await page.evaluate(async()=>axe.run(document));
@@ -1137,8 +1141,11 @@ try {
   checkpoint('pack round-trip');
   const captureSupported=await page.evaluate(()=>Boolean(navigator.mediaDevices?.getUserMedia&&window.MediaRecorder));
   if(captureSupported){
+    await openScreen('sounds');
     await page.locator('.pad').first().hover();
     await page.locator('.pad-cell .edit-pad').first().click();
+    await page.locator('#sample-editor-dialog').waitFor({state:'visible'});
+    if(!await page.locator('#editor-sources').evaluate(element=>element.open))await page.locator('#editor-sources-title').click();
     const trackCameraStreams=()=>page.evaluate(()=>{
       window.__cameraCaptureStreams=[];
       const getUserMedia=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);

@@ -307,7 +307,7 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
   .transport-controls #studio-play,.transport-controls #studio-record{flex:1 1 auto;min-width:0;padding:10px 6px;font-size:11px;white-space:nowrap}
   .transport-controls #loop-settings{flex:0 0 auto;min-width:0}
   .transport-controls #studio-play{flex:1;min-width:0;max-width:none}
-  .transport-controls .control-disclosure{min-width:113px;max-width:43%;position:relative}
+  .transport-controls .control-disclosure{min-width:113px;max-width:43%;position:static}
   .transport-settings{position:absolute;right:0;bottom:calc(100% + 10px);background:#1b261d;border:1px solid #607a5c;border-radius:10px;padding:12px;min-width:min(300px,calc(100vw - 34px));box-shadow:0 14px 34px #000c;z-index:12}
   .transport-settings .field{flex:1 1 100%}
   .sample-editor-dialog>.inspector{padding:13px}
