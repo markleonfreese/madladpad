@@ -103,6 +103,7 @@ export class SamplerAudio {
   async unlock() { if (this.context.state !== 'running') await this.context.resume(); }
   setTransport(bpm, quantize) { this.bpm = bpm; this.quantize = quantize; }
   setEpoch(epoch) { this.transportEpoch = epoch; }
+  supportsSampleLoop(id) { return Boolean(this.sources.get(id)?.file && this.sources.get(id)?.buffer); }
 
   async load(id, file, mediaElement) {
     const previous = this.sources.get(id);
@@ -256,11 +257,11 @@ export class SamplerAudio {
     for(const id of new Set([...(this.sources?.keys()||[]),...(this.demoPlayback?.keys()||[]),...(this.visualTimers?.keys()||[])]))this.stopPadVoices(id);
   }
 
-  scheduleVisual(id,onVisual,delay,duration=null,scheduledAt=this.context.currentTime) {
+  scheduleVisual(id,onVisual,delay,duration=null,scheduledAt=this.context.currentTime,looping=false) {
     this.visualTimers??=new Map();
     const timers=this.visualTimers.get(id)||new Set();
     const entry={timer:null,atTime:scheduledAt};
-    entry.timer=setTimeout(()=>{timers.delete(entry);if(!timers.size)this.visualTimers.delete(id);onVisual?.(id,duration);},delay);
+    entry.timer=setTimeout(()=>{timers.delete(entry);if(!timers.size)this.visualTimers.delete(id);onVisual?.(id,duration,looping);},delay);
     timers.add(entry);this.visualTimers.set(id,timers);
   }
 
@@ -286,7 +287,7 @@ export class SamplerAudio {
     nodes.forEach(node=>{node.onended=cleanup;});
   }
 
-  trigger(id, pad, onVisual, scheduledAt, {momentary=false,maxDuration=null}={}) {
+  trigger(id, pad, onVisual, scheduledAt, {momentary=false,maxDuration=null,loop=false}={}) {
     const source = this.sources.get(id);
     const now = this.context.currentTime;
     const when = scheduledAt ?? nextQuantizedTime(now, this.transportEpoch, this.bpm, this.quantize);
@@ -300,8 +301,8 @@ export class SamplerAudio {
     if(Number.isFinite(maxDuration)&&maxDuration<.006){if(gesture)this.momentaryPlayback.delete(id);return true;}
     if (!source?.file && (pad.demoSound || this.demoEnabled)) {
       if(gesture)this.momentaryPlayback.delete(id);
-      const demoDuration=pad.demoSound?this.playDemoSound(pad.demoSound,when,pad.volume,maxDuration,id):this.playDemo(id,when,pad.volume,maxDuration);
-      this.scheduleVisual(id,onVisual,delay,Number.isFinite(demoDuration)?demoDuration:maxDuration,when);
+      const demoDuration=pad.demoSound?this.playDemoSound(pad.demoSound,when,pad.volume,loop?null:maxDuration,id):this.playDemo(id,when,pad.volume,loop?null:maxDuration);
+      this.scheduleVisual(id,onVisual,delay,Number.isFinite(demoDuration)?demoDuration:maxDuration,when,false);
       return true;
     }
     const start = Math.max(0, pad.start);
@@ -325,16 +326,20 @@ export class SamplerAudio {
       const latency=pitchNode?.parameters?Math.round(this.context.sampleRate*.04)/this.context.sampleRate:0;
       const offset = Math.min(start, Math.max(0, source.buffer.duration-.02));
       const fullDuration = Math.max(.01, Math.min(end-start, source.buffer.duration-offset));
-      const audibleDuration = Math.min(fullDuration/rate,Number.isFinite(maxDuration)&&maxDuration>0?maxDuration:Infinity);
+      const sampleDuration=fullDuration/rate;
+      const loops=Boolean(loop&&(maxDuration===null||Number.isFinite(maxDuration)&&sampleDuration<maxDuration));
+      audio.loop=loops;
+      if(loops){audio.loopStart=offset;audio.loopEnd=offset+fullDuration;}
+      const indefinite=loops&&maxDuration===null;
+      const audibleDuration=indefinite?Infinity:loops?maxDuration:Math.min(sampleDuration,Number.isFinite(maxDuration)&&maxDuration>0?maxDuration:Infinity);
       if(audibleDuration<.006){if(gesture)this.momentaryPlayback.delete(id);return true;}
-      visualDuration=audibleDuration;
-      const duration = audibleDuration*rate;
-      const attack = Math.min(0.008,audibleDuration/10);
+      visualDuration=loop?(Number.isFinite(maxDuration)?maxDuration:Infinity):audibleDuration;
+      const duration = indefinite?null:audibleDuration*rate;
+      const attack = Math.min(0.008,Number.isFinite(audibleDuration)?audibleDuration/10:.008);
       const audibleStart=when+latency;
       gain.gain.setValueAtTime(0,audibleStart);
       gain.gain.linearRampToValueAtTime(clamp(pad.volume,0,1.5),audibleStart+attack);
-      gain.gain.setValueAtTime(clamp(pad.volume,0,1.5),audibleStart+Math.max(attack,duration/rate-.006));
-      gain.gain.linearRampToValueAtTime(0,audibleStart+duration/rate);
+      if(!indefinite){gain.gain.setValueAtTime(clamp(pad.volume,0,1.5),audibleStart+Math.max(attack,duration/rate-.006));gain.gain.linearRampToValueAtTime(0,audibleStart+duration/rate);}
       if(pitchNode){audio.connect(pitchNode);pitchNode.connect(gain);}else audio.connect(gain);
       gain.connect(this.master);
       let finished=false,scheduledStopAt=null;
@@ -371,7 +376,8 @@ export class SamplerAudio {
       if(gesture)gesture.stop=()=>stopPlayback();
       // Let the processor drain its look-ahead ring after the selected clip
       // ends. The gain envelope still ends at the requested trim boundary.
-      audio.start(when, offset, duration + (pitchNode ? latency * rate : 0));
+      if(indefinite)audio.start(when,offset);
+      else audio.start(when, offset, duration + (pitchNode ? latency * rate : 0));
     } else if (source.element && pad.kind !== 'image') {
       const playbackEnd=Number.isFinite(maxDuration)&&maxDuration>0?Math.min(end,start+maxDuration*rate):end;
       visualDuration=Math.max(0,(playbackEnd-start)/rate);
@@ -443,7 +449,7 @@ export class SamplerAudio {
         }catch{cleanup(true);}
       }, delay);
     }
-    this.scheduleVisual(id,onVisual,delay,visualDuration,when);
+    this.scheduleVisual(id,onVisual,delay,visualDuration,when,Boolean(loop&&source.buffer));
     return true;
   }
 

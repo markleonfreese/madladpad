@@ -12,7 +12,8 @@ test('legacy projects default speed to 1 and preserve pitch metadata', () => {
   assert.equal(makeProject().pads[0].speed, 1);
   assert.equal(makeProject().pads[0].stepPlaybackMode,'full');
   assert.equal(normaliseProject({pads:[{stepPlaybackMode:'one-step'}]}).pads[0].stepPlaybackMode,'one-step');
-  assert.equal(normaliseProject({pads:[{stepPlaybackMode:'loop'}]}).pads[0].stepPlaybackMode,'full');
+  assert.equal(normaliseProject({pads:[{stepPlaybackMode:'loop'}]}).pads[0].stepPlaybackMode,'loop');
+  assert.equal(normaliseProject({pads:[{stepPlaybackMode:'invalid'}]}).pads[0].stepPlaybackMode,'full');
 });
 
 test('a selected local demo plays with the global demo toggle off',()=>{
@@ -34,6 +35,36 @@ test('one-step buffer playback is capped by the remaining 16th-note window',()=>
   sampler.trigger(0,{kind:'audio',start:0,end:3,speed:2,pitch:0,volume:1},()=>{},1,{maxDuration:.125});
   assert.equal(nodes.length,1);
   assert.equal(nodes[0].startArgs[2],.25,'Web Audio source duration scales by Speed');
+});
+
+test('loop-held buffer playback repeats a short trim but gates a long trim at the held-run end',()=>{
+  const nodes=[];
+  const param=()=>({value:1,events:[],cancelScheduledValues(time){this.events.push(['cancel',time]);},setValueAtTime(value,time){this.value=value;this.events.push(['set',value,time]);},linearRampToValueAtTime(value,time){this.value=value;this.events.push(['ramp',value,time]);}});
+  const sampler=Object.create(SamplerAudio.prototype);
+  sampler.context={currentTime:1,createBufferSource(){const node={playbackRate:param(),connect(){return this;},start(...args){this.startArgs=args;},stop(time){this.stopTime=time;},disconnect(){}};nodes.push(node);return node;},createGain(){return {gain:param(),connect(){return this;},disconnect(){}};}};
+  sampler.master={};sampler.sources=new Map([[0,{file:{},buffer:{duration:3}}],[1,{file:{},buffer:{duration:3}}]]);sampler.demoEnabled=false;
+  sampler.trigger(0,{kind:'audio',start:.2,end:.27,speed:1,pitch:0,volume:1},()=>{},1,{maxDuration:.375,loop:true});
+  assert.equal(nodes[0].loop,true,'a selected trim shorter than the run should repeat');
+  assert.equal(nodes[0].loopStart,.2);
+  assert.equal(nodes[0].loopEnd,.27);
+  assert.equal(nodes[0].startArgs[2],.375,'the repeated clip remains gated by the full held run');
+  sampler.trigger(1,{kind:'audio',start:.2,end:1,speed:1,pitch:0,volume:1},()=>{},1,{maxDuration:.375,loop:true});
+  assert.equal(nodes[1].loop,false,'a trim longer than the run should play once');
+  assert.equal(nodes[1].startArgs[2],.375,'a long trim still stops at the held-run end');
+});
+
+test('an all-on loop-held sample stays looping until transport Stop releases it',()=>{
+  const nodes=[];
+  const param=()=>({value:1,cancelScheduledValues(){},setValueAtTime(){},linearRampToValueAtTime(){}});
+  const sampler=Object.create(SamplerAudio.prototype);
+  sampler.context={currentTime:1,createBufferSource(){const node={playbackRate:param(),connect(){return this;},start(...args){this.startArgs=args;},stop(time){this.stopTime=time;},disconnect(){}};nodes.push(node);return node;},createGain(){return {gain:param(),connect(){return this;},disconnect(){}};}};
+  sampler.master={};sampler.sources=new Map([[0,{file:{},buffer:{duration:3}}]]);sampler.demoEnabled=false;
+  sampler.trigger(0,{kind:'audio',start:0,end:1,speed:1,pitch:0,volume:1},()=>{},1,{loop:true});
+  assert.equal(nodes[0].loop,true);
+  assert.equal(nodes[0].startArgs.length,2,'an all-on loop has no scheduled natural end');
+  sampler.context.currentTime=1.5;
+  sampler.stopAllPadVoices();
+  assert.equal(nodes[0].stopTime,1.508,'transport Stop releases the sustained voice promptly');
 });
 
 test('lookahead scheduling lets a same-pad hit sound until its scheduled retrigger',()=>{
