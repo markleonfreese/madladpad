@@ -1,6 +1,6 @@
 # Playground-first UX review and implementation (10 November 2026)
 
-Status: merged in PR #119; PR #142 moves the global fallback demo toggle into Settings, leaving Edit pads as the single Playground toolbar action, and dismisses the Project menu when navigating or tapping outside. PR #145 adds optional per-pad one-step gating while preserving full-sound defaults. Current main adds opt-in held-step looping in a focused follow-up; Pages still serves the earlier source until a new verified release. This does not update the separate legacy Workers URL. Remaining physical-device, screen-reader and listening checks are listed in [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md).
+Status: merged in PR #119; PR #142 moves the global fallback demo toggle into Settings, leaving Edit pads as the single Playground toolbar action, and dismisses the Project menu when navigating or tapping outside. PR #145 adds optional per-pad one-step gating while preserving full-sound defaults. PR #148 adds optional held-step looping, now served by Pages production deployment `bb5ac53e-7cc9-4923-b900-87160c07fb5c` from main `1f83be0`. This does not update the separate legacy Workers URL. Remaining physical-device, screen-reader and listening checks are listed in [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md).
 
 ## Sequencer playback follow-up (12 November 2026)
 
