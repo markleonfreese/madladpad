@@ -340,6 +340,8 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
   .seq-buttons>.beat-pad-choice select{width:100%;min-width:0;max-width:100%}
   .seq-buttons>.beat-advanced{grid-column:1/-1;min-width:0}
   .seq-buttons>.beat-advanced>.beat-advanced-controls{width:100%;min-width:0}
+  .seq-buttons .beat-advanced-controls .pattern-setting{min-width:0;max-width:100%}
+  .seq-buttons .beat-advanced-controls select{display:block;box-sizing:border-box;min-width:0;max-width:100%;width:100%}
   .export-controls{gap:8px}
   .export-controls>.accent-button{min-width:0;flex:1 1 calc(50% - 4px);white-space:normal;padding:10px 9px}
   .export-settings>.field{flex:1 1 100%}
