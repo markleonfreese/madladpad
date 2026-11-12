@@ -227,9 +227,7 @@ body[data-screen="beats"] .pad-bg{font-size:18px}
 .transport-settings{gap:12px}
 .workspace{grid-template-columns:minmax(0,1fr)}
 .performance-area{padding:15px;min-width:0}
-.playground-heading{align-items:center;margin-bottom:12px}
-.playground-heading #grid-section-label{font-weight:700}
-.playground-actions{display:flex;align-items:center;gap:7px;flex:0 0 auto}
+.playground-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex:0 0 auto;margin-bottom:12px}
 .playground-actions #demo-button{min-height:44px;padding:8px 11px;color:var(--acid);background:#202c23;border-color:#526651}
 .playground-actions #demo-button.active{background:#344a2c;border-color:var(--acid)}
 #pad-edit-mode{background:#263629;color:var(--acid);border:1px solid #72896e;border-radius:9px;min-height:44px;padding:8px 12px;font:600 12px 'DM Sans',system-ui}
@@ -305,8 +303,7 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
   .intro-actions .pill-button{min-height:40px;font-size:10px;padding:8px 9px}
   .intro-dismiss{top:5px;right:5px;min-height:33px}
   .performance-area{padding:10px;border-radius:12px}
-  .playground-heading{margin:0 0 7px}
-  .playground-heading #grid-section-label{font-size:11px}
+  .playground-actions{margin-bottom:7px}
   .playground-actions{gap:5px}
   .playground-actions #demo-button,#pad-edit-mode{padding:7px 8px;font-size:10px}
   .pad-grid{gap:5px}
