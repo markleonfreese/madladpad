@@ -287,7 +287,7 @@ try {
   await openScreen('overdub');
   for(const width of [390,320]){
     await page.setViewportSize({width,height:720});
-    const overdubLayout=await page.evaluate(()=>({viewport:document.documentElement.clientWidth,document:document.documentElement.scrollWidth,buttonRight:document.querySelector('#vocal-add-harmony').getBoundingClientRect().right}));
+    const overdubLayout=await page.evaluate(()=>({viewport:document.documentElement.clientWidth,document:document.documentElement.scrollWidth,buttonRight:document.querySelector('#vocal-add-harmony').getBoundingClientRect().right,overflow:[...document.querySelectorAll('body *')].filter(el=>{const rect=el.getBoundingClientRect();return rect.width>0&&rect.right>document.documentElement.clientWidth+1;}).slice(0,14).map(el=>({tag:el.tagName,id:el.id,classes:typeof el.className==='string'?el.className.slice(0,85):'',right:Math.round(el.getBoundingClientRect().right),width:Math.round(el.getBoundingClientRect().width)}))}));
     assert.equal(overdubLayout.document,width,`Overdub should not overflow at ${width}px: ${JSON.stringify(overdubLayout)}`);
     assert.ok(overdubLayout.buttonRight<=width,`the vocal harmony action should fit at ${width}px: ${JSON.stringify(overdubLayout)}`);
     assert.equal(await page.locator('#studio-more-tools > summary').getAttribute('aria-current'),'page','the selected Overdub destination should remain identifiable after its menu closes');
