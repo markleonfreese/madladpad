@@ -62,6 +62,7 @@ const STUDIO_SCREENS = new Set(['sounds','beats','voice','overdub','export']);
 // Open the compact first-use guide on demand, not over the performance surface.
 let introOpen = false;
 let padEditMode = false;
+let sequencePadsVisible = false;
 const lastTakes = { video:null, audio:null };
 const MAX_WAV_TAKE_SECONDS = 30;
 const MAX_WAV_SOURCE_BYTES = 16 * 1024 * 1024;
@@ -98,9 +99,11 @@ function showStudioScreen() {
   moreTools.open=false;
   $('studio-intro').hidden = screen!=='sounds'||!introOpen;
   $('show-help').setAttribute('aria-expanded',String(screen==='sounds'&&introOpen));
-  $('studio-workspace').hidden = screen!=='sounds' && screen!=='beats';
+  $('studio-workspace').hidden = screen!=='sounds' && !(screen==='beats'&&sequencePadsVisible);
   $('studio-workspace').classList.toggle('wide-grid',screen==='beats');
   $('grid-section-label').textContent = screen==='beats' ? 'PLAY ALONG' : 'PLAYGROUND · 12 PADS';
+  $('sequence-pad-toggle').setAttribute('aria-expanded',String(sequencePadsVisible));
+  $('sequence-pad-toggle').textContent=sequencePadsVisible?'Hide performance pads':'Show performance pads';
   $('pad-edit-mode').hidden = screen==='beats';
   $('sequencer').hidden = screen!=='beats' && screen!=='overdub';
   $('video-director-details').hidden=screen!=='export';
@@ -122,7 +125,7 @@ function setPadEditMode(enabled) {
   button.textContent=padEditMode?'Done editing':'Edit pads';
   button.setAttribute('aria-pressed',String(padEditMode));
   button.setAttribute('aria-label',padEditMode?'Switch to Play pads mode':'Switch to Edit pads mode');
-  $('pad-help').textContent=padEditMode?'Tap a pad to edit its clip and trim. Select Done when finished.':'Tap to play. Tap + to add a sound. Hold a sound to play until you release.';
+  $('pad-help').textContent=padEditMode?'Tap a pad to edit its clip and trim. Select Done when finished.':'Hold an empty pad to open the camera, or tap + to choose a clip. Tap a loaded pad to play; hold to stop on release.';
   for(let id=0;id<16;id++)if(pads[id])renderPad(id);
 }
 
@@ -139,6 +142,8 @@ function openSampleEditor(id, trigger=null) {
   if(location.hash!=='#sounds'){location.hash='#sounds';showStudioScreen();}
   $('sample-advanced').open=false;
   $('source-advanced').open=false;
+  $('editor-sources').open=!mediaFiles.has(id);
+  $('editor-sources-title').hidden=!mediaFiles.has(id);
   sampleEditorTrigger=trigger||$('pad-edit-mode');
   const dialog=$('sample-editor-dialog');
   if(!dialog.open)dialog.showModal();
@@ -632,7 +637,14 @@ function padIsAudible(id){return isPadAudible(project.pads.slice(0,PAD_COUNT[pro
 
 function renderControls() {
   const config = project.pads[selected];
-  $('sample-inspector').classList.toggle('has-media',mediaFiles.has(selected));
+  const hasMedia=mediaFiles.has(selected);
+  $('sample-inspector').classList.toggle('has-media',hasMedia);
+  const sources=$('editor-sources');
+  if(sources.dataset.mediaLoaded!==String(hasMedia)){
+    sources.dataset.mediaLoaded=String(hasMedia);
+    sources.open=!hasMedia;
+    $('editor-sources-title').hidden=!hasMedia;
+  }
   $('sample-inspector').classList.toggle('demo-enabled',audio.demoEnabled&&!mediaFiles.has(selected));
   renderCopyTargets();
   $('selected-number').textContent = `PAD ${String(selected+1).padStart(2,'0')}`;
@@ -1166,6 +1178,16 @@ function recorderMime(kind){
   return mime;
 }
 
+function syncPerformanceRecordButton(){
+  const button=$('studio-record');
+  const starting=takeKind==='video'&&takeActivity.phase==='starting';
+  const live=Boolean(recording&&recording.state!=='inactive');
+  button.textContent=starting?'■ Cancel start':live?'■ Stop video':'● Record video';
+  button.setAttribute('aria-label',starting?'Cancel video recording start':live?'Stop video performance recording':'Record video performance');
+  button.setAttribute('aria-pressed',String(starting||live));
+  button.classList.toggle('recording',live);
+}
+
 async function toggleSetRecording() {
   if (recording) { if(recording.state!=='inactive')recording.stop(); return; }
   if (takeActivity.phase!=='idle') {
@@ -1173,6 +1195,7 @@ async function toggleSetRecording() {
       takeActivity.cancel(); takeKind=null;
       $('start-record').classList.remove('recording');$('start-record').innerHTML='<span class="record-dot"></span> RECORD SET';
       $('start-record').setAttribute('aria-pressed','false');
+      syncPerformanceRecordButton();
       notify('Audiovisual recording start canceled.');
     } else notify('Finish the current recording before starting an audiovisual set.');
     return;
@@ -1180,6 +1203,7 @@ async function toggleSetRecording() {
   if (!window.MediaRecorder || !$('capture-canvas').captureStream) return notify('Video recording is unavailable in this browser.');
   const token=takeActivity.begin();takeKind='video';
   $('start-record').textContent='■ CANCEL START';$('start-record').setAttribute('aria-pressed','true');
+  syncPerformanceRecordButton();
   let canvasStream=null;
   try {
     await audio.unlock();
@@ -1206,12 +1230,14 @@ async function toggleSetRecording() {
       $('start-record').classList.remove('recording');$('start-record').innerHTML='<span class="record-dot"></span> RECORD SET';
       $('start-record').setAttribute('aria-pressed','false');
       takeActivity.cancel();takeKind=null;
+      syncPerformanceRecordButton();
+      if(blob.size)notify('Video saved. Open Video & Export to review or download it again.');
     };
     recording=recorder;drawing=true;$('capture-canvas').hidden=false;drawPerformanceFrame();recorder.start(200);
     $('start-record').classList.add('recording');$('start-record').textContent='■ STOP RECORDING';
     $('start-record').setAttribute('aria-pressed','true');
-    $('start-record').blur();
-    notify('Recording your audiovisual performance. Tap pads or start the beat maker.');
+    syncPerformanceRecordButton();
+    notify('Recording your audiovisual performance. Play pads here or on Sequence; stop with the Record video control.');
   } catch(error) {
     if(!takeActivity.current(token))return;
     takeActivity.cancel();takeKind=null;
@@ -1219,6 +1245,7 @@ async function toggleSetRecording() {
     drawing=false;recording=null;$('capture-canvas').hidden=true;
     $('start-record').classList.remove('recording');$('start-record').innerHTML='<span class="record-dot"></span> RECORD SET';
     $('start-record').setAttribute('aria-pressed','false');
+    syncPerformanceRecordButton();
     notify(error.message);
   }
 }
@@ -1712,6 +1739,7 @@ function bindControls() {
     renderGrid();renderTrackGrid();renderControls();notify(audio.demoEnabled?'Demo synth sounds enabled on empty pads.':'Demo sounds off.');
   });
   $('play-seq').addEventListener('click',()=>transportActivity.phase!=='idle'?stopSequencer():startSequencer());
+  $('sequence-pad-toggle').addEventListener('click',()=>{sequencePadsVisible=!sequencePadsVisible;showStudioScreen();});
   $('make-video').addEventListener('click',()=>{location.hash='#export';});
   $('auto-beat').addEventListener('click',surpriseBeat);
   $('clear-steps').addEventListener('click',()=>{project.pads[selected].steps.fill(false);project.pads[selected].stepOffsets.fill(0);patternUndoSnapshot=null;renderSteps();renderPatternRecordingState();queueSave();});
@@ -1725,6 +1753,7 @@ function bindControls() {
   $('delete-scene').addEventListener('click',deleteScene);
   $('track-view').addEventListener('click',()=>{trackGridVisible=!trackGridVisible;$('steps').hidden=trackGridVisible;$('track-grid').hidden=!trackGridVisible;$('track-view').textContent=trackGridVisible?'SELECTED PAD':'ALL TRACKS';$('track-view').setAttribute('aria-pressed',String(trackGridVisible));if(trackGridVisible)renderTrackGrid();});
   $('start-record').addEventListener('click',toggleSetRecording);
+  $('studio-record').addEventListener('click',toggleSetRecording);
   $('record-audio').addEventListener('click',toggleAudioRecording);
   $('google-drive').addEventListener('click',()=>pickFromDrive(files=>placeFiles(files)).catch(error=>notify(error.message)));
   $('google-photos').addEventListener('click',()=>pickFromPhotos(files=>placeFiles(files),notify).catch(error=>notify(error.message)));

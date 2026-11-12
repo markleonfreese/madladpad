@@ -16,6 +16,8 @@ test('the primary studio surface exposes a simple playable progression',()=>{
   assert.doesNotMatch(html,/<div class="pad-bottom">[\s\S]*?<button id="demo-button"/,'demo sounds should be in the first-screen Playground controls');
   assert.match(html,/<button[^>]*id="pad-edit-mode"[^>]*aria-pressed="false"/);
   assert.match(html,/<button[^>]*id="studio-play"/);
+  assert.match(html,/<button[^>]*id="studio-record"[^>]*aria-pressed="false"/);
+  assert.match(app,/\$\('studio-record'\)\.addEventListener\('click',toggleSetRecording\)/);
   assert.match(html,/<details class="control-disclosure" id="loop-settings">/);
   assert.match(css,/\.pad \.pad-hit\{touch-action:none/);
   assert.match(css,/\.transport-panel\{[^}]*position:fixed/);
@@ -31,6 +33,8 @@ test('editing is modal, trim-first and advanced tools remain reachable',()=>{
   assert.ok(trimAt>0&&advancedAt>trimAt,'the trim editor should precede advanced tools');
   assert.match(html,/<select id="copy-target"/);
   assert.match(html,/<button id="copy-pad"/);
+  assert.ok(html.indexOf('class="copy-sample"')<advancedAt,'reusing a recording should not require opening advanced tools');
+  assert.match(html,/<details class="editor-sources" id="editor-sources"/);
   assert.match(app,/function openSampleEditor\(id(?:, trigger=null)?\)/);
   assert.match(app,/edit\.addEventListener\('click', \(\) => openSampleEditor\(id(?:, edit)?\)\)/);
 });
@@ -40,6 +44,7 @@ test('beat selection and recording are clear, video framing defaults to followin
   const beatAdvanced=html.indexOf('id="beat-advanced"');
   assert.ok(beatSelect>0&&beatSelect<beatAdvanced,'the beat pad picker belongs in the basic Beat Maker');
   assert.match(html,/<button class="pill-button" id="auto-beat">SURPRISE ME<\/button>/);
+  assert.match(html,/<button class="pill-button" id="sequence-pad-toggle"[^>]*aria-expanded="false"/);
   assert.match(html,/<option value="follow-active">Follow active pads<\/option><option value="fixed">/);
   assert.match(app,/\$\('export-lab'\)\.append\(\$\('video-director-details'\)\)/);
   assert.match(html,/<summary>Video framing &amp; formats<\/summary>/);
