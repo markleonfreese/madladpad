@@ -279,6 +279,15 @@ try {
     if(screen==='voice'||screen==='overdub'){
       const more=page.locator('#studio-more-tools');
       if(!await more.evaluate(element=>element.open))await more.locator('summary').click();
+      const link=more.locator(`[data-studio-screen="${screen}"]`);
+      const expectedName=screen==='voice'?'Voice Lab':'Overdub';
+      assert.equal(await more.getByRole('link',{name:expectedName,exact:true}).count(),1,`${expectedName} should expose its visible text as the navigation link name`);
+      const hit=await link.evaluate(element=>{
+        const rect=element.getBoundingClientRect(),target=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);
+        return {visible:rect.width>0&&rect.height>0,centerHitsLink:target===element||element.contains(target)};
+      });
+      assert.equal(hit.visible,true,`${expectedName} should be visible when Experimental is expanded: ${JSON.stringify(hit)}`);
+      assert.equal(hit.centerHitsLink,true,`${expectedName} should not be clipped or covered by the next section: ${JSON.stringify(hit)}`);
     }
     await page.locator(`[data-studio-screen="${screen}"]`).click();
     await page.waitForFunction(value=>document.body.dataset.screen===value,screen);
@@ -314,6 +323,11 @@ try {
   }
   await page.setViewportSize({width:1280,height:900});
   await openScreen('sounds');
+  await page.locator('#studio-more-tools > summary').click();
+  const desktopVoiceLink=page.locator('#studio-more-tools [data-studio-screen="voice"]');
+  assert.equal(await page.getByRole('link',{name:'Voice Lab',exact:true}).count(),1,'desktop Voice Lab navigation should have a computed text name');
+  assert.equal(await desktopVoiceLink.evaluate(element=>{const rect=element.getBoundingClientRect(),hit=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);return hit===element||element.contains(hit);}),true,'desktop Voice Lab popup link should remain visible outside the nav scroll box');
+  await page.locator('#studio-more-tools > summary').click();
   await page.locator('#pad-grid .pad-cell').first().hover();
   const desktopEdit=page.locator('#pad-grid .pad-cell').first().locator('.edit-pad');
   await desktopEdit.click();
@@ -1342,6 +1356,7 @@ try {
     await page.locator('#capture-target-new').click();
     await page.locator('#camera-dialog').waitFor({state:'visible'});
     assert.equal(await page.locator('#camera-length').count(),0,'camera recording should start without a required duration chooser');
+    await page.waitForFunction(()=>!document.querySelector('#camera-capture').disabled,null,{timeout:6000});
     await page.locator('#camera-capture').click();
     await page.waitForFunction(()=>document.querySelector('#camera-capture').textContent.includes('STOP'));
     assert.match(await page.locator('#camera-status').textContent(),/Stop when ready.*30 seconds/,'the immediate camera take should explain manual Stop and its 30-second cap');
