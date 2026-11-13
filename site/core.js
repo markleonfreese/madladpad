@@ -8,6 +8,13 @@ export const MAX_VOICE_PHRASES = 8;
 export const MAX_VOCAL_LAYERS = 16;
 export const MAX_MELODY_NOTES = 128;
 export const HARMONY_INTERVALS = [-12, -7, -5, -4, -3, 3, 4, 5, 7, 12];
+export const MELODY_ROOTS = Object.freeze(['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B']);
+export const MELODY_SCALES = Object.freeze({
+  major: Object.freeze([0,2,4,5,7,9,11]),
+  'natural-minor': Object.freeze([0,2,3,5,7,8,10]),
+  'major-pentatonic': Object.freeze([0,2,4,7,9]),
+  'minor-pentatonic': Object.freeze([0,3,5,7,10])
+});
 export const RAP_BAR_COUNT = 16;
 export const VIDEO_ASPECTS = { '4:3':[960,720], '16:9':[960,540], '9:16':[540,960], '1:1':[720,720] };
 export const DEMO_SOUNDS = Object.freeze([
@@ -44,7 +51,7 @@ export function directedPads(shot, active, padCount=12) {
 }
 
 export const makeVoiceData = () => ({
-  transcripts: [], phrases: [], layers: [], melody: { tuning: 440, notes: [], followBeat:false },
+  transcripts: [], phrases: [], layers: [], melody: { tuning: 440, key:0, scale:'major', notes: [], followBeat:false },
   rap: { scheme: 'AABB', bars: Array(RAP_BAR_COUNT).fill(''), flow:Array.from({length:RAP_BAR_COUNT},()=>Array(16).fill(false)) }
 });
 
@@ -95,6 +102,8 @@ function normaliseVoice(value) {
     transcripts, phrases, layers,
     melody: {
       tuning: clamp(melodySource.tuning ?? 440, 400, 480),
+      key: clamp(Math.round(melodySource.key ?? 0), 0, 11),
+      scale: Object.hasOwn(MELODY_SCALES, melodySource.scale) ? melodySource.scale : 'major',
       harmonyInterval: HARMONY_INTERVALS.includes(Number(melodySource.harmonyInterval)) ? Number(melodySource.harmonyInterval) : 3,
       followBeat:Boolean(melodySource.followBeat),
       notes
@@ -233,6 +242,19 @@ export const midiNoteName = note => {
   const pitch = Math.round(clamp(note, 24, 108));
   return `${['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'][pitch % 12]}${Math.floor(pitch / 12) - 1}`;
 };
+export function snapMidiToScale(note, root = 0, scale = 'major') {
+  const midi = Math.round(clamp(note, 24, 108));
+  const tonic = Math.round(clamp(root, 0, 11));
+  const intervals = MELODY_SCALES[scale] || MELODY_SCALES.major;
+  const allowed = new Set(intervals.map(interval => (tonic + interval) % 12));
+  let best = midi, distance = Infinity;
+  for (let candidate = 24; candidate <= 108; candidate++) {
+    if (!allowed.has(candidate % 12)) continue;
+    const delta = Math.abs(candidate - midi);
+    if (delta < distance || (delta === distance && candidate < best)) { best = candidate; distance = delta; }
+  }
+  return best;
+}
 export const melodyPositionLabel = step => {
   const position = Math.round(clamp(step, 0, 255));
   return `Bar ${Math.floor(position / 16) + 1} · Beat ${Math.floor(position % 16 / 4) + 1} · 16th ${position % 4 + 1}`;
