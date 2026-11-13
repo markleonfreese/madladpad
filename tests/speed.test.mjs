@@ -216,6 +216,29 @@ test('media-element fallback keeps separate pad clips playing concurrently',asyn
   sampler.sources.get(0).stopPlayback?.();sampler.sources.get(1).stopPlayback?.();
 });
 
+test('media-element fallback does not drop earlier same-pad hits in the lookahead window',async()=>{
+  const listeners=new Map();
+  const starts=[];
+  const element={duration:5,_time:0,playbackRate:1,preservesPitch:false,paused:true,playCount:0,activeCount:0,maxActiveCount:0,
+    get currentTime(){return this._time;},set currentTime(value){this._time=value;starts.push(value);},
+    addEventListener(type,listener){listeners.set(type,listener);},removeEventListener(type,listener){if(listeners.get(type)===listener)listeners.delete(type);},
+    pause(){if(!this.paused)this.activeCount--;this.paused=true;},
+    play(){if(this.paused)this.activeCount++;this.paused=false;this.playCount++;this.maxActiveCount=Math.max(this.maxActiveCount,this.activeCount);return Promise.resolve();}};
+  const sampler=Object.create(SamplerAudio.prototype);sampler.context={currentTime:1};sampler.sources=new Map([[0,{file:{},element,gain:{gain:{value:1}}}]]);sampler.demoEnabled=false;
+  const pad={kind:'video',start:.25,end:3,speed:1,pitch:0,volume:1};
+
+  sampler.trigger(0,pad,()=>{},1.04);
+  sampler.trigger(0,pad,()=>{},1.08);
+  for(let attempt=0;attempt<50&&element.playCount<2;attempt++)await new Promise(resolve=>setTimeout(resolve,10));
+  const observed={playCount:element.playCount,starts:[...starts],maxActiveCount:element.maxActiveCount,paused:element.paused};
+  sampler.stopAllPadVoices();
+
+  assert.equal(observed.playCount,2,'both separately scheduled same-pad gestures should start');
+  assert.deepEqual(observed.starts,[.25,.25],'each hit should restart from the selected trim start');
+  assert.equal(observed.maxActiveCount,1,'same-pad fallback playback should replace, not overlap, its previous hit');
+  assert.equal(observed.paused,false,'the latest hit should remain active');
+});
+
 test('one-step media fallback ends at the scheduled step boundary even at 2x speed',async()=>{
   const listeners=new Map();let position=0,startedAt=Date.now(),updates=null;
   const element={duration:5,playbackRate:1,preservesPitch:false,paused:true,lastPausedAt:null,
@@ -236,6 +259,7 @@ test('stopping transport cancels a pending media-element start',async()=>{
   const sampler=Object.create(SamplerAudio.prototype);sampler.context={currentTime:1};sampler.sources=new Map([[0,{file:{},element,gain:{gain:{value:1}}}]]);sampler.demoEnabled=false;
   const visuals=[];
   sampler.trigger(0,{kind:'video',start:0,end:3,speed:1,pitch:0,volume:1},(...args)=>visuals.push(args),1.1);
+  sampler.trigger(0,{kind:'video',start:0,end:3,speed:1,pitch:0,volume:1},(...args)=>visuals.push(args),1.2);
   sampler.stopAllPadVoices();
   await new Promise(resolve=>setTimeout(resolve,120));
   assert.equal(element.playCount,0,'a stopped transport must not start a lookahead-scheduled media hit late');

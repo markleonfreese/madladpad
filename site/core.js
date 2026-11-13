@@ -354,3 +354,11 @@ export function suggestActiveRegion(levels, duration) {
 export const captureRegionStatus = detected => detected
   ? 'Sound detected. Suggested trim surrounds it; adjust, preview or keep.'
   : 'No clear sound detected. The full take is selected; adjust manually, preview or keep.';
+
+export function cameraTakeTargetSeconds(target, bpm, maxSeconds=30) {
+  const limit=Number.isFinite(Number(maxSeconds))&&Number(maxSeconds)>0?Number(maxSeconds):30;
+  const bars=({ '1':1, '2':2, '4':4 })[String(target)];
+  const tempo=Number(bpm);
+  if(!bars||!Number.isFinite(tempo)||tempo<=0)return limit;
+  return Math.min(limit,60/tempo*4*bars);
+}

@@ -11,7 +11,7 @@ import { createRequire } from 'node:module';
 const require=createRequire(import.meta.url);
 const axePath=require.resolve('axe-core/axe.min.js');
 const root = resolve('site');
-const mime = {'.html':'text/html','.js':'text/javascript','.css':'text/css','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.png':'image/png'};
+const mime = {'.html':'text/html','.js':'text/javascript','.css':'text/css','.woff2':'font/woff2','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.png':'image/png'};
 const server = createServer(async (req, res) => {
   const pathname = new URL(req.url, 'http://localhost').pathname;
   // Workers Static Assets redirects /index.html to /. Preserve that response
@@ -56,6 +56,13 @@ let browser, browserTemp;
 try {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = `http://localhost:${server.address().port}`;
+  const blockedFontProviderRequests=[];
+  const routeLocalOnly=route=>{
+    const url=route.request().url();
+    if(url.startsWith(`${origin}/`))return route.continue();
+    if(/https:\/\/fonts\.(?:googleapis|gstatic)\.com\//.test(url))blockedFontProviderRequests.push(url);
+    return route.abort();
+  };
   browserTemp=await mkdtemp(join(tmpdir(),'madladpad-smoke-'));
   const micFixturePath=join(browserTemp,'microphone-tone.wav');
   await writeFile(micFixturePath,micWav);
@@ -64,13 +71,10 @@ try {
   browser = await chromium.launch({headless:true,args:['--autoplay-policy=no-user-gesture-required','--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream',`--use-file-for-audio-capture=${micFixturePath}`],...(executablePath?{executablePath}:{})});
   const context = await browser.newContext({acceptDownloads:true});
   await context.grantPermissions(['camera','microphone'],{origin});
-  await context.route('**/*', route => {
-    const url = route.request().url();
-    return url.startsWith(`${origin}/`) ? route.continue() : route.abort();
-  });
+  await context.route('**/*',routeLocalOnly);
   const page = await context.newPage();
   const firstRunContext=await browser.newContext();
-  await firstRunContext.route('**/*',route=>route.request().url().startsWith(`${origin}/`)?route.continue():route.abort());
+  await firstRunContext.route('**/*',routeLocalOnly);
   const firstRunPage=await firstRunContext.newPage();
   await firstRunPage.goto(origin);
   await wait(firstRunPage,'.pad-hit');
@@ -129,6 +133,17 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(origin);
   await wait(page, '.pad-hit');
+  const loadedFontFaces=await page.evaluate(async()=>{
+    const loaded=await Promise.all([
+      document.fonts.load('400 16px "DM Sans"','MadLadPad'),
+      document.fonts.load('800 16px "DM Sans"','MadLadPad'),
+      document.fonts.load('400 12px "DM Mono"','MadLadPad'),
+      document.fonts.load('500 12px "DM Mono"','MadLadPad'),
+      document.fonts.load('400 16px "DM Sans"','Māori')
+    ]);
+    return loaded.map(faces=>faces.length);
+  });
+  assert.ok(loadedFontFaces.every(count=>count>0),`locally bundled fonts should load their supported Latin and extended glyph subsets: ${JSON.stringify(loadedFontFaces)}`);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   assert.equal(await page.locator('#studio-intro').isHidden(),true,'the Playground should be visible without a recurring hero');
   await page.locator('#show-help').click();
@@ -286,7 +301,7 @@ try {
         const rect=element.getBoundingClientRect(),target=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);
         return {visible:rect.width>0&&rect.height>0,centerHitsLink:target===element||element.contains(target)};
       });
-      assert.equal(hit.visible,true,`${expectedName} should be visible when Experimental is expanded: ${JSON.stringify(hit)}`);
+      assert.equal(hit.visible,true,`${expectedName} should be visible when Lab is expanded: ${JSON.stringify(hit)}`);
       assert.equal(hit.centerHitsLink,true,`${expectedName} should not be clipped or covered by the next section: ${JSON.stringify(hit)}`);
     }
     await page.locator(`[data-studio-screen="${screen}"]`).click();
@@ -355,7 +370,7 @@ try {
   assert.equal(await page.locator('#pad-google-photos').isHidden(),true,'unconfigured Google Photos should stay out of the source picker');
   await page.locator('#pad-source-cancel').click();
   const bankContext=await browser.newContext();
-  await bankContext.route('**/*',route=>route.request().url().startsWith(`${origin}/`)?route.continue():route.abort());
+  await bankContext.route('**/*',routeLocalOnly);
   const bankPage=await bankContext.newPage();
   await bankPage.setViewportSize({width:390,height:844});
   await bankPage.addInitScript(()=>{
@@ -832,6 +847,7 @@ try {
   await page.locator('#grid-division').selectOption('1/16');
   await openScreen('voice');
   assert.equal(await page.locator('#voice-model-credits').getAttribute('href'),'/credits.html','Voice Lab should provide an easy path to model and license credits');
+  assert.match(await page.locator('#voice-speech-tool').innerText(),/leave about a second of silence after the last word/i,'speech transcription should explain the tested clip-end timing limitation');
   await page.locator('#voice-consent').check();
   await page.evaluate(()=>{window.syntheticVoiceWorkerError=true;});
   await page.locator('#voice-transcribe').click();
@@ -975,17 +991,26 @@ try {
   assert.match(await page.locator('#rap-bars .rap-bar small').first().textContent(),/estimated syllables/);
   await page.locator('#rap-scheme').selectOption('ABAB');
   await page.locator('#rap-bars textarea').nth(0).fill('I caught the light');
-  await page.locator('#rap-bars textarea').nth(2).fill('We take the flight');
+  await page.locator('#rap-bars textarea').nth(2).fill('We take the Flight!');
   assert.match(await page.locator('#rap-bars .rap-bar').nth(2).locator('small').textContent(),/A rhyme.*match bar 1 “light”/,'ABAB should link bars 1 and 3 by their ending words');
-  assert.match(await page.locator('#rap-bars .rap-bar').nth(2).locator('small').textContent(),/rhyme ideas: night, bright, sight/,'a rhyme-linked bar should show three alternatives without repeating its current ending');
-  assert.doesNotMatch(await page.locator('#rap-bars .rap-bar').nth(2).locator('small').textContent(),/rhyme ideas:.*flight/,'rhyme ideas should not repeat the current bar ending');
+  const rhymeIdeas=page.locator('#rap-bars .rap-bar').nth(2).locator('.rap-rhyme-ideas');
+  assert.equal(await rhymeIdeas.isHidden(),false,'rhyme-linked lines should expose optional writing suggestions');
+  assert.deepEqual(await rhymeIdeas.locator('.rap-rhyme-chip').allTextContents(),['night','bright','sight'],'suggestions should exclude the line ending and show three alternatives');
+  await rhymeIdeas.locator('summary').click();
+  const nightIdea=rhymeIdeas.getByRole('button',{name:'Use rhyme idea night for bar 3'});
+  await nightIdea.focus(); await nightIdea.press('Enter');
+  assert.equal(await page.locator('#rap-bars textarea').nth(2).inputValue(),'We take the Night!','using a rhyme idea should preserve punctuation and capitalization');
   await page.locator('#rap-bars textarea').nth(0).fill('I found a cat');
   await page.locator('#rap-bars textarea').nth(2).fill('wearing a hat');
-  assert.match(await page.locator('#rap-bars .rap-bar').nth(2).locator('small').textContent(),/rhyme ideas: bat, flat, mat/,'common rhyme families should show three alternatives without repeating the current ending');
-  assert.doesNotMatch(await page.locator('#rap-bars .rap-bar').nth(2).locator('small').textContent(),/rhyme ideas:.*hat/,'rhyme ideas should not repeat the current bar ending');
+  assert.deepEqual(await page.locator('#rap-bars .rap-bar').nth(2).locator('.rap-rhyme-chip').allTextContents(),['bat','flat','mat'],'common rhyme families should show alternatives without repeating the current ending');
+  await page.locator('#rap-bars .rap-bar').nth(2).getByRole('button',{name:'Use rhyme idea bat for bar 3'}).click();
+  assert.equal(await page.locator('#rap-bars textarea').nth(2).inputValue(),'wearing a bat','rhyme ideas should apply with a single touch-friendly action');
+  await page.reload();
+  await page.locator('[data-voice-jump="rap-title"]').click();
+  assert.equal(await page.locator('#rap-bars textarea').nth(2).inputValue(),'wearing a bat','applying a rhyme idea should persist through reload');
   await page.locator('#rap-bars textarea').nth(0).fill('I can make this move');
   await page.locator('#rap-bars textarea').nth(2).fill('We talk about love');
-  assert.doesNotMatch(await page.locator('#rap-bars .rap-bar').nth(2).locator('small').textContent(),/rhyme ideas:/,'unknown endings should not receive false rhymes based only on their last two letters');
+  assert.equal(await page.locator('#rap-bars .rap-bar').nth(2).locator('.rap-rhyme-ideas').isHidden(),true,'unknown endings should not receive false rhymes based only on their last two letters');
   await page.locator('#rap-scheme').selectOption('AABB');
   assert.match(await page.locator('#rap-bars .rap-bar').nth(2).locator('small').textContent(),/B rhyme/,'AABB should regroup bars 3 and 4');
   await page.locator('#rap-bars textarea').nth(0).fill('Hello from the other side');
@@ -1366,11 +1391,22 @@ try {
     assert.notEqual(captureTarget,0,'occupied pad media should remain protected until Keep');
     await page.locator('#capture-target-new').click();
     await page.locator('#camera-dialog').waitFor({state:'visible'});
-    assert.equal(await page.locator('#camera-length').count(),0,'camera recording should start without a required duration chooser');
+    assert.equal(await page.locator('#camera-take-length').inputValue(),'manual','manual one-shot capture should remain the default');
+    assert.deepEqual(await page.locator('#camera-take-length option').evaluateAll(options=>options.map(option=>option.value)),['manual','1','2','4'],'camera should offer manual, 1-bar, 2-bar and 4-bar targets');
     await page.waitForFunction(()=>!document.querySelector('#camera-capture').disabled,null,{timeout:6000});
+    await page.locator('#camera-take-length').selectOption('4');
+    assert.match(await page.locator('#camera-length-help').textContent(),/4 bars in 4\/4 at 120 BPM · about 8\.0 seconds/,'the selected bar target should show its current-tempo duration before recording');
+    await page.locator('#camera-take-length').selectOption('2');
+    assert.match(await page.locator('#camera-length-help').textContent(),/2 bars in 4\/4 at 120 BPM · about 4\.0 seconds/,'changing the target should update the duration hint');
+    await page.evaluate(()=>{
+      window.__cameraTargetDelay=null;window.__nativeCameraSetTimeout=window.setTimeout;
+      window.setTimeout=(callback,delay,...args)=>{if(delay===4000)window.__cameraTargetDelay=delay;return window.__nativeCameraSetTimeout(callback,delay,...args);};
+    });
     await page.locator('#camera-capture').click();
     await page.waitForFunction(()=>document.querySelector('#camera-capture').textContent.includes('STOP'));
-    assert.match(await page.locator('#camera-status').textContent(),/Stop when ready.*30 seconds/,'the immediate camera take should explain manual Stop and its 30-second cap');
+    assert.match(await page.locator('#camera-status').textContent(),/2 bars at 120 BPM · about 4\.0 seconds/,'bar target should use the current project tempo and explain its approximate duration');
+    assert.equal(await page.evaluate(()=>window.__cameraTargetDelay),4000,'two 4/4 bars at 120 BPM should auto-stop after four seconds');
+    await page.evaluate(()=>{window.setTimeout=window.__nativeCameraSetTimeout;});
     await page.waitForTimeout(2000);
     await page.locator('#camera-capture').click();
     await page.locator('#camera-keep').waitFor({state:'visible',timeout:6000});
@@ -1379,6 +1415,7 @@ try {
     assert.match(await page.locator('#camera-status').textContent(),/Sound detected/,'active captured audio should be reported as detected before review');
     await page.locator('#camera-retake').click();
     await page.waitForFunction(()=>!document.querySelector('#camera-capture').disabled,null,{timeout:5000});
+    await page.locator('#camera-take-length').selectOption('manual');
     await page.evaluate(()=>{
       window.forceSilentCaptureMeter=true;window.__cameraMaxDelay=null;
       const native=window.setTimeout;
@@ -1510,6 +1547,10 @@ try {
   },null,{timeout:8000});
   await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
   checkpoint('service worker ready');
+  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v19')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
+  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v19')).match('/audio.js')).text()),/pendingStarts/,'the current fallback retrigger fix should be cached before offline use');
+  const cachedFonts=await page.evaluate(async()=>Promise.all(['/fonts/dm-sans-variable-latin.woff2','/fonts/dm-sans-variable-latin-ext.woff2','/fonts/dm-mono-400-latin.woff2','/fonts/dm-mono-400-latin-ext.woff2','/fonts/dm-mono-500-latin.woff2','/fonts/dm-mono-500-latin-ext.woff2'].map(async path=>Boolean(await (await caches.open('madladpad-shell-v19')).match(path)))));
+  assert.ok(cachedFonts.every(Boolean),'both local UI fonts and their Latin/extended subsets should be cached for offline use');
   await page.reload();
   await page.waitForFunction(()=>Boolean(navigator.serviceWorker.controller));
   checkpoint('service worker controls page');
@@ -1578,7 +1619,7 @@ try {
   assert.ok(mobileTabs.every(tab=>tab.visible&&tab.left>=0&&tab.right<=390),`core destinations should remain in view without horizontal scrolling: ${JSON.stringify(mobileTabs)}`);
   assert.deepEqual(await page.locator('#studio-nav > a').evaluateAll(links=>links.map(link=>link.textContent.replace(/\s+/g,' ').trim())),['01 Playground','02 Sequence','03 Video & Export'],'the primary navigation should name the three core creative tasks');
   assert.match(await page.locator('#studio-more-tools > summary').textContent(),/Voice Lab/,'the current specialist destination should remain identified');
-  assert.match(await page.locator('#studio-more-tools > summary').textContent(),/Experimental/,'Voice Lab and Overdub should sit under Experimental');
+  assert.equal((await page.locator('#studio-more-tools > summary').textContent()).trim(),'Lab · Voice Lab','the Lab menu should identify the active Voice Lab destination');
   await page.locator('#studio-more-tools > summary').click();
   for(const link of await page.locator('.studio-more-links a').all()){
     const box=await link.boundingBox();
@@ -1643,6 +1684,7 @@ try {
   await page.locator('#quick-record').click();
   assert.equal(await page.evaluate(()=>window.quickRecordOpened),true,'quick record should invoke the existing camera/microphone path');
   assert.deepEqual(errors, []);
+  assert.deepEqual(blockedFontProviderRequests,[],'the UI must not request Google Fonts or gstatic at any point');
   console.log('Browser smoke passed: layouts, demo/keyboard, live patterns/scenes, integrated Pitch/Speed audio exports, audio/video recording, adaptive one-to-three-clip composition, local media, pack round-trip, offline reopen and mobile overflow.');
 } finally {
   if (browser) await browser.close();
