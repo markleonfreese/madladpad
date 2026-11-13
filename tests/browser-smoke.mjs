@@ -870,6 +870,12 @@ try {
   await page.waitForFunction(()=>document.querySelectorAll('#voice-word-list .voice-word').length===3);
   assert.match(await page.locator('#voice-status').textContent(),/Confidence is not provided/);
   await page.locator('#voice-word-list .voice-word').nth(0).locator('input[type=checkbox]').check();
+  assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Use word 1, Hello','selecting a transcript word should keep keyboard focus on that checkbox');
+  await page.locator('#voice-word-list .voice-word').nth(1).locator('input[aria-label="Word 2 start seconds"]').fill('0.15');
+  assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Word 2 start seconds','editing word timing should keep keyboard focus on the adjusted field');
+  await page.locator('#voice-word-list .voice-word').nth(1).locator('input[aria-label="Transcript word 2"]').fill('from edited');
+  assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Transcript word 2','correcting a transcript word should keep keyboard focus in the editor');
+  assert.equal(await page.locator('#voice-word-list .voice-word').nth(1).locator('input[type=checkbox]').getAttribute('aria-label'),'Use word 2, from edited','the word-selection control should announce the corrected transcript text');
   await page.locator('#voice-word-list .voice-word').nth(2).locator('input[type=checkbox]').check();
   await page.locator('#voice-make-phrase').click();
   await page.locator('#voice-phrases .phrase-words button[aria-label="Move later Hello"]').click();
