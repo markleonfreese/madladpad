@@ -233,6 +233,10 @@ export const midiNoteName = note => {
   const pitch = Math.round(clamp(note, 24, 108));
   return `${['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'][pitch % 12]}${Math.floor(pitch / 12) - 1}`;
 };
+export const melodyPositionLabel = step => {
+  const position = Math.round(clamp(step, 0, 255));
+  return `Bar ${Math.floor(position / 16) + 1} · Beat ${Math.floor(position % 16 / 4) + 1} · 16th ${position % 4 + 1}`;
+};
 
 export function audioBufferToWav(rendered) {
   const sampleRate = Math.round(rendered.sampleRate), channels = rendered.numberOfChannels === 1 ? 1 : 2;

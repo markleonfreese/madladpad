@@ -946,6 +946,9 @@ try {
   assert.equal(await melodyPitch.locator('option').count(), 85, 'melody pitch picker should cover MIDI 24 through 108');
   await melodyPitch.selectOption('69');
   assert.match(await page.locator('#melody-notes .melody-note').first().locator('span').textContent(),/A4 · 440\.0 Hz/,'melody pitch should be shown with a musical note name and tuning frequency');
+  await page.locator('#melody-notes input[aria-label="Note 1 sixteenth step"]').fill('16');
+  await page.locator('#melody-notes input[aria-label="Note 1 sixteenth step"]').press('Tab');
+  assert.equal(await page.locator('#melody-notes .melody-note-description small').first().textContent(),'Bar 2 · Beat 1 · 16th 1','melody step should be shown as a readable bar, beat and subdivision');
   await page.locator('#melody-notes select[aria-label="Assign phrase word to note 1"]').selectOption('MadLadPad');
   await page.locator('#melody-harmony-interval').selectOption('3');
   await page.locator('#melody-harmony-add').click();
