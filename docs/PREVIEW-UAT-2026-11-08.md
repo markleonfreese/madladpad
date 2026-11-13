@@ -1,6 +1,6 @@
 # MadLadPad current-main phone acceptance preview — 13 November 2026
 
-PR #84 is a review-only, non-production preview and is **not for merging**. Its refreshed branch is based on current repository `main` `935b52d9bd5d5c02c5bdf933568e7fcd5a59cb78`; the deployed app source is `dff483d89c8400bea7b888de2097ffd14fced737` plus UAT documentation only. Before using it, confirm the latest PR #84 **Verify** and **Workers Builds** checks passed on the same head; use the Workers Builds preview link as the test URL. Pages production is deployment `30b8c66c-4e71-4402-91a5-9f9cb0d24802` from app source `dff483d`. This preview update does not change production.
+PR #84 is a review-only, non-production preview and is **not for merging**. Its refreshed branch is based on current repository `main` and deployed app source `38635c852cca6a91ca03ed16600f9850be0e2b42` (PR #182) plus UAT documentation only. Before using it, confirm the latest PR #84 **Verify** and **Workers Builds** checks passed on the same head; use the Workers Builds preview link as the test URL. Pages production is deployment `3806f641-0e4b-4658-8d8e-58660778f839` with PWA shell v20. This preview update does not change production.
 
 First-use speech transcription downloads about 65 MB of model/runtime files. The selected speech clip stays on-device; use consenting testers and never attach raw recordings, transcripts, or private project packs.
 
