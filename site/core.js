@@ -323,13 +323,22 @@ export const supportedMediaFile = file => file && /^(video|audio|image)\//.test(
 
 export function suggestActiveRegion(levels, duration) {
   if (!Array.isArray(levels) || !levels.length || !Number.isFinite(duration) || duration <= 0) return {start:0,end:Math.max(.05,duration||.05),detected:false};
-  const sorted=[...levels].sort((a,b)=>a-b);
+  const timestamped=levels.every(sample=>sample&&typeof sample==='object'&&Number.isFinite(sample.time)&&Number.isFinite(sample.level));
+  const samples=timestamped?[...levels].map(sample=>({time:clamp(sample.time,0,duration),level:Math.max(0,sample.level)})).sort((a,b)=>a.time-b.time):null;
+  const values=timestamped?samples.map(sample=>sample.level):levels.map(level=>Number.isFinite(level)?Math.max(0,level):0);
+  const sorted=[...values].sort((a,b)=>a-b);
   const floor=sorted[Math.floor((sorted.length-1)*.2)]||0;
   // Adapt to the quietest part of the take so low-gain speech can clear the
   // detector while sustained room noise still has to rise well above its floor.
   const gate=Math.max(.006,floor*2.5);
-  const active=levels.map((level,index)=>level>=gate?index:-1).filter(index=>index>=0);
+  const active=values.map((level,index)=>level>=gate?index:-1).filter(index=>index>=0);
   if(!active.length)return {start:0,end:duration,detected:false};
+  if(timestamped){
+    const intervals=samples.slice(1).map((sample,index)=>sample.time-samples[index].time).filter(interval=>interval>0);
+    const sortedIntervals=intervals.sort((a,b)=>a-b);
+    const sampleWindow=Math.min(.1,sortedIntervals[Math.floor(sortedIntervals.length/2)]||.05)/2;
+    return {start:Math.max(0,samples[active[0]].time-sampleWindow-.08),end:Math.min(duration,samples[active.at(-1)].time+sampleWindow+.12),detected:true};
+  }
   const frame=duration/levels.length;
   return {start:Math.max(0,active[0]*frame-.08),end:Math.min(duration,(active.at(-1)+1)*frame+.12),detected:true};
 }

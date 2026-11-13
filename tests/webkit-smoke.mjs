@@ -74,7 +74,7 @@ try{
   assert.equal(saved.size,wav.length);
 
   await page.reload({waitUntil:'networkidle'});
-  await page.waitForFunction(()=>document.querySelector('#sample-info').textContent.includes('webkit-synthetic.wav · AUDIO · stored on this device'),null,{timeout:15000});
+  await page.waitForFunction(()=>document.querySelector('#sample-info')?.textContent.includes('webkit-synthetic.wav · AUDIO · stored on this device'),null,{timeout:15000});
   const restored=await page.evaluate(async()=>{
     const {getValue}=await import('/storage.js');
     const file=await getValue('media:0');
