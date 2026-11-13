@@ -942,14 +942,15 @@ try {
   assert.match(await page.locator('#voice-phrases .voice-phrase').nth(2).textContent(),/Story montage/);
   await page.locator('[data-voice-jump="melody-title"]').click();
   await page.locator('#melody-add').click();
-  await page.locator('#melody-notes input[aria-label="Note 1 MIDI pitch"]').fill('69');
-  await page.locator('#melody-notes input[aria-label="Note 1 MIDI pitch"]').press('Tab');
+  const melodyPitch = page.locator('#melody-notes select[aria-label="Note 1 pitch"]');
+  assert.equal(await melodyPitch.locator('option').count(), 85, 'melody pitch picker should cover MIDI 24 through 108');
+  await melodyPitch.selectOption('69');
   assert.match(await page.locator('#melody-notes .melody-note').first().locator('span').textContent(),/A4 · 440\.0 Hz/,'melody pitch should be shown with a musical note name and tuning frequency');
   await page.locator('#melody-notes select[aria-label="Assign phrase word to note 1"]').selectOption('MadLadPad');
   await page.locator('#melody-harmony-interval').selectOption('3');
   await page.locator('#melody-harmony-add').click();
   assert.equal(await page.locator('#melody-notes .melody-note').count(),2,'harmony generation should add a second editable MIDI note');
-  assert.equal(await page.locator('#melody-notes input[aria-label="Harmony 2 MIDI pitch"]').inputValue(),'72','harmony interval should transpose the lead note by three semitones');
+  assert.equal(await page.locator('#melody-notes select[aria-label="Harmony 2 pitch"]').inputValue(),'72','harmony interval should transpose the lead note by three semitones');
   await page.locator('#melody-harmony-add').click();
   assert.equal(await page.locator('#melody-notes .melody-note').count(),2,'repeating harmony generation should not duplicate existing notes');
   await page.locator('#melody-play').click();
@@ -1072,7 +1073,7 @@ try {
   if(await page.locator('#track-grid').isHidden())await page.locator('#track-view').click();
   assert.equal(await page.locator(`.track-row[data-pad="${mappedPadIds[1]}"] [data-step="2"]`).getAttribute('aria-pressed'),'true','mapped crossfade timing should persist locally');
   assert.equal(await page.locator('#melody-notes .melody-note').count(),2,'lead and harmony note data should persist locally');
-  assert.equal(await page.locator('#melody-notes input[aria-label="Harmony 2 MIDI pitch"]').inputValue(),'72','generated harmony pitch should persist locally');
+  assert.equal(await page.locator('#melody-notes select[aria-label="Harmony 2 pitch"]').inputValue(),'72','generated harmony pitch should persist locally');
   assert.equal(await page.locator('#melody-harmony-interval').inputValue(),'3','harmony interval should persist locally');
   assert.equal(await page.locator('#melody-follow-beat').isChecked(),true,'melody sequence recording option should persist locally');
   assert.equal(await page.locator('#voice-phrases .voice-phrase').count(),3,'saved story montage should persist without removing its source phrases');
@@ -1603,7 +1604,7 @@ try {
   assert.equal(await page.locator('#voice-speech-tool').isHidden(),true,'mobile task switching should keep only the chosen Voice Lab tool visible');
   await page.setViewportSize({width:320,height:720});
   await page.locator('[data-voice-jump="melody-title"]').click();
-  const melodyTouchTargets=await page.locator('#melody-tuning,#melody-notes input,#melody-add,#melody-harmony-add,#melody-play,#melody-export').evaluateAll(elements=>elements.map(element=>{const rect=element.getBoundingClientRect();return {id:element.id,label:element.getAttribute('aria-label'),width:rect.width,height:rect.height};}));
+  const melodyTouchTargets=await page.locator('#melody-tuning,#melody-notes input,#melody-notes select,#melody-add,#melody-harmony-add,#melody-play,#melody-export').evaluateAll(elements=>elements.map(element=>{const rect=element.getBoundingClientRect();return {id:element.id,label:element.getAttribute('aria-label'),width:rect.width,height:rect.height};}));
   assert.ok(melodyTouchTargets.length>3&&melodyTouchTargets.every(target=>target.width>=44&&target.height>=44),`melody controls should provide 44px mobile hit areas: ${JSON.stringify(melodyTouchTargets)}`);
   await page.locator('[data-voice-jump="rap-title"]').click();
   await page.locator('#rap-bars .rap-flow summary').first().click();
