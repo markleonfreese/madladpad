@@ -2,7 +2,7 @@
 
 ## Current production app
 
-The current static app is served from Cloudflare Pages at <https://madladpad.pages.dev>. The verified production deployment is `4fc66141-3182-4ec2-ba73-a984ecb95188`, source commit `ee8829b97f0d8a84244acac34666a653623b3cfc` on `main` (PR #188). It is a static Pages release with shell v20, no Functions source or runtime binding in this repository. Deployed `app.js`, `voice.js`, `styles.css`, `sw.js`, the speech worker and its WASM asset match the release checkout. See [Issue #2](https://github.com/markleonfreese/madladpad/issues/2) and the [device acceptance checklist](docs/DEVICE-ACCEPTANCE.md) for hosted evidence and remaining human/device gates.
+The current static app is served from Cloudflare Pages at <https://madladpad.pages.dev>. The verified production deployment is `a90188dd-61c2-41d0-98d3-dbc7f3a35e99`, source commit `b4f0e0774a00c67198696f82c5efcae8bffc8cec` on `main` (PRs #190 and #191). It is a static Pages release with shell v20, no Functions source or runtime binding in this repository. Production `/`, `/credits.html`, `/voices/`, `/rap/`, `app.js`, `voice.js`, `styles.css`, `sw.js`, the speech worker and its WASM asset returned HTTP 200 with browser headers; asset SHA-256 values match the release checkout. See [Issue #2](https://github.com/markleonfreese/madladpad/issues/2) and the [device acceptance checklist](docs/DEVICE-ACCEPTANCE.md) for hosted evidence and remaining human/device gates.
 
 The Pages app and the older Workers app are separate releases. <https://madladpad.markleonfreese.workers.dev/> still serves an older bundled release; it is not updated by the current Pages publish. Do not use it to accept current `main` or deploy to it as a way to fix the Pages app. The cause of an earlier 503 report on that URL was not established; a later read-only check returned 200 for its legacy shell and `/app.js`.
 
@@ -33,7 +33,7 @@ After publishing, verify the new production deployment with `npx wrangler pages 
 
 Cloudflare's [Pages rollback procedure](https://developers.cloudflare.com/pages/configuration/rollbacks/) uses the Pages project's Deployments page. Open `madladpad` → **Deployments** → **All deployments**, identify a successful **Production** deployment, and choose **Rollback to this deployment** from its actions menu. Confirm only when intentionally restoring production; preview deployments are not valid rollback targets.
 
-The immediately previous successful production target is deployment `3806f641-0e4b-4658-8d8e-58660778f839`, branch `main`, source `38635c852cca6a91ca03ed16600f9850be0e2b42`. Check the deployment ID, production environment, and source SHA in the dashboard before selecting it. Do not roll back to the legacy Workers release.
+The immediately previous successful production target is deployment `4fc66141-3182-4ec2-ba73-a984ecb95188`, branch `main`, source `ee8829b97f0d8a84244acac34666a653623b3cfc`. Check the deployment ID, production environment, and source SHA in the dashboard before selecting it. Do not roll back to the legacy Workers release.
 
 After rollback, refresh the deployment list and verify `https://madladpad.pages.dev` plus `/app.js`, `/sw.js`, `/voice.js`, `/voice-inference-worker.js`, and `/ort-wasm-simd-threaded.wasm`. Record the resulting production deployment ID and source SHA in Issue #2. This procedure was documented only; no rollback was performed.
 
