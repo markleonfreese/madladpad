@@ -229,6 +229,14 @@ export function normaliseProject(value) {
 }
 
 export const midiFrequency = (note, tuning = 440) => clamp(tuning, 400, 480) * 2 ** ((clamp(note, 24, 108) - 69) / 12);
+export const midiNoteName = note => {
+  const pitch = Math.round(clamp(note, 24, 108));
+  return `${['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'][pitch % 12]}${Math.floor(pitch / 12) - 1}`;
+};
+export const melodyPositionLabel = step => {
+  const position = Math.round(clamp(step, 0, 255));
+  return `Bar ${Math.floor(position / 16) + 1} · Beat ${Math.floor(position % 16 / 4) + 1} · 16th ${position % 4 + 1}`;
+};
 
 export function audioBufferToWav(rendered) {
   const sampleRate = Math.round(rendered.sampleRate), channels = rendered.numberOfChannels === 1 ? 1 : 2;
@@ -251,7 +259,8 @@ export function estimateSyllables(text) {
   const words = String(text || '').toLowerCase().match(/[a-z]+/g) || [];
   return words.reduce((total, word) => {
     if (word.length <= 3) return total + 1;
-    const normalized = /[^aeiouy]le$/.test(word) ? word : word.replace(/(?:e|ed|es)$/, '');
+    const keepsEndingSyllable = /[^aeiouy]le$/.test(word) || /(?:s|x|z|c|g|ch|sh)es$/.test(word) || /(?:t|d)ed$/.test(word);
+    const normalized = keepsEndingSyllable ? word : word.replace(/(?:e|ed|es)$/, '');
     const groups = normalized.match(/[aeiouy]+/g);
     return total + Math.max(1, groups?.length || 1);
   }, 0);

@@ -1,4 +1,4 @@
-import { clamp, boundTranscriptWordTimes, midiFrequency, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, findAudioRecorderMime, extensionForAudioMime, AsyncActivity } from './core.js';
+import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, findAudioRecorderMime, extensionForAudioMime, AsyncActivity } from './core.js';
 import { getValue, saveVoiceLayer, deleteVoiceLayer } from './storage.js';
 import { detectPitch } from './tuner.js';
 
@@ -22,7 +22,7 @@ function rhymeHints(line) {
   const word = wordKey(line.trim().split(/\s+/).at(-1));
   if (!word) return [];
   for (const [key, values] of Object.entries(rhymes)) if (word === key || values.includes(word)) return [key, ...values].filter(value => value !== word).slice(0, 4);
-  return Object.entries(rhymes).flatMap(([key, values]) => [key, ...values].filter(value => value.endsWith(word.slice(-2)) && value !== word)).slice(0, 4);
+  return [];
 }
 function rhymeGroup(index, scheme) {
   const position = index % 4;
@@ -217,15 +217,30 @@ function renderMelody(project, save) {
   project.voice.melody.notes.forEach((note, index) => {
     const row = document.createElement('div'); row.className = 'melody-note';
     const noteLabel = `${note.layer === 'harmony' ? 'Harmony' : 'Note'} ${index + 1}`;
-    const noteName = document.createElement('span'); noteName.textContent = `${noteLabel} · ${midiFrequency(note.midi, project.voice.melody.tuning).toFixed(1)} Hz`;
-    const pitch = document.createElement('input'); pitch.type = 'number'; pitch.min = '24'; pitch.max = '108'; pitch.value = note.midi; pitch.setAttribute('aria-label', `${noteLabel} MIDI pitch`);
+    const description = document.createElement('div'); description.className = 'melody-note-description';
+    const noteName = document.createElement('span'); noteName.textContent = `${noteLabel} · ${midiNoteName(note.midi)} · ${midiFrequency(note.midi, project.voice.melody.tuning).toFixed(1)} Hz`;
+    const positionName = document.createElement('small'); positionName.textContent = melodyPositionLabel(note.step);
+    description.append(noteName, positionName);
+    const pitch = document.createElement('select'); pitch.setAttribute('aria-label', `${noteLabel} pitch`);
+    for (let midi = 24; midi <= 108; midi++) {
+      if (midi % 12 === 0) {
+        const octave = document.createElement('optgroup');
+        octave.label = `${midiNoteName(midi)}–${midiNoteName(Math.min(midi + 11, 108))}`;
+        pitch.append(octave);
+      }
+      const option = document.createElement('option');
+      option.value = String(midi);
+      option.textContent = `${midiNoteName(midi)} (MIDI ${midi})`;
+      pitch.lastElementChild.append(option);
+    }
+    pitch.value = String(note.midi);
     const step = document.createElement('input'); step.type = 'number'; step.min = '0'; step.max = '255'; step.value = note.step; step.setAttribute('aria-label', `${noteLabel} sixteenth step`);
     const duration = document.createElement('input'); duration.type = 'number'; duration.min = '.125'; duration.max = '16'; duration.step = '.125'; duration.value = note.duration; duration.setAttribute('aria-label', `${noteLabel} duration in sixteenth steps`);
     const word = document.createElement('select'); word.setAttribute('aria-label', `Assign phrase word to ${noteLabel.toLowerCase()}`);
     wordOptions.forEach(value => { const option = document.createElement('option'); option.value = value; option.textContent = value || 'No word cue'; word.append(option); }); word.value = note.word;
     for (const [input, key] of [[pitch, 'midi'], [step, 'step'], [duration, 'duration'], [word, 'word']]) input.addEventListener('change', () => { note[key] = key === 'word' ? input.value : Number(input.value); save(); renderMelody(project, save); });
     const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'pill-button'; remove.textContent = '×'; remove.setAttribute('aria-label', `Delete ${noteLabel.toLowerCase()}`); remove.addEventListener('click', () => { project.voice.melody.notes.splice(index, 1); save(); renderMelody(project, save); });
-    row.append(noteName, pitch, step, duration, word, remove); host.append(row);
+    row.append(description, pitch, step, duration, word, remove); host.append(row);
   });
   $('melody-add').disabled = project.voice.melody.notes.length >= MAX_MELODY_NOTES;
   $('melody-harmony-add').disabled = project.voice.melody.notes.length >= MAX_MELODY_NOTES;
