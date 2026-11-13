@@ -5,8 +5,8 @@ Use this checklist to close the physical-device and human-review gates recorded 
 ## Current review target — 13 November 2026
 
 - **Non-production preview:** use the preview URL linked from PR #84's latest successful **Workers Builds** check, after its exact-head **Verify** and **Workers Builds** checks pass. Record both the preview URL and SHA before testing.
-- **Application source:** current `main` is `42517be1ed696cfffed0fc9ca3487bd7e1a963a8` (PR #163); it includes camera meter timing, the melody note-name picker, and bar/beat position labels. PR #84 remains a review-only branch for a hosted phone acceptance preview; it must not be merged.
-- **Production distinction:** Pages deployment `7774a174-6f15-4208-a5a3-278ec4af9024` serves app source `42517be`. The refreshed PR #84 preview should serve the same app source plus UAT documentation only. No production publish or Cloudflare configuration change is part of this preview refresh.
+- **Application source:** current `main` is `935b52d9bd5d5c02c5bdf933568e7fcd5a59cb78` (PR #181, docs only), and the deployed app release is `dff483d89c8400bea7b888de2097ffd14fced737` (PR #180). It includes the offline self-hosted fonts, Voice Lab improvements, and actionable rap rhyme ideas. PR #84 remains a review-only branch for hosted phone acceptance; it must not be merged.
+- **Production distinction:** Pages deployment `30b8c66c-4e71-4402-91a5-9f9cb0d24802` serves app source `dff483d`. The refreshed PR #84 preview should serve the same app source plus UAT documentation only. No production publish or Cloudflare configuration change is part of this preview refresh.
 - After testing, add results to [Issue #2](https://github.com/markleonfreese/madladpad/issues/2), keeping device, assistive-technology, and listening results separate from hosted browser evidence.
 
 ## Current published app — 13 November 2026
