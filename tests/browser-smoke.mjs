@@ -11,7 +11,7 @@ import { createRequire } from 'node:module';
 const require=createRequire(import.meta.url);
 const axePath=require.resolve('axe-core/axe.min.js');
 const root = resolve('site');
-const mime = {'.html':'text/html','.js':'text/javascript','.css':'text/css','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.png':'image/png'};
+const mime = {'.html':'text/html','.js':'text/javascript','.css':'text/css','.woff2':'font/woff2','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.png':'image/png'};
 const server = createServer(async (req, res) => {
   const pathname = new URL(req.url, 'http://localhost').pathname;
   // Workers Static Assets redirects /index.html to /. Preserve that response
@@ -56,6 +56,13 @@ let browser, browserTemp;
 try {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = `http://localhost:${server.address().port}`;
+  const blockedFontProviderRequests=[];
+  const routeLocalOnly=route=>{
+    const url=route.request().url();
+    if(url.startsWith(`${origin}/`))return route.continue();
+    if(/https:\/\/fonts\.(?:googleapis|gstatic)\.com\//.test(url))blockedFontProviderRequests.push(url);
+    return route.abort();
+  };
   browserTemp=await mkdtemp(join(tmpdir(),'madladpad-smoke-'));
   const micFixturePath=join(browserTemp,'microphone-tone.wav');
   await writeFile(micFixturePath,micWav);
@@ -64,13 +71,10 @@ try {
   browser = await chromium.launch({headless:true,args:['--autoplay-policy=no-user-gesture-required','--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream',`--use-file-for-audio-capture=${micFixturePath}`],...(executablePath?{executablePath}:{})});
   const context = await browser.newContext({acceptDownloads:true});
   await context.grantPermissions(['camera','microphone'],{origin});
-  await context.route('**/*', route => {
-    const url = route.request().url();
-    return url.startsWith(`${origin}/`) ? route.continue() : route.abort();
-  });
+  await context.route('**/*',routeLocalOnly);
   const page = await context.newPage();
   const firstRunContext=await browser.newContext();
-  await firstRunContext.route('**/*',route=>route.request().url().startsWith(`${origin}/`)?route.continue():route.abort());
+  await firstRunContext.route('**/*',routeLocalOnly);
   const firstRunPage=await firstRunContext.newPage();
   await firstRunPage.goto(origin);
   await wait(firstRunPage,'.pad-hit');
@@ -129,6 +133,17 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(origin);
   await wait(page, '.pad-hit');
+  const loadedFontFaces=await page.evaluate(async()=>{
+    const loaded=await Promise.all([
+      document.fonts.load('400 16px "DM Sans"','MadLadPad'),
+      document.fonts.load('800 16px "DM Sans"','MadLadPad'),
+      document.fonts.load('400 12px "DM Mono"','MadLadPad'),
+      document.fonts.load('500 12px "DM Mono"','MadLadPad'),
+      document.fonts.load('400 16px "DM Sans"','Māori')
+    ]);
+    return loaded.map(faces=>faces.length);
+  });
+  assert.ok(loadedFontFaces.every(count=>count>0),`locally bundled fonts should load their supported Latin and extended glyph subsets: ${JSON.stringify(loadedFontFaces)}`);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   assert.equal(await page.locator('#studio-intro').isHidden(),true,'the Playground should be visible without a recurring hero');
   await page.locator('#show-help').click();
@@ -355,7 +370,7 @@ try {
   assert.equal(await page.locator('#pad-google-photos').isHidden(),true,'unconfigured Google Photos should stay out of the source picker');
   await page.locator('#pad-source-cancel').click();
   const bankContext=await browser.newContext();
-  await bankContext.route('**/*',route=>route.request().url().startsWith(`${origin}/`)?route.continue():route.abort());
+  await bankContext.route('**/*',routeLocalOnly);
   const bankPage=await bankContext.newPage();
   await bankPage.setViewportSize({width:390,height:844});
   await bankPage.addInitScript(()=>{
@@ -1523,8 +1538,10 @@ try {
   },null,{timeout:8000});
   await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
   checkpoint('service worker ready');
-  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v18')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
-  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v18')).match('/audio.js')).text()),/pendingStarts/,'the current fallback retrigger fix should be cached before offline use');
+  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v19')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
+  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v19')).match('/audio.js')).text()),/pendingStarts/,'the current fallback retrigger fix should be cached before offline use');
+  const cachedFonts=await page.evaluate(async()=>Promise.all(['/fonts/dm-sans-variable-latin.woff2','/fonts/dm-sans-variable-latin-ext.woff2','/fonts/dm-mono-400-latin.woff2','/fonts/dm-mono-400-latin-ext.woff2','/fonts/dm-mono-500-latin.woff2','/fonts/dm-mono-500-latin-ext.woff2'].map(async path=>Boolean(await (await caches.open('madladpad-shell-v19')).match(path)))));
+  assert.ok(cachedFonts.every(Boolean),'both local UI fonts and their Latin/extended subsets should be cached for offline use');
   await page.reload();
   await page.waitForFunction(()=>Boolean(navigator.serviceWorker.controller));
   checkpoint('service worker controls page');
@@ -1658,6 +1675,7 @@ try {
   await page.locator('#quick-record').click();
   assert.equal(await page.evaluate(()=>window.quickRecordOpened),true,'quick record should invoke the existing camera/microphone path');
   assert.deepEqual(errors, []);
+  assert.deepEqual(blockedFontProviderRequests,[],'the UI must not request Google Fonts or gstatic at any point');
   console.log('Browser smoke passed: layouts, demo/keyboard, live patterns/scenes, integrated Pitch/Speed audio exports, audio/video recording, adaptive one-to-three-clip composition, local media, pack round-trip, offline reopen and mobile overflow.');
 } finally {
   if (browser) await browser.close();

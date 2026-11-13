@@ -6,7 +6,7 @@ import { resolve, extname } from 'node:path';
 import assert from 'node:assert/strict';
 
 const root=resolve('site');
-const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.png':'image/png'};
+const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.woff2':'font/woff2','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.png':'image/png'};
 const server=createServer(async(req,res)=>{
   const pathname=new URL(req.url,'http://localhost').pathname;
   if(pathname==='/index.html'){res.writeHead(307,{Location:'/'}).end();return;}
@@ -28,16 +28,34 @@ function makeWav(){
 
 let browser,context;
 const errors=[];
+const blockedFontProviderRequests=[];
 try{
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const origin=`http://localhost:${server.address().port}`;
   browser=await webkit.launch({headless:true});
   context=await browser.newContext({viewport:{width:390,height:844}});
-  await context.route('**/*',route=>route.request().url().startsWith(`${origin}/`)?route.continue():route.abort());
+  await context.route('**/*',route=>{
+    const url=route.request().url();
+    if(url.startsWith(`${origin}/`))return route.continue();
+    if(/https:\/\/fonts\.(?:googleapis|gstatic)\.com\//.test(url))blockedFontProviderRequests.push(url);
+    return route.abort();
+  });
   const page=await context.newPage();
   page.on('pageerror',error=>errors.push(error.message));
   const response=await page.goto(origin);
   assert.equal(response.status(),200,'local Worker-assets shell should load');
+  await page.locator('.pad-hit').first().waitFor({timeout:10000});
+  const loadedFontFaces=await page.evaluate(async()=>{
+    const loaded=await Promise.all([
+      document.fonts.load('400 16px "DM Sans"','MadLadPad'),
+      document.fonts.load('800 16px "DM Sans"','MadLadPad'),
+      document.fonts.load('400 12px "DM Mono"','MadLadPad'),
+      document.fonts.load('500 12px "DM Mono"','MadLadPad'),
+      document.fonts.load('400 16px "DM Sans"','Māori')
+    ]);
+    return loaded.map(faces=>faces.length);
+  });
+  assert.ok(loadedFontFaces.every(count=>count>0),`local DM Sans and DM Mono faces should load in WebKit: ${JSON.stringify(loadedFontFaces)}`);
 
   for(const width of [320,390]){
     await page.setViewportSize({width,height:844});
@@ -190,6 +208,7 @@ try{
   }else console.log('Skipped WebKit video stop-boundary check: this Playwright WebKit build reports no H.264/AAC MP4 playback support.');
 
   assert.deepEqual(errors,[],'the tested WebKit journeys should not produce uncaught page errors');
+  assert.deepEqual(blockedFontProviderRequests,[],'WebKit should not request Google Fonts or gstatic');
   console.log('WebKit smoke passed: 320/390px overflow, secondary navigation state, Rap focus, WAV import and IndexedDB File reload.');
 }finally{
   await context?.close();
