@@ -1511,6 +1511,7 @@ try {
   },null,{timeout:8000});
   await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
   checkpoint('service worker ready');
+  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v16')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
   await page.reload();
   await page.waitForFunction(()=>Boolean(navigator.serviceWorker.controller));
   checkpoint('service worker controls page');
