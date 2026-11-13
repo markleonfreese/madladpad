@@ -1,22 +1,16 @@
-# MadLadPad mobile UX preview acceptance — refreshed 10 November 2026
+# MadLadPad current-main phone acceptance preview — 13 November 2026
 
-This review-only preview serves current `main` at `a9557634e00ba5e262af1d2f9edf8bc2ac47cc03`. The PR #84 branch contains the same application source and changes only these acceptance notes. Before testing, verify that the latest `Verify` and `Workers Builds` checks passed for the displayed PR head; use the preview link on that Workers Builds check. The stable preview URL is listed in PR #84. No production configuration or release was changed.
+PR #84 is a review-only, non-production preview and is **not for merging**. It serves current application source `9ef9bef2bad222a424b814160da189359f7158ae` plus UAT documentation only. Before opening it, confirm the latest PR #84 **Verify** and **Workers Builds** checks passed on the same head; use the Workers Builds preview link as the test URL. Pages production remains deployment `bd8f37c8-50ee-44d0-b73f-b82b7f3c07be` from app source `17b7290` and does not include the #153 camera meter timing fix.
 
-Review checklist (see [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md) for detailed scenarios):
+First-use speech transcription downloads about 65 MB of model/runtime files. The selected speech clip stays on-device; use consenting testers and never attach raw recordings, transcripts, or private project packs.
 
-- [ ] Open the exact-head HTTPS preview on Android Chrome and iOS Safari at approximately 390px; verify no horizontal overflow, the primary Sounds / Beat Grid / Video & Export navigation is usable, and More tools exposes Voice Lab and Overdub.
-- [ ] First use: start with a demo beat, edit a step, play it, and follow the Video & Export step. Then try importing a local clip or recording one. With the checked-in blank Google config, confirm Drive/Photos are disabled with “Setup required” and no sign-in prompt; local import/recording should remain available.
-- [ ] Tap Edit from Sounds and Beat Grid; verify the selected pad opens in Sounds and sample editing is discoverable.
-- [ ] Open Beat Grid and verify the sequencer appears before the pad gallery in visual and reading order. Change the editing-pad picker and verify it selects the matching lane; check that pads remain comfortable to tap.
-- [ ] At 320px and 390px, open All Tracks. Confirm lane labels and controls remain visible above each horizontally scrollable step row; steps are at least 44 × 44px, scrolling stays aligned across lanes, and the page itself does not overflow horizontally. Repeat with touch on a phone.
-- [ ] Load a local audio/video sample; check trimming and pitch controls appear only when media is present.
-- [ ] Record an active take and confirm the meter reports sound detected. For silence or unavailable metering, confirm the full take remains selected with a clear no-sound message; adjust trim, preview, then keep or retake without uploading private clips.
-- [ ] Switch Voice Lab between Speech, Melody, and Rap; confirm only the selected tool is shown and announced. Explicitly start and stop the tuner and confirm it stops when leaving Melody.
-- [ ] Load a short local spoken test phrase, explicitly opt in to Speech, and run on-device transcription. Confirm words and timestamps are editable, review spelling (especially names), and verify manual entry/retry remains available if model download fails; the clip must remain local.
-- [ ] After opening Voice Lab or Overdub from More tools, confirm the selected destination remains identifiable to keyboard/screen-reader users when the disclosure closes. Check the core flow one-handed in portrait.
-- [ ] At 320px and 390px, open Overdub and verify the vocal harmony action wraps within the viewport without horizontal page scrolling.
-- [ ] Test microphone/camera prompts, offline reopen, local persistence/backup, export, and human listening.
-- [ ] On an existing installed PWA upgraded from shell v13 to v14, confirm the current project/media and downloaded speech model remain available; then reopen offline, transcribe locally, and open the model/runtime credits and license page.
-- [ ] Record preview URL, source commit, device/OS/browser, results, and failures without attaching private clips or token values. Synthetic desktop and hosted CI results do not count as phone or listening acceptance.
+Review checklist (see [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md) for detailed test steps):
 
-Production remains on an older shell (`v4`; current `main` is `v14`). The latest read-only checks returned HTTP 200 but did not reproduce or explain the earlier intermittent 503. Keep production unchanged until account spend is verified within A$5/month and a supported production write route is available. Preview URLs may be publicly accessible.
+- [ ] On Android Chrome and iOS Safari, note device/OS/browser/PWA state; check 320–390px portrait, primary navigation, More tools, and no page overflow.
+- [ ] Start with a demo beat, edit a step, play it, then open Video & Export. Try local import and recording; Drive/Photos should remain unavailable without configured Google identifiers.
+- [ ] Open Sounds and Beat Grid editors; verify selection, sample editing and lane editing.
+- [ ] Use three tracks at 120 BPM, scene launch, one-step playback, held-step loop behavior, and audiovisual composition. Confirm touch, timing, and audio/video alignment.
+- [ ] Record a camera sample on an empty pad and save-as-new on an occupied pad. Include leading/trailing silence around a clear event; compare suggested bounds with the event, adjust, preview and listen. Try quiet speech, room noise, silence, permission denial, Retake, Cancel and rotation. Report if mobile timing jitter moves the suggestion.
+- [ ] Test Speech, Melody and Rap: explicitly opt into transcription; review/edit word text and timing; edit/reorder a phrase and export WAV; write/play a melody, add harmony and export MIDI; write ABAB bars, edit syllable flow, audition and export lyrics. Record human usefulness/listening notes.
+- [ ] Check warm offline model use, local project/pack persistence, microphone/camera indicator release, and TalkBack/VoiceOver.
+- [ ] Add sanitized results, URL, tested SHA, device/browser, and failures to Issue #2. Synthetic desktop and hosted CI checks do not count as physical-device or listening acceptance.

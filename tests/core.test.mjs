@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withModelReferrerPolicy } from '../site/voice-model-fetch.js';
-import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, midiFrequency, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes } from '../site/core.js';
 
 test('Whisper model fetch omits the app referrer only for Hugging Face assets', async () => {
   const calls = [];
@@ -15,6 +15,22 @@ test('Whisper model fetch omits the app referrer only for Hugging Face assets', 
   assert.deepEqual(calls[1].init, { cache: 'no-store' });
 });
 
+test('transcript word timestamps stay inside the source clip and invalid words are discarded', () => {
+  const words = boundTranscriptWordTimes([
+    {text:'start',start:-.2,end:.4},
+    {text:'middle',start:3.6,end:6.86},
+    {text:'outside',start:5,end:7},
+    {text:'zero span',start:1,end:1},
+    {text:'bad time',start:NaN,end:2},
+    {text:'   ',start:0,end:.5}
+  ], 4.12);
+  assert.deepEqual(words, [
+    {text:'start',start:0,end:.4},
+    {text:'middle',start:3.6,end:4.12}
+  ]);
+  assert.deepEqual(boundTranscriptWordTimes([{text:'word',start:0,end:1}], 0), []);
+});
+
 test('initial layout has 12 visible pads and 16 backing slots', () => {
   const project = makeProject();
   assert.equal(PAD_COUNT[project.layout], 12);
@@ -26,6 +42,11 @@ test('initial layout has 12 visible pads and 16 backing slots', () => {
 test('demo sound mode survives project normalisation and older projects default it off',()=>{
   assert.equal(normaliseProject({demoEnabled:true}).demoEnabled,true);
   assert.equal(normaliseProject({}).demoEnabled,false);
+});
+test('per-pad demo choices persist only for sounds in the local bank',()=>{
+  assert.equal(normaliseProject({pads:[{demoSound:'sub-bass'}]}).pads[0].demoSound,'sub-bass');
+  assert.equal(normaliseProject({pads:[{demoSound:'https://example.test/sample.wav'}]}).pads[0].demoSound,'');
+  assert.equal(normaliseProject({pads:[{}]}).pads[0].demoSound,'');
 });
 test('malformed project metadata is bounded and cannot inject extra pads', () => {
   const project = normaliseProject({layout: '100x100', bpm: 999, pads: [{pitch: -500, volume: 9, steps: [1,0]}]});
@@ -57,6 +78,12 @@ test('scene launch schedules on the next bar and scenes normalize safely',()=>{
   assert.deepEqual(p.scenes[0].pads[0].stepOffsets.slice(0,2),[.25,.9999]);
   assert.deepEqual(makeProject().scenes,[]);
   assert.equal(p.scenes[0].gridDivision,'1/16','legacy scenes should default to the full 16th-note grid');
+  assert.equal(p.scenes[0].pads[0].stepPlaybackMode,'full','legacy scenes should preserve full-sample one-shot playback');
+  const modeProject=normaliseProject({pads:[{stepPlaybackMode:'one-step'}],scenes:[{pads:[{stepPlaybackMode:'one-step'}]}]});
+  assert.equal(modeProject.pads[0].stepPlaybackMode,'one-step');
+  assert.equal(modeProject.scenes[0].pads[0].stepPlaybackMode,'one-step');
+  assert.equal(normaliseProject({pads:[{stepPlaybackMode:'loop'}],scenes:[{pads:[{stepPlaybackMode:'loop'}]}]}).pads[0].stepPlaybackMode,'loop');
+  assert.equal(normaliseProject({scenes:[{pads:[{stepPlaybackMode:'loop'}]}]}).scenes[0].pads[0].stepPlaybackMode,'loop');
   assert.equal(normaliseProject({gridDivision:'1/4',scenes:[{gridDivision:'1/8'}]}).gridDivision,'1/4');
   assert.equal(normaliseProject({gridDivision:'triplet'}).gridDivision,'1/16');
   assert.equal(normaliseProject({scenes:[{gridDivision:'1/8'}]}).scenes[0].gridDivision,'1/8');
@@ -65,6 +92,23 @@ test('scene launch schedules on the next bar and scenes normalize safely',()=>{
   assert.equal(directed.length,16);
   assert.deepEqual(directed[0],{mode:'grid',pads:[0,1]});
   assert.deepEqual(directed[1],{mode:'auto',pads:[2]});
+});
+
+test('loop-held gate spans contiguous cells and the 15-to-0 bar wrap',()=>{
+  const steps=Array(16).fill(false);steps[14]=steps[15]=steps[0]=steps[1]=true;
+  assert.equal(stepLoopGateDuration(steps,14,120),.5);
+  assert.equal(stepLoopGateDuration(steps,15,120),null,'a held run never restarts at step 15 after its step-14 start');
+  assert.equal(stepLoopGateDuration(steps,0,120),null,'the same run does not retrigger at step 0 after wrapping');
+  assert.equal(stepLoopGateDuration(steps,14,120,.5),.4375,'only the first-cell offset shortens the run');
+  assert.equal(stepLoopGateDuration(steps,2,120),null,'a gap ends the held gate');
+});
+
+test('loop-held all-on patterns start once and remain held across bar wrap',()=>{
+  const steps=Array(16).fill(true);
+  assert.equal(stepLoopGateDuration(steps,0,120),null,'later bar wraps do not restart the sustained gate');
+  assert.equal(stepLoopGateDuration(steps,1,120),null,'an all-on held pattern does not restart each step');
+  assert.equal(stepLoopGateDuration(steps,0,120,0,true),Infinity,'transport starts the all-on gate at step zero');
+  assert.equal(stepLoopGateDuration(steps,0,120,0,false),null);
 });
 test('pattern capture can snap or retain timing offsets within a step',()=>{
   assert.deepEqual(captureStepPosition(.1,120,'nearest'),{step:1,offset:0});
@@ -78,6 +122,9 @@ test('pattern capture can snap or retain timing offsets within a step',()=>{
   assert.deepEqual(captureStepPosition(.1,120,'off',4),{step:0,offset:.8},'free timing stays at sixteenth-note resolution');
   assert.equal(stepTriggerTime(5,120,.8),5.1);
   assert.equal(stepTriggerTime(5,120,2),5+.9999*.125);
+  assert.equal(stepGateDuration(120),.125);
+  assert.equal(stepGateDuration(120,.25),.09375);
+  assert.equal(stepGateDuration(240),.0625);
 });
 test('legacy pads receive safe per-step timing offsets',()=>{
   const pad=normaliseProject({pads:[{steps:[true],stepOffsets:[.25,4,-2,'bad']}] }).pads[0];

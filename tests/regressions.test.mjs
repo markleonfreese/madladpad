@@ -16,6 +16,9 @@ test('project packs import recorded audio MIME parameters safely', async () => {
   const blob = storage.dataUrlAsBlob('data:audio/webm;codecs=opus;base64,YQ==');
   assert.equal(blob.type, 'audio/webm');
   assert.equal(await blob.text(), 'a');
+  const video = storage.dataUrlAsBlob('data:video/mp4;codecs=avc1.42001f,mp4a.40.2;base64,Yg==');
+  assert.equal(video.type, 'video/mp4');
+  assert.equal(await video.text(), 'b');
   assert.throws(() => storage.dataUrlAsBlob('data:application/json;base64,e30='), /Invalid imported media data/);
 });
 

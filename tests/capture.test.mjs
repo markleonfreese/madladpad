@@ -46,6 +46,14 @@ test('capture analysis finds quiet sounds above a local noise floor', () => {
   assert.ok(noisyRegion.end>1.1&&noisyRegion.end<1.5);
 });
 
+test('capture analysis uses measured sample times when the audio meter timer jitters', () => {
+  const levels=[0,.5,1,1.5,3.5,4,4.5,5,5.2,8,8.5,9.5].map((time,index)=>({time,level:index===6||index===7?.1:.001}));
+  const region=core.suggestActiveRegion(levels,10);
+  assert.ok(region.start>4.3&&region.start<4.5,`trim should follow the measured onset, got ${region.start}`);
+  assert.ok(region.end>5.1&&region.end<5.3,`trim should follow the measured end, got ${region.end}`);
+  assert.equal(region.detected,true);
+});
+
 test('retake discards only the pending take; cancel invalidates late recording', () => {
   const capture = new core.CaptureSession();
   const token = capture.begin(8);

@@ -2,18 +2,25 @@
 
 Use this checklist to close the physical-device and human-review gates recorded in [GitHub Issue #2](https://github.com/markleonfreese/madladpad/issues/2). It supplements [`tests/BROWSER-SMOKE.md`](../tests/BROWSER-SMOKE.md), which is synthetic desktop Chromium evidence.
 
-## Current review target — 10 November 2026
+## Current review target — 13 November 2026
 
-- **Preview:** <https://preview-ux-acceptance-20261108-madladpad.markleonfreese.workers.dev/>
-- **Application source:** current `main` commit `a9557634e00ba5e262af1d2f9edf8bc2ac47cc03`. PR #84 is the review-only preview branch; its checked application source must match `main`, while its branch changes only these acceptance notes. Before testing, verify the current PR head, confirm both `Verify` and `Workers Builds` passed for that exact head, and open the preview linked from that Workers Builds check.
-- This is a non-production review preview. Read-only checks on 10 November returned HTTP 200 for production, but its service worker identifies `madladpad-shell-v4` while current `main` is `v14`. The earlier intermittent 503 was not reproduced or explained. Do not use production to accept current `main`.
+- **Non-production preview:** use the preview URL linked from PR #84's latest successful **Workers Builds** check, after its exact-head **Verify** and **Workers Builds** checks pass. Record both the preview URL and SHA before testing.
+- **Application source:** current `main` is `9ef9bef2bad222a424b814160da189359f7158ae` (PR #153). PR #84 remains a review-only branch for a hosted phone acceptance preview; it must not be merged.
+- **Production distinction:** Pages deployment `bd8f37c8-50ee-44d0-b73f-b82b7f3c07be` still serves app source `17b7290`, so it does not include #153's camera meter timestamp fix. Use the exact-head non-production preview to test that fix. No production publish is part of this preview refresh.
+- After testing, add results to [Issue #2](https://github.com/markleonfreese/madladpad/issues/2), keeping device, assistive-technology, and listening results separate from hosted browser evidence.
+
+## Current published app — 13 November 2026
+
+- **Test this URL:** <https://madladpad.pages.dev>. Cloudflare Pages deployment `bd8f37c8-50ee-44d0-b73f-b82b7f3c07be` is on production branch `main`, source `17b72901b63273a201397fe7874ddb6cb097d77e`. It is a static deployment with no Pages Functions.
+- **Verified after publish:** GitHub main Verify `43268075178` passed before deployment. The production root, `/styles.css`, `/app.js` and `/sw.js` return HTTP 200. Live CSS SHA-256 `8c7fc2a856c5465804bf01e4a28a2233e951ac671877fcfb3e82ea3236e0e8b0` matches the built file; the worker shell is v15. The Experimental menu popup was visually checked on the live app. This is hosted HTTP/browser/artifact verification, not device or human acceptance.
+- **Hosted evidence on this release:** app, service worker, Voice Lab, inference worker, ONNX WASM and MIDI/rap workflows were fetched or exercised successfully. Hosted Chromium at 390×844 verified local Whisper transcription and warm full-shell offline reload with actual inference, melody/MIDI export and ABAB rap/TXT export. The imported speech clip remained local; the model's out-of-clip final word was omitted with a recovery notice. Details are in [Issue #2](https://github.com/markleonfreese/madladpad/issues/2#issuecomment-6776507338). This remains synthetic desktop evidence, not physical-device, human listening or screen-reader acceptance.
+- The older **Workers production URL** <https://madladpad.markleonfreese.workers.dev/> is unchanged and serves an older bundle (`/voice.js` returns 404). Do not use it to accept current `main`; use the Pages URL above. A recent read-only check returned 200 for the legacy shell and `/app.js`, but that does not change its stale release state or establish a cause for the earlier 503 report.
 - First-use speech transcription downloads about 65 MB of model/runtime files from Hugging Face. Plan the first speech test on an appropriate connection; the selected audio remains local.
-- After testing, record the preview URL, application `main` SHA `a9557634e00ba5e262af1d2f9edf8bc2ac47cc03`, current PR #84 head SHA, and matching successful Workers Builds check in Issue #2. Keep device, screen-reader, and listening results separate from hosted browser evidence.
+- PR #84 is a review-only preview branch, explicitly not for merging, and currently conflicts with `main`. Do not use it as the primary test target. After testing, record the Pages URL and tested `main` SHA in Issue #2. Keep physical-device, screen-reader and listening results separate from hosted browser evidence.
 
 ## Before testing
 
-- Test the trusted HTTPS preview only after confirming PR #84's latest Workers Builds check passed for its current head. Record the URL, application `main` SHA and PR head SHA. The production `workers.dev` URL serves an older bundle and is not evidence for current `main`.
-- On phones, tap the center of each demo pad to play it and use the separate Edit row below a pad to open its source choices; check both actions at narrow portrait widths.
+- Test a trusted HTTPS preview that serves the exact `main` commit under review. Record both the URL and Git SHA. The current `workers.dev` URL is known to serve an older bundle; do not use it as evidence for current `main` until its release ID is verified.
 - Use current Android Chrome and iOS Safari on physical devices. Record device model, OS version, browser version, screen size, and whether the PWA is installed.
 - Test in a fresh browser profile for first-run/model download, then in the same profile for warm/offline use. Allow a separate pass with an existing project.
 - Use consenting testers and recordings. Do not commit or upload raw personal recordings, transcripts, or private project packs. Record only outcomes, timings, approximate file sizes, and sanitized error text.
@@ -22,8 +29,11 @@ Use this checklist to close the physical-device and human-review gates recorded 
 ## 1. Install, storage, and offline use
 
 - Install the PWA where supported, launch it, and confirm all five studio stages are reachable.
+- On Playground, confirm Edit pads is the only toolbar action and the global Demo sounds preference starts collapsed inside Settings. Toggle it on/off, reload, and verify the preference persists; confirm an individually assigned pad sound remains usable independently of this fallback setting.
+- Open Project and tap outside the menu; confirm it closes. Reopen Project, navigate to Sequence or Video & Export, and confirm the menu closes without covering the new screen's controls.
+- Expand Experimental on the current main release. Confirm Voice Lab and Overdub appear in a visible popup, are announced as named links, and remain tappable at phone and desktop widths.
 - Create a project, change its name and a pad, close/reload immediately, and confirm the edits survive.
-- Export a project pack, clear site data only after retaining the exported pack, import it, and confirm media, pad settings, patterns, transcript, melody, rap, and overdub metadata restore.
+- Export a project pack, clear site data only after retaining the exported pack, import it, and confirm media, pad settings, patterns, transcript, melody, rap, and overdub metadata restore. Include a captured video whose MIME type has a comma-separated codec list, and confirm its media restores too.
 - After the shell and speech model have loaded once, enable airplane mode, relaunch, reopen the project, and confirm cached workflows still work. Record which operations appropriately require network access, such as the first model download.
 
 ## 2. Sounds, region selection, and capture
@@ -31,6 +41,7 @@ Use this checklist to close the physical-device and human-review gates recorded 
 - Import a local video longer than 30 seconds and choose a region well after time zero. Preview it, adjust both boundaries by touch, apply it, play the pad, reload, and repeat after pack export/import.
 - Try **Find samples** on a supported clip. Select, preview, edit, and apply a suggestion; reject it and verify manual selection still works. Try a codec the browser cannot analyse and confirm the app explains the limitation without disabling manual trim.
 - On each device, grant camera and microphone permission, record a short take on an empty pad, review the proposed trim, adjust it, preview it, and keep it. Repeat on an occupied pad using **Save as new** and confirm the old pad remains unchanged. Cancel one take and deny permission on another; confirm no empty/old pad is replaced and camera/mic indicators stop after close/keep/cancel.
+- For the camera trim suggestion, include a short recording with leading silence, one clear speech or instrument event, and trailing silence. Confirm suggested bounds follow the event rather than the whole take, manually adjust/preview, and listen to the kept clip. Repeat with quiet input and room noise; #153 uses measured meter timestamps, but actual noisy-room trim quality still needs human review.
 - Rotate the device during preview and capture. Note layout, playback, and recording behavior. Test quiet speech/instrument input, room noise, and silence; compare suggested bounds by listening.
 - Set Speed and Pitch independently on a pitched sample. Confirm Speed changes clip duration while Pitch changes audible note without moving the video timeline. Record any unsupported-device explanation or audible artifacts.
 
@@ -38,6 +49,9 @@ Use this checklist to close the physical-device and human-review gates recorded 
 
 - Load three different samples. At 120 BPM, enable distinct steps in all three lanes and confirm simultaneous playback. Change between 1/4, 1/8, and 1/16 grids; confirm hidden finer steps are preserved.
 - Check each lane's volume, mute, solo, edit-to-Sounds action, and pattern capture/quantisation. Save two named scenes and launch one while playing; confirm it changes on the next bar and restores after reload.
+- Compare each pad's default **Play full sound** with optional **One sound per step** and **Loop across held steps**. One-step starts the trim at each active cell and gates at the next 16th boundary after its offset. Loop starts once for a contiguous run, joins steps 15→0, and loops short decoded audio until the run ends; an all-on pattern sustains across bars until Stop. Scene changes release at the bar boundary. Video/unsupported media and generated demos play one full sound and show a limitation. Verify project-pack reload and scene round-trip on the published SHA above.
+- Load a sample longer than one step. Compare **Play full sound** (the legacy default, allowed to ring) with **One sound per step** (retrigger each active cell and stop at the next 16th boundary). Repeat with a short clip, nonzero step offset, 1/4 and 1/8 grid, mute/solo, transport Stop, and saved-scene round-trip; confirm no late hit after Stop and that each lane's setting persists independently.
+- For **Loop across held steps**, test a short and long decoded audio file, a nonzero offset, 3-cell run and gap, steps 15→0 wrap, all 16 steps held, 1×/2× Speed, mute/solo, pattern edits, Stop, scene launch, reload, and portable pack import. Confirm it starts once per run, loops only a short selected trim, releases at a gap or scene boundary, and never restarts at step 0 during a wrapped run. Confirm video/unsupported media gives the one-shot limitation notice.
 - Record an audiovisual set with one active video pad, then two and three. Check the composition changes without frozen/stale frames, audio remains aligned, and fixed-grid/Video Director modes behave as selected.
 - Record and replay the audio-only mix and video take. Check the downloaded file's actual format matches its extension and that playback works in the device browser or a standard local player.
 
@@ -68,6 +82,7 @@ Preview URL / verified Git SHA:
 Network: cold online / warm online / offline
 
 Install/storage/offline: Pass / Fail / Blocked — evidence:
+Playground/settings/Project menu: Pass / Fail / Blocked — evidence:
 Import/region/suggestions: Pass / Fail / Blocked — evidence:
 Camera/mic permissions and direct capture: Pass / Fail / Blocked — evidence:
 Touch/rotation/codecs: Pass / Fail / Blocked — evidence:

@@ -10,6 +10,19 @@ export const MAX_MELODY_NOTES = 128;
 export const HARMONY_INTERVALS = [-12, -7, -5, -4, -3, 3, 4, 5, 7, 12];
 export const RAP_BAR_COUNT = 16;
 export const VIDEO_ASPECTS = { '4:3':[960,720], '16:9':[960,540], '9:16':[540,960], '1:1':[720,720] };
+export const DEMO_SOUNDS = Object.freeze([
+  Object.freeze({id:'kick',name:'Kick',category:'Drums'}),
+  Object.freeze({id:'snare',name:'Snare',category:'Drums'}),
+  Object.freeze({id:'hat',name:'Hi-hat',category:'Drums'}),
+  Object.freeze({id:'clap',name:'Clap',category:'Drums'}),
+  Object.freeze({id:'tom',name:'Tom',category:'Drums'}),
+  Object.freeze({id:'sub-bass',name:'Sub bass',category:'Bass'}),
+  Object.freeze({id:'pluck-bass',name:'Pluck bass',category:'Bass'}),
+  Object.freeze({id:'chord',name:'Chord',category:'Keys'}),
+  Object.freeze({id:'bell',name:'Bell',category:'Keys'}),
+  Object.freeze({id:'sweep',name:'Sweep',category:'FX'})
+]);
+const DEMO_SOUND_IDS = new Set(DEMO_SOUNDS.map(sound=>sound.id));
 
 export const makeVideoDirection = () => ({ aspect:'4:3', shots:Array.from({length:STEP_COUNT},()=>({mode:'auto',pads:[]})) });
 export function normaliseVideoDirection(value) {
@@ -108,6 +121,18 @@ export function normaliseRegion(start, end, duration, changed = 'start') {
   return {start:a,end:b};
 }
 
+export function boundTranscriptWordTimes(words, duration) {
+  const limit = Number(duration);
+  if (!Array.isArray(words) || !Number.isFinite(limit) || limit <= 0) return [];
+  return words.map(word => {
+    const start = Number(word?.start), end = Number(word?.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+    const boundedStart = clamp(start, 0, limit), boundedEnd = clamp(end, 0, limit);
+    if (!String(word?.text || '').trim() || boundedEnd <= boundedStart) return null;
+    return { ...word, start: boundedStart, end: boundedEnd };
+  }).filter(Boolean);
+}
+
 export class CaptureSession {
   constructor() { this.version=0; this.phase='idle'; this.target=null; this.take=null; }
   begin(target) {
@@ -145,9 +170,21 @@ export function isPadAudible(pads,id){
 }
 export const makePad = id => ({
   id, name: `Pad ${String(id + 1).padStart(2, '0')}`, fileName: '', kind: '',
+  demoSound:'',
   volume: 0.9, pitch: 0, speed: 1, start: 0, end: 2, muted:false, solo:false,
+  stepPlaybackMode:'full',
   steps: Array(STEP_COUNT).fill(false), stepOffsets: Array(STEP_COUNT).fill(0)
 });
+// Reuse the same raw clip with independent trims, without copying patterns,
+// mute/solo state or the identity of the source pad.
+export function copyPadSound(source, destination) {
+  if(!source?.fileName || !destination)throw new Error('Both source media and a destination pad are required');
+  return {...destination,
+    name:`${source.name} copy`.slice(0,45),fileName:source.fileName,kind:source.kind,
+    volume:source.volume,pitch:source.pitch,speed:source.speed,
+    start:source.start,end:source.end
+  };
+}
 export const makeProject = () => ({
   version: 1, title: 'Untitled mixtape', layout: '3x4', bpm: 120, demoEnabled: false,
   quantize: 'off', gridDivision:'1/16', pads: Array.from({ length: 16 }, (_, i) => makePad(i)), scenes: [], voice: makeVoiceData(), video:makeVideoDirection()
@@ -161,9 +198,11 @@ export function normaliseProject(value) {
       name: String(source.name || pad.name).slice(0, 45),
       fileName: String(source.fileName || '').slice(0, 200),
       kind: ['audio','video','image'].includes(source.kind) ? source.kind : '',
+      demoSound: DEMO_SOUND_IDS.has(source.demoSound) ? source.demoSound : '',
       volume: clamp(source.volume ?? pad.volume, 0, 1.5),
       pitch: clamp(source.pitch ?? 0, -12, 12),
       speed: clamp(source.speed ?? 1, 0.5, 2),
+      stepPlaybackMode: ['one-step','loop'].includes(source.stepPlaybackMode) ? source.stepPlaybackMode : 'full',
       start: clamp(source.start ?? 0, 0, 3599.99),
       end: clamp(source.end ?? 2, 0.01, 3600),
       muted: Boolean(source.muted), solo: Boolean(source.solo),
@@ -176,7 +215,8 @@ export function normaliseProject(value) {
     gridDivision:['1/4','1/8','1/16'].includes(scene?.gridDivision)?scene.gridDivision:'1/16',
     pads:Array.from({length:16},(_,j)=>({
       steps:Array.from({length:STEP_COUNT},(_,k)=>Boolean(scene?.pads?.[j]?.steps?.[k])),
-      stepOffsets:Array.from({length:STEP_COUNT},(_,k)=>clamp(scene?.pads?.[j]?.stepOffsets?.[k]??0,0,.9999))
+      stepOffsets:Array.from({length:STEP_COUNT},(_,k)=>clamp(scene?.pads?.[j]?.stepOffsets?.[k]??0,0,.9999)),
+      stepPlaybackMode:['one-step','loop'].includes(scene?.pads?.[j]?.stepPlaybackMode)?scene.pads[j].stepPlaybackMode:'full'
     })),
     videoShots:Array.isArray(scene?.videoShots)?normaliseVideoDirection({shots:scene.videoShots}).shots:null
   })):[];
@@ -255,6 +295,18 @@ export function captureStepPosition(seconds,bpm,quantize='nearest',stride=1){
 export function stepTriggerTime(stepTime,bpm,offset=0){
   return stepTime+clamp(offset,0,.9999)*(60/clamp(bpm,40,240)/4);
 }
+export function stepGateDuration(bpm,offset=0){
+  return (60/clamp(bpm,40,240)/4)*(1-clamp(offset,0,.9999));
+}
+export function stepLoopGateDuration(steps,step,bpm,offset=0,initialStep=false){
+  if(!Array.isArray(steps)||steps.length!==STEP_COUNT||!steps[step])return null;
+  const stepDuration=60/clamp(bpm,40,240)/4;
+  if(steps.every(Boolean))return initialStep?Infinity:null;
+  if(!initialStep&&steps[(step+STEP_COUNT-1)%STEP_COUNT])return null;
+  let count=0;
+  while(count<STEP_COUNT&&steps[(step+count)%STEP_COUNT])count++;
+  return Math.max(0,count-clamp(offset,0,.9999))*stepDuration;
+}
 export function nextBarTime(now,epoch,bpm){
   const bar=60/clamp(bpm,40,240)*4;
   return epoch+Math.max(1,Math.ceil((now-epoch)/bar-1e-9))*bar;
@@ -271,13 +323,22 @@ export const supportedMediaFile = file => file && /^(video|audio|image)\//.test(
 
 export function suggestActiveRegion(levels, duration) {
   if (!Array.isArray(levels) || !levels.length || !Number.isFinite(duration) || duration <= 0) return {start:0,end:Math.max(.05,duration||.05),detected:false};
-  const sorted=[...levels].sort((a,b)=>a-b);
+  const timestamped=levels.every(sample=>sample&&typeof sample==='object'&&Number.isFinite(sample.time)&&Number.isFinite(sample.level));
+  const samples=timestamped?[...levels].map(sample=>({time:clamp(sample.time,0,duration),level:Math.max(0,sample.level)})).sort((a,b)=>a.time-b.time):null;
+  const values=timestamped?samples.map(sample=>sample.level):levels.map(level=>Number.isFinite(level)?Math.max(0,level):0);
+  const sorted=[...values].sort((a,b)=>a-b);
   const floor=sorted[Math.floor((sorted.length-1)*.2)]||0;
   // Adapt to the quietest part of the take so low-gain speech can clear the
   // detector while sustained room noise still has to rise well above its floor.
   const gate=Math.max(.006,floor*2.5);
-  const active=levels.map((level,index)=>level>=gate?index:-1).filter(index=>index>=0);
+  const active=values.map((level,index)=>level>=gate?index:-1).filter(index=>index>=0);
   if(!active.length)return {start:0,end:duration,detected:false};
+  if(timestamped){
+    const intervals=samples.slice(1).map((sample,index)=>sample.time-samples[index].time).filter(interval=>interval>0);
+    const sortedIntervals=intervals.sort((a,b)=>a-b);
+    const sampleWindow=Math.min(.1,sortedIntervals[Math.floor(sortedIntervals.length/2)]||.05)/2;
+    return {start:Math.max(0,samples[active[0]].time-sampleWindow-.08),end:Math.min(duration,samples[active.at(-1)].time+sampleWindow+.12),detected:true};
+  }
   const frame=duration/levels.length;
   return {start:Math.max(0,active[0]*frame-.08),end:Math.min(duration,(active.at(-1)+1)*frame+.12),detected:true};
 }

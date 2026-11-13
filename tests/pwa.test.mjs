@@ -36,7 +36,7 @@ test('offline shell and all locally referenced ES modules exist', () => {
 test('service worker activation removes stale app shells without deleting the Whisper model cache', async () => {
   const sw = readFileSync(join(site, 'sw.js'), 'utf8');
   const handlers = new Map();
-  const cacheNames = ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13', 'madladpad-shell-v14', 'transformers-cache', 'another-app-cache'];
+  const cacheNames = ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13', 'madladpad-shell-v14', 'madladpad-shell-v15', 'transformers-cache', 'another-app-cache'];
   const deleted = [];
   const context = {
     self: {
@@ -55,7 +55,7 @@ test('service worker activation removes stale app shells without deleting the Wh
   let activation;
   handlers.get('activate')({ waitUntil: promise => { activation = promise; } });
   await activation;
-  assert.deepEqual(deleted, ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13']);
+  assert.deepEqual(deleted, ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13', 'madladpad-shell-v14']);
 });
 
 

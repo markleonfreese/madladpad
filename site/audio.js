@@ -16,6 +16,9 @@ export class SamplerAudio {
     this.limiter.connect(this.context.destination);
     this.limiter.connect(this.recordOut);
     this.sources = new Map();
+    this.momentaryPlayback = new Map();
+    this.demoPlayback = new Map();
+    this.visualTimers = new Map();
     this.vocalSources = new Map();
     this.vocalPlayback = new Map();
     this.transportEpoch = this.context.currentTime;
@@ -100,6 +103,7 @@ export class SamplerAudio {
   async unlock() { if (this.context.state !== 'running') await this.context.resume(); }
   setTransport(bpm, quantize) { this.bpm = bpm; this.quantize = quantize; }
   setEpoch(epoch) { this.transportEpoch = epoch; }
+  supportsSampleLoop(id) { return Boolean(this.sources.get(id)?.file && this.sources.get(id)?.buffer); }
 
   async load(id, file, mediaElement) {
     const previous = this.sources.get(id);
@@ -141,7 +145,7 @@ export class SamplerAudio {
   unload(id) {
     const source = this.sources.get(id);
     if (!source) return;
-    source.stopPlayback?.();
+    this.stopPadVoices(id);
     source.element?.pause();
     URL.revokeObjectURL(source.url);
     // Preserve media element routing to avoid a second createMediaElementSource on the same DOM node.
@@ -227,22 +231,91 @@ export class SamplerAudio {
     for (const id of [...this.vocalPlayback.keys()]) this.stopVocalLayer(id);
   }
 
-  trigger(id, pad, onVisual, scheduledAt) {
+  stopPadMomentary(id) {
+    const playback=this.momentaryPlayback.get(id);
+    if(!playback)return;
+    this.momentaryPlayback.delete(id);
+    playback.cancelled=true;
+    try { playback.stop?.(); } catch { /* It may already have reached its trim end. */ }
+  }
+
+  stopPadVoices(id,atTime=this.context.currentTime) {
+    const source=this.sources?.get(id);
+    const now=this.context.currentTime,stopAt=Number.isFinite(atTime)?atTime:now;
+    if(source?.pendingStartTimer!==undefined&&(stopAt<=now||!Number.isFinite(source.pendingStartAt)||source.pendingStartAt>=stopAt)){
+      clearTimeout(source.pendingStartTimer);source.pendingStartTimer=null;source.pendingStartAt=null;
+    }
+    const visuals=this.visualTimers?.get(id);
+    for(const entry of visuals||[])if(stopAt<=now||!Number.isFinite(entry.atTime)||entry.atTime>=stopAt){clearTimeout(entry.timer);visuals.delete(entry);}
+    if(visuals&&!visuals.size)this.visualTimers.delete(id);
+    if(source?.playbackStops?.size){for(const stop of source.playbackStops)stop(atTime);}
+    else source?.stopPlayback?.(atTime);
+    for(const voice of this.demoPlayback?.get(id)||[])voice.stop?.(atTime);
+  }
+
+  stopAllPadVoices() {
+    for(const id of new Set([...(this.sources?.keys()||[]),...(this.demoPlayback?.keys()||[]),...(this.visualTimers?.keys()||[])]))this.stopPadVoices(id);
+  }
+
+  scheduleVisual(id,onVisual,delay,duration=null,scheduledAt=this.context.currentTime,looping=false) {
+    this.visualTimers??=new Map();
+    const timers=this.visualTimers.get(id)||new Set();
+    const entry={timer:null,atTime:scheduledAt};
+    entry.timer=setTimeout(()=>{timers.delete(entry);if(!timers.size)this.visualTimers.delete(id);onVisual?.(id,duration,looping);},delay);
+    timers.add(entry);this.visualTimers.set(id,timers);
+  }
+
+  trackDemoVoice(id,nodes,gain,when) {
+    if(!nodes.length)return;
+    this.demoPlayback??=new Map();this.sources??=new Map();
+    this.stopPadVoices(id,when);
+    const voices=this.demoPlayback.get(id)||new Set(),voice={};
+    let remaining=nodes.length,finished=false;
+    const cleanup=()=>{if(--remaining>0)return;finished=true;voices.delete(voice);if(!voices.size)this.demoPlayback.delete(id);};
+    voice.when=when;
+    voice.stop=(atTime=this.context.currentTime)=>{
+      if(finished)return;
+      const now=this.context.currentTime;
+      if(when>now&&when>=atTime){for(const node of nodes){try{node.stop(now);}catch{}}finished=true;voices.delete(voice);if(!voices.size)this.demoPlayback.delete(id);}
+      else {
+        const parameter=gain.gain;
+        try{parameter.cancelScheduledValues(atTime);parameter.setValueAtTime(Math.max(.0001,parameter.value||0),atTime);parameter.linearRampToValueAtTime(.0001,atTime+.006);}catch{parameter.value=.0001;}
+        for(const node of nodes){try{node.stop(atTime+.008);}catch{}}
+      }
+    };
+    voices.add(voice);this.demoPlayback.set(id,voices);
+    nodes.forEach(node=>{node.onended=cleanup;});
+  }
+
+  trigger(id, pad, onVisual, scheduledAt, {momentary=false,maxDuration=null,loop=false}={}) {
     const source = this.sources.get(id);
     const now = this.context.currentTime;
     const when = scheduledAt ?? nextQuantizedTime(now, this.transportEpoch, this.bpm, this.quantize);
     const delay = Math.max(0, (when - now) * 1000);
-    if (!source?.file && !this.demoEnabled) return false;
-    if (!source?.file && this.demoEnabled) {
-      this.playDemo(id, when, pad.volume);
-      setTimeout(() => onVisual?.(id), delay);
+    const gesture=momentary?{cancelled:false,stop:null}:null;
+    if(gesture)this.momentaryPlayback.set(id,gesture);
+    if (!source?.file && !this.demoEnabled && !pad.demoSound) {
+      if(gesture)this.momentaryPlayback.delete(id);
+      return false;
+    }
+    if(Number.isFinite(maxDuration)&&maxDuration<.006){if(gesture)this.momentaryPlayback.delete(id);return true;}
+    if (!source?.file && (pad.demoSound || this.demoEnabled)) {
+      if(gesture)this.momentaryPlayback.delete(id);
+      const demoDuration=pad.demoSound?this.playDemoSound(pad.demoSound,when,pad.volume,loop?null:maxDuration,id):this.playDemo(id,when,pad.volume,loop?null:maxDuration);
+      this.scheduleVisual(id,onVisual,delay,Number.isFinite(demoDuration)?demoDuration:maxDuration,when,false);
       return true;
     }
     const start = Math.max(0, pad.start);
     const end = Math.max(start + 0.02, pad.end);
     const rate = clamp(pad.speed ?? 1, .5, 2);
+    let visualDuration=Number.isFinite(maxDuration)&&maxDuration>0?maxDuration:null;
     this.setPadPitch(id,pad.pitch??0,rate,when);
+    for(const voice of this.demoPlayback?.get(id)||[])voice.stop?.(when);
     if (source.buffer) {
+      // Keep each pad monophonic while allowing separate pads to overlap. A
+      // single pad hit should restart its previous voice instead of stacking
+      // attacks, which is especially noticeable on rapid phone taps.
+      source.stopPlayback?.(when);
       const audio = this.context.createBufferSource();
       audio.buffer = source.buffer;
       audio.playbackRate.setValueAtTime(rate, when);
@@ -251,21 +324,68 @@ export class SamplerAudio {
       if(needsPitch&&!pitchNode){source.pitchAvailable=false;if(typeof window!=='undefined')window.dispatchEvent(new CustomEvent('madladpad-error',{detail:'Independent pitch processing could not start for this sample. Speed remains available.'}));}
       if(pitchNode)pitchNode.parameters.get('semitones').setValueAtTime(pitchSemitones,when);
       const latency=pitchNode?.parameters?Math.round(this.context.sampleRate*.04)/this.context.sampleRate:0;
-      const attack = Math.min(0.008, Math.max(.002, (end-start)/10));
       const offset = Math.min(start, Math.max(0, source.buffer.duration-.02));
-      const duration = Math.max(.01, Math.min(end-start, source.buffer.duration-offset));
+      const fullDuration = Math.max(.01, Math.min(end-start, source.buffer.duration-offset));
+      const sampleDuration=fullDuration/rate;
+      const loops=Boolean(loop&&(maxDuration===null||Number.isFinite(maxDuration)&&sampleDuration<maxDuration));
+      audio.loop=loops;
+      if(loops){audio.loopStart=offset;audio.loopEnd=offset+fullDuration;}
+      const indefinite=loops&&maxDuration===null;
+      const audibleDuration=indefinite?Infinity:loops?maxDuration:Math.min(sampleDuration,Number.isFinite(maxDuration)&&maxDuration>0?maxDuration:Infinity);
+      if(audibleDuration<.006){if(gesture)this.momentaryPlayback.delete(id);return true;}
+      visualDuration=loop?(Number.isFinite(maxDuration)?maxDuration:Infinity):audibleDuration;
+      const duration = indefinite?null:audibleDuration*rate;
+      const attack = Math.min(0.008,Number.isFinite(audibleDuration)?audibleDuration/10:.008);
       const audibleStart=when+latency;
       gain.gain.setValueAtTime(0,audibleStart);
       gain.gain.linearRampToValueAtTime(clamp(pad.volume,0,1.5),audibleStart+attack);
-      gain.gain.setValueAtTime(clamp(pad.volume,0,1.5),audibleStart+Math.max(attack,duration/rate-.006));
-      gain.gain.linearRampToValueAtTime(0,audibleStart+duration/rate);
+      if(!indefinite){gain.gain.setValueAtTime(clamp(pad.volume,0,1.5),audibleStart+Math.max(attack,duration/rate-.006));gain.gain.linearRampToValueAtTime(0,audibleStart+duration/rate);}
       if(pitchNode){audio.connect(pitchNode);pitchNode.connect(gain);}else audio.connect(gain);
-      gain.connect(this.master);audio.onended=()=>{audio.disconnect();pitchNode?.disconnect();gain.disconnect();};
+      gain.connect(this.master);
+      let finished=false,scheduledStopAt=null;
+      const stopPlayback=(atTime=this.context.currentTime)=>{
+        if(finished)return;
+        const now=this.context.currentTime;
+        const stopAt=Math.max(now,atTime);
+        if(when>now&&when>=stopAt){
+          finished=true;
+          source.playbackStops?.delete(stopPlayback);
+          if(source.stopPlayback===stopPlayback)source.stopPlayback=null;
+          try{audio.stop(now);}catch{}
+        }else{
+          if(scheduledStopAt!==null&&stopAt>=scheduledStopAt)return;
+          scheduledStopAt=stopAt;
+          const parameter=gain.gain;
+          if(typeof parameter.cancelScheduledValues==='function'&&typeof parameter.setValueAtTime==='function'&&typeof parameter.linearRampToValueAtTime==='function'){
+            parameter.cancelScheduledValues(stopAt);
+            parameter.setValueAtTime(clamp(parameter.value,0,1.5),stopAt);
+            parameter.linearRampToValueAtTime(0,stopAt+.006);
+          }else parameter.value=0;
+          try{audio.stop(stopAt+.008);}catch{}
+        }
+      };
+      source.stopPlayback=stopPlayback;
+      source.playbackStops??=new Set();source.playbackStops.add(stopPlayback);
+      audio.onended=()=>{
+        finished=true;
+        source.playbackStops?.delete(stopPlayback);
+        if(source.stopPlayback===stopPlayback)source.stopPlayback=null;
+        if(gesture && this.momentaryPlayback.get(id)===gesture)this.momentaryPlayback.delete(id);
+        audio.disconnect();pitchNode?.disconnect();gain.disconnect();
+      };
+      if(gesture)gesture.stop=()=>stopPlayback();
       // Let the processor drain its look-ahead ring after the selected clip
       // ends. The gain envelope still ends at the requested trim boundary.
-      audio.start(when, offset, duration + (pitchNode ? latency * rate : 0));
+      if(indefinite)audio.start(when,offset);
+      else audio.start(when, offset, duration + (pitchNode ? latency * rate : 0));
     } else if (source.element && pad.kind !== 'image') {
-      setTimeout(() => {
+      const playbackEnd=Number.isFinite(maxDuration)&&maxDuration>0?Math.min(end,start+maxDuration*rate):end;
+      visualDuration=Math.max(0,(playbackEnd-start)/rate);
+      if(source.pendingStartTimer!==undefined){clearTimeout(source.pendingStartTimer);source.pendingStartTimer=null;}
+      source.pendingStartAt=when;
+      source.pendingStartTimer=setTimeout(() => {
+        source.pendingStartTimer=null;source.pendingStartAt=null;
+        if(gesture?.cancelled)return;
         if (this.sources.get(id)?.file !== source.file) return;
         const element = source.element;
         source.stopPlayback?.();
@@ -278,13 +398,15 @@ export class SamplerAudio {
         element.muted = false;
         this.setMediaOutputGain(source,pad.volume);
         const thisFile = source.file;
-        let finished=false,stopTimer=null;
+        let finished=false,stopTimer=null,releaseTimer=null;
         const cleanup=pause=>{
           if(finished)return;
           finished=true;
+          if(gesture && this.momentaryPlayback.get(id)===gesture)this.momentaryPlayback.delete(id);
           element.removeEventListener('timeupdate',stopAtBoundary);
           element.removeEventListener('ended',stopAtBoundary);
           if(stopTimer!==null)clearTimeout(stopTimer);
+          if(releaseTimer!==null)clearTimeout(releaseTimer);
           if(source.stopPlayback===stopPlayback){
             source.stopPlayback=null;
             if(pause){
@@ -293,13 +415,17 @@ export class SamplerAudio {
             }
           }
         };
-        const stopPlayback=()=>cleanup(true);
+        const stopPlayback=(atTime=this.context.currentTime)=>{
+          const remaining=Math.max(0,(atTime-this.context.currentTime)*1000);
+          if(remaining>0){if(releaseTimer!==null)clearTimeout(releaseTimer);releaseTimer=setTimeout(()=>{releaseTimer=null;cleanup(true);},remaining);}
+          else cleanup(true);
+        };
         const stopAtBoundary=()=>{
-          if(element.ended||element.currentTime>=end-.015)stopPlayback();
+          if(element.ended||element.currentTime>=playbackEnd-.015)stopPlayback();
         };
         const scheduleBoundaryCheck=()=>{
           if(finished)return;
-          const remaining=Math.max(0,end-element.currentTime);
+          const remaining=Math.max(0,playbackEnd-element.currentTime);
           if(remaining<=.015){stopPlayback();return;}
           // `timeupdate` can be throttled for short trims. Recheck near the
           // expected media-time boundary, then keep polling from media time
@@ -311,6 +437,7 @@ export class SamplerAudio {
           },Math.max(10,Math.min(100,remaining/rate*1000)));
         };
         source.stopPlayback=stopPlayback;
+        if(gesture)gesture.stop=stopPlayback;
         element.addEventListener('timeupdate',stopAtBoundary);
         element.addEventListener('ended',stopAtBoundary);
         try{
@@ -322,16 +449,18 @@ export class SamplerAudio {
         }catch{cleanup(true);}
       }, delay);
     }
-    setTimeout(() => onVisual?.(id), delay);
+    this.scheduleVisual(id,onVisual,delay,visualDuration,when,Boolean(loop&&source.buffer));
     return true;
   }
 
-  playDemo(id, when, volume) {
+  playDemo(id, when, volume, maxDuration=null) {
     const ctx = this.context;
-    const length = .14 + (id % 4) * .055;
+    const length = Math.min(.14 + (id % 4) * .055,Number.isFinite(maxDuration)&&maxDuration>0?maxDuration:Infinity);
+    if(length<.006)return true;
     const gain = ctx.createGain();
+    const nodes=[];
     gain.gain.setValueAtTime(.0001, when);
-    gain.gain.exponentialRampToValueAtTime(Math.max(.001, volume * .35), when + .008);
+    gain.gain.exponentialRampToValueAtTime(Math.max(.001, volume * .35), when + Math.min(.008,length/10));
     gain.gain.exponentialRampToValueAtTime(.0001, when + length);
     gain.connect(this.master);
     if (id % 3 === 2) {
@@ -343,17 +472,67 @@ export class SamplerAudio {
       node.buffer = noise;
       const filter = ctx.createBiquadFilter();
       filter.type = 'highpass'; filter.frequency.value = 2400 + id * 130;
-      node.connect(filter).connect(gain); node.start(when); node.stop(when+length);
+      node.connect(filter).connect(gain); node.start(when); node.stop(when+length);nodes.push(node);
     } else {
       const oscillator = ctx.createOscillator();
       oscillator.type = id % 3 === 0 ? 'sine':'triangle';
       oscillator.frequency.setValueAtTime(80 + id * 48, when);
       oscillator.frequency.exponentialRampToValueAtTime(42 + id*14, when+length);
-      oscillator.connect(gain); oscillator.start(when); oscillator.stop(when+length);
+      oscillator.connect(gain); oscillator.start(when); oscillator.stop(when+length);nodes.push(oscillator);
     }
+    this.trackDemoVoice(id,nodes,gain,when);
+    return length;
+  }
+
+  // Small, rights-safe instruments generated entirely in the local Web Audio
+  // graph. Per-pad choices stay available when the global demo toggle is off.
+  playDemoSound(sound, when, volume, maxDuration=null,id=-1) {
+    const ctx=this.context;
+    const specs={
+      kick:{kind:'sweep',wave:'sine',from:150,to:42,length:.16,level:.65},
+      snare:{kind:'noise',filter:'bandpass',cutoff:1900,length:.17,level:.42,tone:185},
+      hat:{kind:'noise',filter:'highpass',cutoff:6200,length:.065,level:.28},
+      clap:{kind:'noise',filter:'bandpass',cutoff:1250,length:.2,level:.38,bursts:true},
+      tom:{kind:'sweep',wave:'triangle',from:210,to:82,length:.22,level:.5},
+      'sub-bass':{kind:'sweep',wave:'sine',from:58,to:48,length:.42,level:.55},
+      'pluck-bass':{kind:'tone',wave:'sawtooth',frequency:110,length:.24,level:.3,filter:1100},
+      chord:{kind:'chord',frequencies:[261.63,329.63,392],length:.48,level:.22},
+      bell:{kind:'tone',wave:'sine',frequency:880,length:.48,level:.28},
+      sweep:{kind:'sweep',wave:'sawtooth',from:180,to:1100,length:.42,level:.2,filter:2600}
+    }[sound];
+    if(!specs)return false;
+    const length=Math.min(specs.length,Number.isFinite(maxDuration)&&maxDuration>0?maxDuration:Infinity),peak=Math.max(.0001,Math.min(1.5,Number(volume)||0)*specs.level);
+    if(length<.006)return true;
+    const gain=ctx.createGain();gain.gain.setValueAtTime(.0001,when);
+    const nodes=[];
+    gain.gain.exponentialRampToValueAtTime(peak,when+Math.min(specs.bursts?.004:.008,length/10));
+    gain.gain.exponentialRampToValueAtTime(.0001,when+length);gain.connect(this.master);
+    const connect=node=>{
+      if(specs.filter){const filter=ctx.createBiquadFilter();filter.type=specs.kind==='noise'?specs.filter:'lowpass';filter.frequency.value=specs.cutoff||specs.filter;node.connect(filter).connect(gain);}
+      else node.connect(gain);
+    };
+    if(specs.kind==='noise'){
+      const frames=Math.max(1,Math.ceil(ctx.sampleRate*length)),buffer=ctx.createBuffer(1,frames,ctx.sampleRate),channel=buffer.getChannelData(0);
+      for(let i=0;i<frames;i++)channel[i]=Math.random()*2-1;
+      const noise=ctx.createBufferSource();noise.buffer=buffer;connect(noise);noise.start(when);noise.stop(when+length);nodes.push(noise);
+      if(specs.tone&&length>.006){const toneLength=Math.min(.11,length);const tone=ctx.createOscillator();tone.type='triangle';tone.frequency.setValueAtTime(specs.tone,when);tone.frequency.exponentialRampToValueAtTime(65,when+Math.min(.1,toneLength));tone.connect(gain);tone.start(when);tone.stop(when+toneLength);nodes.push(tone);}
+      if(specs.bursts)for(const offset of [.035,.075,.115])if(offset<length){gain.gain.setValueAtTime(peak*.75,when+offset);gain.gain.exponentialRampToValueAtTime(.0001,when+Math.min(length,offset+.035));}
+    }else{
+      const notes=specs.kind==='chord'?specs.frequencies:[specs.frequency||specs.from];
+      for(const frequency of notes){
+        const oscillator=ctx.createOscillator();oscillator.type=specs.wave||'triangle';
+        oscillator.frequency.setValueAtTime(frequency,when);
+        if(specs.kind==='sweep')oscillator.frequency.exponentialRampToValueAtTime(specs.to,when+length);
+        connect(oscillator);oscillator.start(when);oscillator.stop(when+length);nodes.push(oscillator);
+      }
+    }
+    this.trackDemoVoice(id,nodes,gain,when);
+    return length;
   }
 
   destroy() {
+    for(const id of [...this.momentaryPlayback.keys()])this.stopPadMomentary(id);
+    this.stopAllPadVoices();
     for (const [id] of this.sources) this.unload(id);
     this.stopVocalLayers();
     return this.context.close();
