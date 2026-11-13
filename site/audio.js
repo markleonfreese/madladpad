@@ -107,7 +107,8 @@ export class SamplerAudio {
 
   async load(id, file, mediaElement) {
     const previous = this.sources.get(id);
-    previous?.stopPlayback?.();
+    // A replacement invalidates every queued fallback hit as well as the active voice.
+    if(previous)this.stopPadVoices(id);
     previous?.element?.pause();
     if (previous?.url) URL.revokeObjectURL(previous.url);
     // Prefer AudioBuffer playback for decodable audio to retain low-latency,
@@ -242,8 +243,11 @@ export class SamplerAudio {
   stopPadVoices(id,atTime=this.context.currentTime) {
     const source=this.sources?.get(id);
     const now=this.context.currentTime,stopAt=Number.isFinite(atTime)?atTime:now;
-    if(source?.pendingStartTimer!==undefined&&(stopAt<=now||!Number.isFinite(source.pendingStartAt)||source.pendingStartAt>=stopAt)){
-      clearTimeout(source.pendingStartTimer);source.pendingStartTimer=null;source.pendingStartAt=null;
+    for(const pending of source?.pendingStarts||[]){
+      if(stopAt<=now||!Number.isFinite(pending.when)||pending.when>=stopAt){
+        clearTimeout(pending.timer);source.pendingStarts.delete(pending);
+        if(pending.gesture)pending.gesture.cancelled=true;
+      }else pending.stopAt=pending.stopAt===null?stopAt:Math.min(pending.stopAt,stopAt);
     }
     const visuals=this.visualTimers?.get(id);
     for(const entry of visuals||[])if(stopAt<=now||!Number.isFinite(entry.atTime)||entry.atTime>=stopAt){clearTimeout(entry.timer);visuals.delete(entry);}
@@ -381,12 +385,14 @@ export class SamplerAudio {
     } else if (source.element && pad.kind !== 'image') {
       const playbackEnd=Number.isFinite(maxDuration)&&maxDuration>0?Math.min(end,start+maxDuration*rate):end;
       visualDuration=Math.max(0,(playbackEnd-start)/rate);
-      if(source.pendingStartTimer!==undefined){clearTimeout(source.pendingStartTimer);source.pendingStartTimer=null;}
-      source.pendingStartAt=when;
-      source.pendingStartTimer=setTimeout(() => {
-        source.pendingStartTimer=null;source.pendingStartAt=null;
+      // Keep each lookahead hit until its own start time; a single pending slot drops rapid repeated steps.
+      source.pendingStarts??=new Set();
+      const pending={when,file:source.file,gesture,stopAt:null,timer:null};
+      pending.timer=setTimeout(() => {
+        source.pendingStarts.delete(pending);
         if(gesture?.cancelled)return;
-        if (this.sources.get(id)?.file !== source.file) return;
+        if (this.sources.get(id)?.file !== pending.file) return;
+        if(pending.stopAt!==null&&pending.stopAt<=this.context.currentTime)return;
         const element = source.element;
         source.stopPlayback?.();
         element.pause();
@@ -447,7 +453,9 @@ export class SamplerAudio {
             if(source.stopPlayback===stopPlayback)scheduleBoundaryCheck();
           },()=>cleanup(true));
         }catch{cleanup(true);}
+        if(pending.stopAt!==null)stopPlayback(pending.stopAt);
       }, delay);
+      source.pendingStarts.add(pending);
     }
     this.scheduleVisual(id,onVisual,delay,visualDuration,when,Boolean(loop&&source.buffer));
     return true;
