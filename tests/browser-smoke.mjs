@@ -1452,6 +1452,8 @@ try {
     assert.notEqual(captureTarget,0,'occupied pad media should remain protected until Keep');
     await page.locator('#capture-target-new').click();
     await page.locator('#camera-dialog').waitFor({state:'visible'});
+    assert.equal(await page.locator('#camera-timing-options').evaluate(details=>details.open),false,'timed capture choices should be collapsed in the default camera flow');
+    await page.locator('#camera-timing-options > summary').click();
     assert.equal(await page.locator('#camera-take-length').inputValue(),'manual','manual one-shot capture should remain the default');
     assert.deepEqual(await page.locator('#camera-take-length option').evaluateAll(options=>options.map(option=>option.value)),['manual','1','2','4'],'camera should offer manual, 1-bar, 2-bar and 4-bar targets');
     await page.waitForFunction(()=>!document.querySelector('#camera-capture').disabled,null,{timeout:6000});
@@ -1575,9 +1577,9 @@ try {
     await page.locator('#pad-source-dialog').waitFor({state:'visible'});
     await page.locator('#pad-record').click();
     await page.locator('#camera-dialog').waitFor({state:'visible'});
-    await page.waitForFunction(()=>!document.querySelector('#camera-capture').disabled);
-    await page.locator('#camera-capture').click();
-    await page.waitForFunction(()=>document.querySelector('#camera-capture').textContent.includes('STOP RECORDING'));
+    await page.waitForFunction(()=>document.querySelector('#camera-capture').textContent.includes('STOP RECORDING'),null,{timeout:7000});
+    assert.equal(await page.locator('#camera-take-length').inputValue(),'manual','Record on Pad must start an untimed take by default');
+    assert.equal(await page.locator('#camera-timing-options').evaluate(details=>details.open),false,'one-tap pad capture must not expose duration choices');
     await page.locator('#camera-close').click();
     await page.waitForFunction(()=>!document.querySelector('#camera-dialog').open);
     const canceledCaptureTrackStates=await page.evaluate(()=>window.__cameraCaptureStreams[0]?.getTracks().map(({kind,readyState})=>({kind,readyState})));
