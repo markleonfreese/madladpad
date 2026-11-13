@@ -1547,9 +1547,10 @@ try {
   },null,{timeout:8000});
   await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
   checkpoint('service worker ready');
-  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v19')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
-  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v19')).match('/audio.js')).text()),/pendingStarts/,'the current fallback retrigger fix should be cached before offline use');
-  const cachedFonts=await page.evaluate(async()=>Promise.all(['/fonts/dm-sans-variable-latin.woff2','/fonts/dm-sans-variable-latin-ext.woff2','/fonts/dm-mono-400-latin.woff2','/fonts/dm-mono-400-latin-ext.woff2','/fonts/dm-mono-500-latin.woff2','/fonts/dm-mono-500-latin-ext.woff2'].map(async path=>Boolean(await (await caches.open('madladpad-shell-v19')).match(path)))));
+  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v20')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
+  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v20')).match('/audio.js')).text()),/pendingStarts/,'the current fallback retrigger fix should be cached before offline use');
+  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v20')).match('/voice.js')).text()),/Use rhyme idea/,'the current Rap Lab writing aid should be cached before offline use');
+  const cachedFonts=await page.evaluate(async()=>Promise.all(['/fonts/dm-sans-variable-latin.woff2','/fonts/dm-sans-variable-latin-ext.woff2','/fonts/dm-mono-400-latin.woff2','/fonts/dm-mono-400-latin-ext.woff2','/fonts/dm-mono-500-latin.woff2','/fonts/dm-mono-500-latin-ext.woff2'].map(async path=>Boolean(await (await caches.open('madladpad-shell-v20')).match(path)))));
   assert.ok(cachedFonts.every(Boolean),'both local UI fonts and their Latin/extended subsets should be cached for offline use');
   await page.reload();
   await page.waitForFunction(()=>Boolean(navigator.serviceWorker.controller));
@@ -1559,6 +1560,15 @@ try {
   await page.locator('#pad-grid').waitFor();
   await page.waitForFunction(()=>document.querySelector('#project-title').value==='Smoke pack',null,{timeout:8000});
   assert.equal(await page.locator('#project-title').inputValue(),'Smoke pack','offline reopen should load the saved local project');
+  await openScreen('voice');
+  await page.locator('[data-voice-jump="rap-title"]').click();
+  await page.locator('#rap-scheme').selectOption('ABAB');
+  await page.locator('#rap-bars textarea').nth(0).fill('I caught the light');
+  await page.locator('#rap-bars textarea').nth(2).fill('We take the Flight!');
+  const offlineRhymeIdeas=page.locator('#rap-bars .rap-bar').nth(2).locator('.rap-rhyme-ideas');
+  await offlineRhymeIdeas.locator('summary').click();
+  await offlineRhymeIdeas.getByRole('button',{name:'Use rhyme idea night for bar 3'}).press('Enter');
+  assert.equal(await page.locator('#rap-bars textarea').nth(2).inputValue(),'We take the Night!','the cached Rap Lab should remain usable offline after a fresh-shell install');
   checkpoint('offline reopen');
   await openScreen('export');
   if(recordingSupported){
