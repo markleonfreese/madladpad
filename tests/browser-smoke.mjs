@@ -966,9 +966,12 @@ try {
   await page.locator('#melody-add').click();
   const melodyPitch = page.locator('#melody-notes select[aria-label="Note 1 pitch"]');
   assert.equal(await melodyPitch.locator('option').count(), 85, 'melody pitch picker should cover MIDI 24 through 108');
+  await melodyPitch.focus();
   await melodyPitch.selectOption('69');
+  assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Note 1 pitch','changing melody pitch should retain focus on the pitch control');
   assert.match(await page.locator('#melody-notes .melody-note').first().locator('span').textContent(),/A4 · 440\.0 Hz/,'melody pitch should be shown with a musical note name and tuning frequency');
   await page.locator('#melody-notes input[aria-label="Note 1 sixteenth step"]').fill('16');
+  assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Note 1 sixteenth step','changing melody position should retain focus on its number field');
   await page.locator('#melody-notes input[aria-label="Note 1 sixteenth step"]').press('Tab');
   assert.equal(await page.locator('#melody-notes .melody-note-description small').first().textContent(),'Bar 2 · Beat 1 · 16th 1','melody step should be shown as a readable bar, beat and subdivision');
   await page.locator('#melody-notes select[aria-label="Assign phrase word to note 1"]').selectOption('MadLadPad');
