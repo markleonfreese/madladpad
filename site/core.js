@@ -251,7 +251,8 @@ export function estimateSyllables(text) {
   const words = String(text || '').toLowerCase().match(/[a-z]+/g) || [];
   return words.reduce((total, word) => {
     if (word.length <= 3) return total + 1;
-    const normalized = /[^aeiouy]le$/.test(word) ? word : word.replace(/(?:e|ed|es)$/, '');
+    const keepsEndingSyllable = /[^aeiouy]le$/.test(word) || /(?:s|x|z|c|g|ch|sh)es$/.test(word) || /(?:t|d)ed$/.test(word);
+    const normalized = keepsEndingSyllable ? word : word.replace(/(?:e|ed|es)$/, '');
     const groups = normalized.match(/[aeiouy]+/g);
     return total + Math.max(1, groups?.length || 1);
   }, 0);

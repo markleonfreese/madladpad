@@ -955,6 +955,9 @@ try {
   await page.locator('#melody-follow-beat').check();
   await page.locator('[data-voice-jump="rap-title"]').click();
   await page.locator('#rap-bars textarea').nth(0).fill('Hello from the other side');
+  await page.locator('#rap-bars textarea').nth(0).fill('wanted needed wishes boxes');
+  assert.match(await page.locator('#rap-bars .rap-bar').first().locator('small').textContent(),/8 estimated syllables/,'rap estimates should count common syllabic -ed and -es endings');
+  await page.locator('#rap-bars textarea').nth(0).fill('Hello from the other side');
   const rapFlow=page.locator('#rap-bars .rap-bar').first().locator('.rap-flow');
   await rapFlow.locator('summary').click();
   await rapFlow.locator('.rap-flow-step').nth(0).click();
