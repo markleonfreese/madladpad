@@ -213,6 +213,9 @@ test('melody uses A4 tuning and exports a MIDI track; rap syllable counts remain
   assert.equal(midiFrequency(69),440);
   assert.equal(midiFrequency(69,432),432);
   assert.equal(estimateSyllables('Hello little music maker'),8);
+  assert.equal(estimateSyllables('wishes boxes dances'),6,'common sibilant -es endings should keep their pronounced syllable');
+  assert.equal(estimateSyllables('wanted needed'),4,'-ed should add a syllable after t or d');
+  assert.equal(estimateSyllables('played waved'),2,'-ed should remain silent after other consonants');
   const file=midiFile([{midi:69,step:0,duration:4}],120,440);
   assert.equal(file.type,'audio/midi');
   const bytes=new Uint8Array(await file.arrayBuffer());
