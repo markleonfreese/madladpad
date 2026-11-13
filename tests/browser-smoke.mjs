@@ -975,6 +975,9 @@ try {
   await page.locator('#rap-bars textarea').nth(2).fill('wearing a hat');
   assert.match(await page.locator('#rap-bars .rap-bar').nth(2).locator('small').textContent(),/rhyme ideas: bat, flat, mat/,'common rhyme families should show three alternatives without repeating the current ending');
   assert.doesNotMatch(await page.locator('#rap-bars .rap-bar').nth(2).locator('small').textContent(),/rhyme ideas:.*hat/,'rhyme ideas should not repeat the current bar ending');
+  await page.locator('#rap-bars textarea').nth(0).fill('I can make this move');
+  await page.locator('#rap-bars textarea').nth(2).fill('We talk about love');
+  assert.doesNotMatch(await page.locator('#rap-bars .rap-bar').nth(2).locator('small').textContent(),/rhyme ideas:/,'unknown endings should not receive false rhymes based only on their last two letters');
   await page.locator('#rap-scheme').selectOption('AABB');
   assert.match(await page.locator('#rap-bars .rap-bar').nth(2).locator('small').textContent(),/B rhyme/,'AABB should regroup bars 3 and 4');
   await page.locator('#rap-bars textarea').nth(0).fill('Hello from the other side');
