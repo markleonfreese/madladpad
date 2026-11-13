@@ -229,6 +229,10 @@ export function normaliseProject(value) {
 }
 
 export const midiFrequency = (note, tuning = 440) => clamp(tuning, 400, 480) * 2 ** ((clamp(note, 24, 108) - 69) / 12);
+export const midiNoteName = note => {
+  const pitch = Math.round(clamp(note, 24, 108));
+  return `${['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'][pitch % 12]}${Math.floor(pitch / 12) - 1}`;
+};
 
 export function audioBufferToWav(rendered) {
   const sampleRate = Math.round(rendered.sampleRate), channels = rendered.numberOfChannels === 1 ? 1 : 2;
