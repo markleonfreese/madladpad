@@ -380,3 +380,4 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
   #loop-settings[open] .transport-settings{position:absolute;right:0;bottom:calc(100% + 16px);display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;width:min(100%,360px);padding:13px;border:1px solid var(--line);border-radius:13px;background:#19221c;box-shadow:0 10px 26px #080d0adc}
   .transport-settings #demo-button{grid-column:1/-1;width:100%}
 }
+.melody-scale-controls{display:flex;flex-wrap:wrap;align-items:end;gap:7px;margin:10px 0}.melody-scale-controls .voice-label{margin:4px 0;flex:1 1 120px}.melody-scale-controls .voice-label select{min-width:0;width:100%}.melody-scale-controls #melody-snap-scale{min-height:44px;max-width:100%}

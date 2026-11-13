@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withModelReferrerPolicy } from '../site/voice-model-fetch.js';
-import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes } from '../site/core.js';
 
 test('Whisper model fetch omits the app referrer only for Hugging Face assets', async () => {
   const calls = [];
@@ -29,6 +29,20 @@ test('transcript word timestamps stay inside the source clip and invalid words a
     {text:'middle',start:3.6,end:4.12}
   ]);
   assert.deepEqual(boundTranscriptWordTimes([{text:'word',start:0,end:1}], 0), []);
+});
+
+test('melody scale snapping stays near the note and preserves valid legacy defaults', () => {
+  const legacy = normaliseProject({voice:{melody:{notes:[{midi:63,step:12,word:'hello'}]}}}).voice.melody;
+  assert.equal(legacy.key,0,'older projects default to C as the scale root');
+  assert.equal(legacy.scale,'major','older projects default to major without changing their notes');
+  assert.equal(legacy.notes[0].midi,63,'normalizing a project does not silently snap saved notes');
+  const configured = normaliseProject({voice:{melody:{key:9,scale:'minor-pentatonic',notes:[]}}}).voice.melody;
+  assert.equal(configured.key,9);
+  assert.equal(configured.scale,'minor-pentatonic');
+  assert.equal(snapMidiToScale(63,2,'major'),62,'a tie between D and E in D major resolves down to D');
+  assert.equal(snapMidiToScale(66,9,'minor-pentatonic'),67,'F sharp moves to the closest G in A minor pentatonic');
+  assert.equal(snapMidiToScale(60,0,'not-a-scale'),60,'unknown scales safely fall back to major');
+  assert.equal(snapMidiToScale(24,0,'major'),24,'snapping respects the supported MIDI range');
 });
 
 test('initial layout has 12 visible pads and 16 backing slots', () => {
