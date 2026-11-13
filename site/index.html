@@ -228,6 +228,11 @@
             <button class="pill-button" id="voice-manual-add" disabled>ADD WORD</button>
           </div>
           <p id="voice-status" class="voice-status" role="status" aria-live="polite">Choose a local audio or video pad and opt in to begin.</p>
+          <div id="voice-selection-tools" class="voice-actions voice-selection-tools" role="group" aria-label="Transcript word selection" hidden>
+            <button class="pill-button" id="voice-select-all" type="button">SELECT ALL WORDS</button>
+            <button class="pill-button" id="voice-clear-selection" type="button" disabled>CLEAR SELECTION</button>
+            <span id="voice-selection-status" role="status" aria-live="polite">No words selected.</span>
+          </div>
           <div id="voice-word-list" class="voice-word-list" role="group" aria-label="Editable transcript words"></div>
           <button class="pill-button" id="voice-make-phrase" disabled>ADD SELECTED WORDS TO PHRASE</button>
           <div id="voice-phrases" class="voice-phrases" role="group" aria-label="Reorderable audio phrases"></div>

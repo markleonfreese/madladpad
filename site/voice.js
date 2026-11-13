@@ -122,14 +122,33 @@ function toMono16k(buffer) {
 function renderWords(project, save) {
   const host = $('voice-word-list'); host.replaceChildren();
   const transcript = project.voice.transcripts.at(-1);
-  if (!transcript) { $('voice-make-phrase').disabled = true; return; }
+  const tools = $('voice-selection-tools');
+  if (!transcript) { tools.hidden = true; $('voice-make-phrase').disabled = true; return; }
+  tools.hidden = false;
   const updatePhraseButton = () => {
     $('voice-make-phrase').disabled = !transcript.words.some(word => word.selected) || project.voice.phrases.length >= MAX_VOICE_PHRASES;
+  };
+  const updateSelectionTools = () => {
+    const selected = transcript.words.filter(word => word.selected).length;
+    $('voice-selection-status').textContent = selected ? `${selected} of ${transcript.words.length} words selected.` : 'No words selected.';
+    $('voice-select-all').disabled = selected === transcript.words.length;
+    $('voice-clear-selection').disabled = selected === 0;
+    updatePhraseButton();
+  };
+  $('voice-select-all').onclick = () => {
+    transcript.words.forEach(word => { word.selected = true; });
+    host.querySelectorAll('input[type="checkbox"]').forEach(checkbox => { checkbox.checked = true; });
+    save(); updateSelectionTools();
+  };
+  $('voice-clear-selection').onclick = () => {
+    transcript.words.forEach(word => { word.selected = false; });
+    host.querySelectorAll('input[type="checkbox"]').forEach(checkbox => { checkbox.checked = false; });
+    save(); updateSelectionTools();
   };
   transcript.words.forEach((word, index) => {
     const row = document.createElement('div'); row.className = 'voice-word';
     const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = word.selected; checkbox.setAttribute('aria-label', `Use word ${index + 1}, ${word.text}`);
-    checkbox.addEventListener('change', () => { word.selected = checkbox.checked; save(); updatePhraseButton(); });
+    checkbox.addEventListener('change', () => { word.selected = checkbox.checked; save(); updateSelectionTools(); });
     const text = document.createElement('input'); text.type = 'text'; text.maxLength = 120; text.value = word.text; text.setAttribute('aria-label', `Transcript word ${index + 1}`);
     text.addEventListener('input', () => { word.text = text.value; checkbox.setAttribute('aria-label', `Use word ${index + 1}, ${word.text}`); save(); });
     text.addEventListener('change', () => { word.text = text.value.trim(); text.value = word.text; checkbox.setAttribute('aria-label', `Use word ${index + 1}, ${word.text}`); save(); });
@@ -144,7 +163,7 @@ function renderWords(project, save) {
     const score = document.createElement('span'); score.className = 'voice-confidence'; score.textContent = 'review'; score.title = 'The local model does not provide a calibrated word confidence score.';
     row.append(checkbox, text, start, end, score); host.append(row);
   });
-  updatePhraseButton();
+  updateSelectionTools();
 }
 
 function renderPhrases(project, audio, notify, save, assignWordsToPads) {
