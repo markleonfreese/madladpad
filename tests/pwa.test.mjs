@@ -132,3 +132,54 @@ test('Pitch loading copy does not claim the implemented processor is unavailable
   assert.doesNotMatch(html,/Independent pitch shifting is not available yet/);
   assert.match(app,/Load an audio or video sample to use independent Pitch/);
 });
+
+test('service worker bypasses cross-origin and non-GET requests, and does not cache HTTP failures', async () => {
+  const sw=readFileSync(join(site,'sw.js'),'utf8');
+  const handlers=new Map();
+  const writes=[];let requests=0;
+  const context={
+    self:{addEventListener:(name,handler)=>handlers.set(name,handler),location:{origin:'https://madladpad.test'}},
+    caches:{open:()=>Promise.resolve({put:async request=>{writes.push(request.url);}}),match:()=>Promise.resolve(undefined)},
+    fetch:()=>{requests++;return Promise.resolve(new Response('missing',{status:404}));},
+    URL,Promise,Request,Response
+  };
+  runInNewContext(sw,context);
+  const handler=handlers.get('fetch');
+  let intercepts=0;
+  const respondWith=()=>{intercepts++;};
+  handler({request:new Request('https://elsewhere.example/app.js'),respondWith});
+  handler({request:new Request('https://madladpad.test/app.js',{method:'POST'}),respondWith});
+  assert.equal(intercepts,0,'external and non-GET requests must be left to the browser');
+  assert.equal(requests,0);
+  let responsePromise;
+  handler({request:new Request('https://madladpad.test/missing.js'),respondWith:promise=>{responsePromise=promise;}});
+  assert.equal((await responsePromise).status,404,'an HTTP failure must retain its original status');
+  assert.deepEqual(writes,[],'do not replace a cached good asset with a 404 response');
+});
+
+test('offline navigation falls back to canonical root while offline assets use their own cache entry', async () => {
+  const sw=readFileSync(join(site,'sw.js'),'utf8');
+  const handlers=new Map();const cacheReads=[];
+  const context={
+    self:{addEventListener:(name,handler)=>handlers.set(name,handler),location:{origin:'https://madladpad.test'}},
+    caches:{
+      open:()=>{throw Error('offline network must not attempt cache writes');},
+      match:async request=>{
+        const key=typeof request==='string'?request:request.url;
+        cacheReads.push(key);
+        return new Response(key==='/'?'cached app shell':'cached asset');
+      }
+    },
+    fetch:()=>Promise.reject(new Error('offline')),
+    URL,Promise,Request,Response
+  };
+  runInNewContext(sw,context);
+  const handler=handlers.get('fetch');
+  let navigation;
+  handler({request:{url:'https://madladpad.test/sequence',method:'GET',mode:'navigate'},respondWith:promise=>{navigation=promise;}});
+  assert.equal(await (await navigation).text(),'cached app shell');
+  let asset;
+  handler({request:new Request('https://madladpad.test/audio.js'),respondWith:promise=>{asset=promise;}});
+  assert.equal(await (await asset).text(),'cached asset');
+  assert.deepEqual(cacheReads,['/','https://madladpad.test/audio.js']);
+});
