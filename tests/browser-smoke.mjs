@@ -878,6 +878,17 @@ try {
   assert.equal(await page.locator('#voice-selection-status').textContent(),'No words selected.','clearing selection should announce the empty state');
   assert.equal(await page.locator('#voice-make-phrase').isDisabled(),true,'clearing selection should disable phrase creation');
   assert.equal(await page.evaluate(()=>document.activeElement?.id),'voice-clear-selection','bulk selection actions should preserve keyboard focus');
+  await page.locator('#voice-transcribe').click();
+  await page.waitForFunction(()=>document.querySelectorAll('#voice-transcript-select option').length===2);
+  assert.equal(await page.locator('#voice-transcript-picker-label').isVisible(),true,'multiple saved takes should expose a transcript picker');
+  await page.locator('#voice-transcript-select').selectOption('0');
+  const savedTranscriptWord=page.locator('#voice-word-list .voice-word').nth(0).locator('input[aria-label="Transcript word 1"]');
+  await savedTranscriptWord.fill('Earlier draft');
+  await page.locator('#voice-transcript-select').selectOption('1');
+  assert.equal(await page.locator('#voice-word-list .voice-word').nth(0).locator('input[aria-label="Transcript word 1"]').inputValue(),'Hello','selecting another take should show its own transcript words');
+  await page.locator('#voice-transcript-select').selectOption('0');
+  assert.equal(await page.locator('#voice-word-list .voice-word').nth(0).locator('input[aria-label="Transcript word 1"]').inputValue(),'Earlier draft','switching takes should retain corrections to the earlier transcript');
+  await page.locator('#voice-word-list .voice-word').nth(0).locator('input[aria-label="Transcript word 1"]').fill('Hello');
   await page.locator('#voice-word-list .voice-word').nth(0).locator('input[type=checkbox]').check();
   assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Use word 1, Hello','selecting a transcript word should keep keyboard focus on that checkbox');
   await page.locator('#voice-word-list .voice-word').nth(1).locator('input[aria-label="Word 2 start seconds"]').fill('0.15');

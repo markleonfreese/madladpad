@@ -119,9 +119,8 @@ function toMono16k(buffer) {
   return mono;
 }
 
-function renderWords(project, save) {
+function renderWords(project, save, transcript = project.voice.transcripts.at(-1)) {
   const host = $('voice-word-list'); host.replaceChildren();
-  const transcript = project.voice.transcripts.at(-1);
   const tools = $('voice-selection-tools');
   if (!transcript) { tools.hidden = true; $('voice-make-phrase').disabled = true; return; }
   tools.hidden = false;
@@ -362,6 +361,7 @@ function renderRap(project, save, audio, notify) {
 
 export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTransport, notify, save, assignWordsToPads }) {
   const project = getProject(), audio = getAudio();
+  let activeTranscript = null;
   let worker = null;
   const transcriptionActivity = new AsyncActivity();
   let vocalRecording = null;
@@ -437,13 +437,26 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     });
     updateOverdubControls();
   }
+  function renderTranscriptPicker() {
+    const transcripts = project.voice.transcripts, select = $('voice-transcript-select');
+    if (!transcripts.includes(activeTranscript)) activeTranscript = transcripts.at(-1) || null;
+    select.replaceChildren();
+    transcripts.forEach((transcript, index) => {
+      const option = document.createElement('option'); option.value = String(index);
+      option.textContent = `Take ${index + 1} · Pad ${transcript.sourcePad + 1} · ${transcript.words.length} words`;
+      select.append(option);
+    });
+    const activeIndex = transcripts.indexOf(activeTranscript);
+    if (activeIndex >= 0) select.value = String(activeIndex);
+    $('voice-transcript-picker-label').hidden = transcripts.length < 2;
+  }
   function render() {
     const selected = $('voice-source-pad').value;
     const select = $('voice-source-pad'); select.replaceChildren();
     for (const [id, file] of getMediaFiles()) if (/^(audio|video)\//.test(file.type)) { const option = document.createElement('option'); option.value = id; option.textContent = `${project.pads[id].name} · ${file.name || file.type}`; select.append(option); }
     if ([...select.options].some(option => option.value === selected)) select.value = selected;
-    updateConsentState(); updateManualEntryState();
-    renderWords(project, save); renderPhrases(project, audio, notify, save, assignWordsToPads); renderMelody(project, save); renderRap(project, save, audio, notify); renderVocalLayers();
+    updateConsentState(); updateManualEntryState(); renderTranscriptPicker();
+    renderWords(project, save, activeTranscript); renderPhrases(project, audio, notify, save, assignWordsToPads); renderMelody(project, save); renderRap(project, save, audio, notify); renderVocalLayers();
   }
   const stopOverdub = () => {
     const take = vocalRecording;
@@ -541,6 +554,10 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     if (transcriptionActivity.phase!=='idle') cancelTranscription('Source changed. Previous transcription canceled.');
     render();
   });
+  $('voice-transcript-select').addEventListener('change', () => {
+    activeTranscript = project.voice.transcripts[Number($('voice-transcript-select').value)] || null;
+    renderWords(project, save, activeTranscript);
+  });
   $('voice-consent').addEventListener('change', () => {
     if (!$('voice-consent').checked && transcriptionActivity.phase!=='idle') cancelTranscription('Consent withdrawn. Transcription canceled.');
     render();
@@ -551,7 +568,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     const start = clamp($('voice-manual-start').value, 0, 3600), end = clamp($('voice-manual-end').value, 0, 3600);
     if (!getMediaFiles().has(padId) || !text) { updateManualEntryState(); return; }
     if (end <= start) { $('voice-status').textContent = 'The manual word end time must be after its start time.'; $('voice-manual-end').focus(); return; }
-    let transcript = project.voice.transcripts.slice().reverse().find(item => item.sourcePad === padId);
+    let transcript = activeTranscript?.sourcePad === padId ? activeTranscript : project.voice.transcripts.slice().reverse().find(item => item.sourcePad === padId);
     if (transcript?.words.length >= MAX_TRANSCRIPT_WORDS) { $('voice-status').textContent = `This transcript already has the ${MAX_TRANSCRIPT_WORDS}-word limit.`; return; }
     if (transcript) {
       project.voice.transcripts.splice(project.voice.transcripts.indexOf(transcript), 1);
@@ -561,7 +578,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     }
     transcript.words.push({id:`manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, text, start, end, selected:true, score:null});
     project.voice.transcripts.push(transcript);
-    save(); renderWords(project, save);
+    activeTranscript = transcript; save(); renderTranscriptPicker(); renderWords(project, save, activeTranscript);
     $('voice-status').textContent = `Added “${text}” at ${start.toFixed(2)}–${end.toFixed(2)} seconds. This manual alignment used no speech model.`;
     $('voice-manual-text').value = ''; $('voice-manual-start').value = end.toFixed(2); $('voice-manual-end').value = (end + .3).toFixed(2);
     updateManualEntryState();
@@ -602,7 +619,8 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
             cancelTranscription('No usable timestamped words fit within this clip. Try again or add words and timestamps manually.');
             return;
           }
-          project.voice.transcripts.push({ id: `${Date.now()}`, sourcePad: padId, words }); project.voice.transcripts = project.voice.transcripts.slice(-16);
+          const transcript = { id: `${Date.now()}`, sourcePad: padId, words };
+          project.voice.transcripts.push(transcript); project.voice.transcripts = project.voice.transcripts.slice(-16); activeTranscript = transcript;
           const omissionNotice = omittedWords ? ` ${omittedWords} returned word${omittedWords === 1 ? ' had' : 's had'} unusable or out-of-clip timing and ${omittedWords === 1 ? 'was' : 'were'} omitted. Review the clip and add any missing words manually.` : '';
           save(); $('voice-status').textContent = `Draft transcript has ${words.length} timestamped words. Confidence is not provided; check wording and timing.${omissionNotice}`;
           cancelTranscription(); render();
@@ -615,7 +633,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   $('voice-cancel').addEventListener('click', () => cancelTranscription('Transcription canceled. The local clip was not uploaded.'));
   $('voice-make-phrase').addEventListener('click', () => {
     if (project.voice.phrases.length >= MAX_VOICE_PHRASES) return;
-    const transcript = project.voice.transcripts.at(-1), chosen = transcript?.words.filter(word => word.selected) || [];
+    const transcript = activeTranscript || project.voice.transcripts.at(-1), chosen = transcript?.words.filter(word => word.selected) || [];
     if (!chosen.length) return;
     const words = chosen.map(word => ({ text: word.text, sourcePad: transcript.sourcePad, start: word.start, end: word.end }));
     project.voice.phrases.push({ id: `${Date.now()}`, name: `Phrase ${project.voice.phrases.length + 1}`, gapMs: 35, crossfadeMs: 0, words });
