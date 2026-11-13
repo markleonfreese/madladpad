@@ -119,23 +119,32 @@ function toMono16k(buffer) {
   return mono;
 }
 
-function renderWords(project, current, save) {
+function renderWords(project, save) {
   const host = $('voice-word-list'); host.replaceChildren();
   const transcript = project.voice.transcripts.at(-1);
   if (!transcript) { $('voice-make-phrase').disabled = true; return; }
+  const updatePhraseButton = () => {
+    $('voice-make-phrase').disabled = !transcript.words.some(word => word.selected) || project.voice.phrases.length >= MAX_VOICE_PHRASES;
+  };
   transcript.words.forEach((word, index) => {
     const row = document.createElement('div'); row.className = 'voice-word';
     const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = word.selected; checkbox.setAttribute('aria-label', `Use word ${index + 1}, ${word.text}`);
-    checkbox.addEventListener('change', () => { word.selected = checkbox.checked; save(); renderWords(project, current, save); });
+    checkbox.addEventListener('change', () => { word.selected = checkbox.checked; save(); updatePhraseButton(); });
     const text = document.createElement('input'); text.type = 'text'; text.maxLength = 120; text.value = word.text; text.setAttribute('aria-label', `Transcript word ${index + 1}`);
-    text.addEventListener('change', () => { word.text = text.value.trim(); save(); renderWords(project, current, save); });
+    text.addEventListener('input', () => { word.text = text.value; checkbox.setAttribute('aria-label', `Use word ${index + 1}, ${word.text}`); save(); });
+    text.addEventListener('change', () => { word.text = text.value.trim(); text.value = word.text; checkbox.setAttribute('aria-label', `Use word ${index + 1}, ${word.text}`); save(); });
     const start = document.createElement('input'); start.type = 'number'; start.min = '0'; start.max = '3600'; start.step = '.01'; start.value = word.start.toFixed(2); start.setAttribute('aria-label', `Word ${index + 1} start seconds`);
     const end = document.createElement('input'); end.type = 'number'; end.min = '0'; end.max = '3600'; end.step = '.01'; end.value = word.end.toFixed(2); end.setAttribute('aria-label', `Word ${index + 1} end seconds`);
-    for (const [input, key] of [[start, 'start'], [end, 'end']]) input.addEventListener('change', () => { word[key] = clamp(input.value, 0, 3600); if (word.end <= word.start) word.end = word.start + .05; save(); renderWords(project, current, save); });
+    for (const [input, key] of [[start, 'start'], [end, 'end']]) input.addEventListener('change', () => {
+      word[key] = clamp(input.value, 0, 3600);
+      if (word.end <= word.start) word.end = word.start + .05;
+      start.value = word.start.toFixed(2); end.value = word.end.toFixed(2);
+      save();
+    });
     const score = document.createElement('span'); score.className = 'voice-confidence'; score.textContent = 'review'; score.title = 'The local model does not provide a calibrated word confidence score.';
     row.append(checkbox, text, start, end, score); host.append(row);
   });
-  $('voice-make-phrase').disabled = !transcript.words.some(word => word.selected) || project.voice.phrases.length >= MAX_VOICE_PHRASES;
+  updatePhraseButton();
 }
 
 function renderPhrases(project, audio, notify, save, assignWordsToPads) {
@@ -406,7 +415,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     for (const [id, file] of getMediaFiles()) if (/^(audio|video)\//.test(file.type)) { const option = document.createElement('option'); option.value = id; option.textContent = `${project.pads[id].name} · ${file.name || file.type}`; select.append(option); }
     if ([...select.options].some(option => option.value === selected)) select.value = selected;
     updateConsentState(); updateManualEntryState();
-    renderWords(project, getMediaFiles, save); renderPhrases(project, audio, notify, save, assignWordsToPads); renderMelody(project, save); renderRap(project, save, audio, notify); renderVocalLayers();
+    renderWords(project, save); renderPhrases(project, audio, notify, save, assignWordsToPads); renderMelody(project, save); renderRap(project, save, audio, notify); renderVocalLayers();
   }
   const stopOverdub = () => {
     const take = vocalRecording;
@@ -524,7 +533,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     }
     transcript.words.push({id:`manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, text, start, end, selected:true, score:null});
     project.voice.transcripts.push(transcript);
-    save(); renderWords(project, getMediaFiles, save);
+    save(); renderWords(project, save);
     $('voice-status').textContent = `Added “${text}” at ${start.toFixed(2)}–${end.toFixed(2)} seconds. This manual alignment used no speech model.`;
     $('voice-manual-text').value = ''; $('voice-manual-start').value = end.toFixed(2); $('voice-manual-end').value = (end + .3).toFixed(2);
     updateManualEntryState();
