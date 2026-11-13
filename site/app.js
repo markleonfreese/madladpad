@@ -96,10 +96,10 @@ function showStudioScreen() {
   }
   const moreTools=$('studio-more-tools'),moreSummary=moreTools.querySelector('summary');
   if(screen==='voice'||screen==='overdub'){
-    moreSummary.textContent=`Experimental · ${screen==='voice'?'Voice Lab':'Overdub'}`;
+    moreSummary.textContent=`Lab · ${screen==='voice'?'Voice Lab':'Overdub'}`;
     moreSummary.setAttribute('aria-current','page');
   }else{
-    moreSummary.textContent='Experimental';
+    moreSummary.textContent='Lab';
     moreSummary.removeAttribute('aria-current');
   }
   moreTools.open=false;

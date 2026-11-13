@@ -286,7 +286,7 @@ try {
         const rect=element.getBoundingClientRect(),target=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);
         return {visible:rect.width>0&&rect.height>0,centerHitsLink:target===element||element.contains(target)};
       });
-      assert.equal(hit.visible,true,`${expectedName} should be visible when Experimental is expanded: ${JSON.stringify(hit)}`);
+      assert.equal(hit.visible,true,`${expectedName} should be visible when Lab is expanded: ${JSON.stringify(hit)}`);
       assert.equal(hit.centerHitsLink,true,`${expectedName} should not be clipped or covered by the next section: ${JSON.stringify(hit)}`);
     }
     await page.locator(`[data-studio-screen="${screen}"]`).click();
@@ -1593,7 +1593,7 @@ try {
   assert.ok(mobileTabs.every(tab=>tab.visible&&tab.left>=0&&tab.right<=390),`core destinations should remain in view without horizontal scrolling: ${JSON.stringify(mobileTabs)}`);
   assert.deepEqual(await page.locator('#studio-nav > a').evaluateAll(links=>links.map(link=>link.textContent.replace(/\s+/g,' ').trim())),['01 Playground','02 Sequence','03 Video & Export'],'the primary navigation should name the three core creative tasks');
   assert.match(await page.locator('#studio-more-tools > summary').textContent(),/Voice Lab/,'the current specialist destination should remain identified');
-  assert.match(await page.locator('#studio-more-tools > summary').textContent(),/Experimental/,'Voice Lab and Overdub should sit under Experimental');
+  assert.equal((await page.locator('#studio-more-tools > summary').textContent()).trim(),'Lab · Voice Lab','the Lab menu should identify the active Voice Lab destination');
   await page.locator('#studio-more-tools > summary').click();
   for(const link of await page.locator('.studio-more-links a').all()){
     const box=await link.boundingBox();
