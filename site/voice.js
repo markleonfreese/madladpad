@@ -22,7 +22,7 @@ function rhymeHints(line) {
   const word = wordKey(line.trim().split(/\s+/).at(-1));
   if (!word) return [];
   for (const [key, values] of Object.entries(rhymes)) if (word === key || values.includes(word)) return [key, ...values].filter(value => value !== word).slice(0, 4);
-  return Object.entries(rhymes).flatMap(([key, values]) => [key, ...values].filter(value => value.endsWith(word.slice(-2)) && value !== word)).slice(0, 4);
+  return [];
 }
 function rhymeGroup(index, scheme) {
   const position = index % 4;
