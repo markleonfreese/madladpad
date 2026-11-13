@@ -2,7 +2,7 @@
 
 ## Current production app
 
-The current static app is served from Cloudflare Pages at <https://madladpad.pages.dev>. The verified production deployment is `00329640-3f99-46d7-9e05-e06c0e58847e`, source commit `9ef9bef2bad222a424b814160da189359f7158ae` on `main`. It is a static Pages release with no Functions source or runtime binding in this repository. See [Issue #2](https://github.com/markleonfreese/madladpad/issues/2) and the [device acceptance checklist](docs/DEVICE-ACCEPTANCE.md) for hosted evidence and remaining human/device gates.
+The current static app is served from Cloudflare Pages at <https://madladpad.pages.dev>. The verified production deployment is `d7695333-d9e7-4950-b06e-8b4f14a9114f`, source commit `8e4a0d74966f5b1ff405cdbf49c790b7324729a6` on `main`. It is a static Pages release with no Functions source or runtime binding in this repository. See [Issue #2](https://github.com/markleonfreese/madladpad/issues/2) and the [device acceptance checklist](docs/DEVICE-ACCEPTANCE.md) for hosted evidence and remaining human/device gates.
 
 The Pages app and the older Workers app are separate releases. <https://madladpad.markleonfreese.workers.dev/> still serves an older bundled release; it is not updated by the current Pages publish. Do not use it to accept current `main` or deploy to it as a way to fix the Pages app. The cause of an earlier 503 report on that URL was not established; a later read-only check returned 200 for its legacy shell and `/app.js`.
 
