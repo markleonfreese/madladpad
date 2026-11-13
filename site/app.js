@@ -1,4 +1,4 @@
-import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, DEMO_SOUNDS, directedPads, makeProject, normaliseProject, normaliseRegion, copyPadSound, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, AsyncActivity, suggestActiveRegion, captureRegionStatus, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, nextBarTime, videoVisualDurationMs } from './core.js';
+import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, DEMO_SOUNDS, directedPads, makeProject, normaliseProject, normaliseRegion, copyPadSound, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, AsyncActivity, suggestActiveRegion, captureRegionStatus, cameraTakeTargetSeconds, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, nextBarTime, videoVisualDurationMs } from './core.js';
 import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, collectVoiceMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
 import { isGooglePickerConfigured, pickFromDrive, pickFromPhotos } from './google.js';
@@ -1429,12 +1429,21 @@ async function toggleAudioRecording() {
   }
 }
 
+function updateCameraLengthHelp(){
+  const target=$('camera-take-length').value;
+  if(target==='manual'){$('camera-length-help').textContent='Manual one-shot · stop when ready. All takes stop by 30 seconds.';return;}
+  const seconds=cameraTakeTargetSeconds(target,project.bpm,MAX_CAMERA_TAKE_SECONDS);
+  $('camera-length-help').textContent=`${target} ${target==='1'?'bar':'bars'} in 4/4 at ${project.bpm} BPM · about ${seconds.toFixed(1)} seconds. Stop early if needed; all takes stop by 30 seconds.`;
+}
+
 function cameraReady() {
   const video=$('camera-preview');
   if(cameraUrl){URL.revokeObjectURL(cameraUrl);cameraUrl=null;}
   video.removeAttribute('src');video.srcObject=cameraStream;video.muted=true;video.controls=false;video.autoplay=true;
   video.play().catch(()=>{});
   $('camera-capture').hidden=false;$('camera-capture').disabled=!cameraStream;
+  $('camera-take-length').disabled=false;
+  updateCameraLengthHelp();
   $('camera-retake').hidden=true;$('camera-keep').hidden=true;
   $('camera-status').textContent='Camera and microphone active. Start recording when ready.';
   $('camera-review').hidden=true;
@@ -1467,8 +1476,10 @@ async function openCamera(target=selected) {
   const token=cameraSession.begin(destination);
   if(token===null)return;
   $('camera-title').textContent=`Record on pad ${destination+1}`;
+  updateCameraLengthHelp();
   $('camera-status').textContent='Requesting camera and microphone access…';
   $('camera-capture').disabled=true;$('camera-capture').hidden=false;
+  $('camera-take-length').disabled=false;
   $('camera-retake').hidden=true;$('camera-keep').hidden=true;
   $('camera-dialog').showModal();
   try {
@@ -1487,6 +1498,7 @@ function closeCamera() {
   cameraRecorder=null;
   cameraStream?.getTracks().forEach(track=>track.stop());cameraStream=null;
   const video=$('camera-preview');video.pause();video.srcObject=null;video.removeAttribute('src');video.load();
+  $('camera-take-length').disabled=false;
   if(cameraUrl){URL.revokeObjectURL(cameraUrl);cameraUrl=null;}
   cameraRegion={start:0,end:0};
   if($('camera-dialog').open)$('camera-dialog').close();
@@ -1500,6 +1512,8 @@ async function captureCamera() {
   try {
     await audio.unlock();
     if(!cameraSession.current(token) || cameraSession.phase!=='recording')return;
+    const takeTarget=$('camera-take-length').value;
+    const targetSeconds=cameraTakeTargetSeconds(takeTarget,project.bpm,MAX_CAMERA_TAKE_SECONDS);
     const mime=findRecorderMime();
     const recorder=new MediaRecorder(cameraStream,mime?{mimeType:mime}:undefined);
     cameraRecorder=recorder;
@@ -1510,6 +1524,7 @@ async function captureCamera() {
     try {const analyser=audio.context.createAnalyser();analyser.fftSize=1024;cameraMeterSource=audio.context.createMediaStreamSource(cameraStream);cameraMeterSource.connect(analyser);const samples=new Float32Array(analyser.fftSize);cameraMeterTimer=setInterval(()=>{analyser.getFloatTimeDomainData(samples);let sum=0;for(const sample of samples)sum+=sample*sample;levels.push({time:(performance.now()-meterStartedAt)/1000,level:Math.sqrt(sum/samples.length)});},50);} catch { /* The full clip remains available when live metering is unsupported. */ }
     recorder.onstop=()=>{
       if(!cameraSession.current(token))return;
+      $('camera-take-length').disabled=false;
       if(cameraRecorder===recorder)cameraRecorder=null;clearInterval(cameraMeterTimer);cameraMeterTimer=null;cameraMeterSource?.disconnect();cameraMeterSource=null;clearTimeout(cameraTimer);cameraTimer=null;
       const type=recorder.mimeType||mime||'';
       if(!chunks.length || !/^video\/(mp4|webm)(;|$)/i.test(type)){closeCamera();notify('This browser did not provide a supported recording format.');return;}
@@ -1525,9 +1540,10 @@ async function captureCamera() {
         $('camera-review').hidden=false;$('camera-status').textContent='Camera and microphone stopped. Preparing a trim suggestion…';
       } catch(error){closeCamera();notify(`Could not review take: ${error.message}`);}
     };
-    meterStartedAt=performance.now();recorder.start(200);$('camera-capture').disabled=false;$('camera-capture').textContent='■ STOP RECORDING';
-    $('camera-status').textContent=`Recording… tap Stop when ready. Stops automatically after ${MAX_CAMERA_TAKE_SECONDS} seconds.`;
-    cameraTimer=setTimeout(()=>{if(recorder.state!=='inactive')recorder.stop();},MAX_CAMERA_TAKE_SECONDS*1000);
+    meterStartedAt=performance.now();recorder.start(200);$('camera-capture').disabled=false;$('camera-capture').textContent='■ STOP RECORDING';$('camera-take-length').disabled=true;
+    const targetLabel=takeTarget==='manual'?'One-shot · stop when ready':`${takeTarget} ${takeTarget==='1'?'bar':'bars'} at ${project.bpm} BPM · about ${targetSeconds.toFixed(1)} seconds`;
+    $('camera-status').textContent=`Recording… ${targetLabel}. You can stop sooner; maximum ${MAX_CAMERA_TAKE_SECONDS} seconds.`;
+    cameraTimer=setTimeout(()=>{if(recorder.state!=='inactive')recorder.stop();},targetSeconds*1000);
   } catch(error){cameraRecorder=null;closeCamera();notify(`Recording failed: ${error.message}`);}
 }
 
@@ -1777,8 +1793,9 @@ function bindControls() {
   });
   $('bpm-input').addEventListener('change',event=>{
     project.bpm=clamp(event.target.value,40,240);event.target.value=project.bpm;
-    audio.setTransport(project.bpm,project.quantize);if(transportTimer){stopSequencer();startSequencer();}queueSave();
+    audio.setTransport(project.bpm,project.quantize);if(transportTimer){stopSequencer();startSequencer();}updateCameraLengthHelp();queueSave();
   });
+  $('camera-take-length').addEventListener('change',updateCameraLengthHelp);
   $('quantize-select').addEventListener('change',event=>{project.quantize=event.target.value;audio.setTransport(project.bpm,project.quantize);queueSave();});
   $('project-title').addEventListener('input',event=>{project.title=event.target.value;queueSave();});
   $('pad-name').addEventListener('input',event=>{project.pads[selected].name=event.target.value;renderPad(selected);renderTrackGrid();renderVideoDirector();queueSave();});

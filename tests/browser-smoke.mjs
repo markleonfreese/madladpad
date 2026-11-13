@@ -1367,11 +1367,22 @@ try {
     assert.notEqual(captureTarget,0,'occupied pad media should remain protected until Keep');
     await page.locator('#capture-target-new').click();
     await page.locator('#camera-dialog').waitFor({state:'visible'});
-    assert.equal(await page.locator('#camera-length').count(),0,'camera recording should start without a required duration chooser');
+    assert.equal(await page.locator('#camera-take-length').inputValue(),'manual','manual one-shot capture should remain the default');
+    assert.deepEqual(await page.locator('#camera-take-length option').evaluateAll(options=>options.map(option=>option.value)),['manual','1','2','4'],'camera should offer manual, 1-bar, 2-bar and 4-bar targets');
     await page.waitForFunction(()=>!document.querySelector('#camera-capture').disabled,null,{timeout:6000});
+    await page.locator('#camera-take-length').selectOption('4');
+    assert.match(await page.locator('#camera-length-help').textContent(),/4 bars in 4\/4 at 120 BPM · about 8\.0 seconds/,'the selected bar target should show its current-tempo duration before recording');
+    await page.locator('#camera-take-length').selectOption('2');
+    assert.match(await page.locator('#camera-length-help').textContent(),/2 bars in 4\/4 at 120 BPM · about 4\.0 seconds/,'changing the target should update the duration hint');
+    await page.evaluate(()=>{
+      window.__cameraTargetDelay=null;window.__nativeCameraSetTimeout=window.setTimeout;
+      window.setTimeout=(callback,delay,...args)=>{if(delay===4000)window.__cameraTargetDelay=delay;return window.__nativeCameraSetTimeout(callback,delay,...args);};
+    });
     await page.locator('#camera-capture').click();
     await page.waitForFunction(()=>document.querySelector('#camera-capture').textContent.includes('STOP'));
-    assert.match(await page.locator('#camera-status').textContent(),/Stop when ready.*30 seconds/,'the immediate camera take should explain manual Stop and its 30-second cap');
+    assert.match(await page.locator('#camera-status').textContent(),/2 bars at 120 BPM · about 4\.0 seconds/,'bar target should use the current project tempo and explain its approximate duration');
+    assert.equal(await page.evaluate(()=>window.__cameraTargetDelay),4000,'two 4/4 bars at 120 BPM should auto-stop after four seconds');
+    await page.evaluate(()=>{window.setTimeout=window.__nativeCameraSetTimeout;});
     await page.waitForTimeout(2000);
     await page.locator('#camera-capture').click();
     await page.locator('#camera-keep').waitFor({state:'visible',timeout:6000});
@@ -1380,6 +1391,7 @@ try {
     assert.match(await page.locator('#camera-status').textContent(),/Sound detected/,'active captured audio should be reported as detected before review');
     await page.locator('#camera-retake').click();
     await page.waitForFunction(()=>!document.querySelector('#camera-capture').disabled,null,{timeout:5000});
+    await page.locator('#camera-take-length').selectOption('manual');
     await page.evaluate(()=>{
       window.forceSilentCaptureMeter=true;window.__cameraMaxDelay=null;
       const native=window.setTimeout;
@@ -1511,7 +1523,7 @@ try {
   },null,{timeout:8000});
   await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
   checkpoint('service worker ready');
-  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v16')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
+  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v17')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
   await page.reload();
   await page.waitForFunction(()=>Boolean(navigator.serviceWorker.controller));
   checkpoint('service worker controls page');

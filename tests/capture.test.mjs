@@ -32,6 +32,18 @@ test('capture review distinguishes silence or unavailable metering from detected
   assert.equal(core.captureRegionStatus(true),'Sound detected. Suggested trim surrounds it; adjust, preview or keep.');
 });
 
+test('camera take targets follow project tempo and preserve the 30-second safety cap',()=>{
+  assert.equal(core.cameraTakeTargetSeconds('manual',120),30);
+  assert.equal(core.cameraTakeTargetSeconds('1',120),2);
+  assert.equal(core.cameraTakeTargetSeconds('2',120),4);
+  assert.equal(core.cameraTakeTargetSeconds('4',120),8);
+  assert.equal(core.cameraTakeTargetSeconds('4',60),16);
+  assert.equal(core.cameraTakeTargetSeconds('4',30),30);
+  assert.equal(core.cameraTakeTargetSeconds('unsupported',120),30);
+  assert.equal(core.cameraTakeTargetSeconds('2',0),30);
+  assert.equal(core.cameraTakeTargetSeconds('2',120,5),4);
+});
+
 test('capture analysis finds quiet sounds above a local noise floor', () => {
   const quiet=Array(40).fill(.002);
   quiet[10]=.012;quiet[11]=.01;quiet[12]=.008;
