@@ -944,6 +944,7 @@ try {
   await page.locator('#melody-add').click();
   await page.locator('#melody-notes input[aria-label="Note 1 MIDI pitch"]').fill('69');
   await page.locator('#melody-notes input[aria-label="Note 1 MIDI pitch"]').press('Tab');
+  assert.match(await page.locator('#melody-notes .melody-note').first().locator('span').textContent(),/A4 · 440\.0 Hz/,'melody pitch should be shown with a musical note name and tuning frequency');
   await page.locator('#melody-notes select[aria-label="Assign phrase word to note 1"]').selectOption('MadLadPad');
   await page.locator('#melody-harmony-interval').selectOption('3');
   await page.locator('#melody-harmony-add').click();
