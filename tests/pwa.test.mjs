@@ -38,10 +38,10 @@ test('offline shell and all locally referenced ES modules exist', () => {
   assert.match(css,/font-family:'DM Mono'.*url\('\/fonts\/dm-mono-400-latin\.woff2'\)/,'DM Mono must use its self-hosted Latin font');
   assert.ok(sw.includes("caches.match('/')"),
     'offline navigation must fall back to the canonical root route used by Workers Static Assets');
-  assert.match(sw,/const CACHE = 'madladpad-shell-v19'/,'a changed cached app module must activate a fresh offline shell');
+  assert.match(sw,/const CACHE = 'madladpad-shell-v20'/,'the write-through cache fix must activate a fresh offline shell');
 });
 
-test('v19 install precaches the updated modules, local fonts and licenses before taking control', async () => {
+test('v20 install precaches the updated modules, local fonts and licenses before taking control', async () => {
   const sw=readFileSync(join(site,'sw.js'),'utf8');
   const handlers=new Map();let cacheName=null,precache=[],skipped=false;
   const context={
@@ -53,17 +53,55 @@ test('v19 install precaches the updated modules, local fonts and licenses before
   let installation;
   handlers.get('install')({waitUntil:promise=>{installation=promise;}});
   await installation;
-  assert.equal(cacheName,'madladpad-shell-v19');
+  assert.equal(cacheName,'madladpad-shell-v20');
   assert.ok(precache.includes('/audio.js'),'the replacement offline shell must include the fixed audio module');
   assert.ok(precache.includes('/fonts/dm-sans-variable-latin.woff2')&&precache.includes('/fonts/dm-mono-400-latin.woff2'),'the offline shell should include self-hosted UI fonts');
   assert.ok(precache.includes('/licenses/OFL-DM-Sans.txt')&&precache.includes('/licenses/OFL-DM-Mono.txt'),'the offline shell should include font license texts');
   assert.equal(skipped,true,'the complete replacement shell should activate without waiting for an old page to close');
 });
 
+test('network-first asset response waits for durable cache update and tolerates cache failures', async () => {
+  const sw=readFileSync(join(site,'sw.js'),'utf8');
+  const handlers=new Map();
+  let releaseWrite,storedText='',writeStarted=false;
+  const writeGate=new Promise(resolve=>{releaseWrite=resolve;});
+  const context={
+    self:{addEventListener:(name,handler)=>handlers.set(name,handler),location:{origin:'https://madladpad.test'}},
+    caches:{open:()=>Promise.resolve({put:async(_request,response)=>{writeStarted=true;await writeGate;storedText=await response.text();}})},
+    fetch:()=>Promise.resolve(new Response('fresh Voice Lab module')),
+    URL,Promise,Request,Response
+  };
+  runInNewContext(sw,context);
+  let responsePromise;
+  handlers.get('fetch')({request:new Request('https://madladpad.test/voice.js'),respondWith:promise=>{responsePromise=promise;}});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(writeStarted,true,'fresh same-origin assets should start their cache write');
+  let responseResolved=false;
+  responsePromise.then(()=>{responseResolved=true;});
+  await Promise.resolve();
+  assert.equal(responseResolved,false,'the fetch event must stay alive until the cache write finishes');
+  releaseWrite();
+  const response=await responsePromise;
+  assert.equal(await response.text(),'fresh Voice Lab module');
+  assert.equal(storedText,'fresh Voice Lab module','the fresh asset should be durable before response completion');
+
+  const failureHandlers=new Map();
+  const failureContext={
+    self:{addEventListener:(name,handler)=>failureHandlers.set(name,handler),location:{origin:'https://madladpad.test'}},
+    caches:{open:()=>Promise.reject(new Error('storage unavailable'))},
+    fetch:()=>Promise.resolve(new Response('online response remains available')),
+    URL,Promise,Request,Response
+  };
+  runInNewContext(sw,failureContext);
+  let failureResponse;
+  failureHandlers.get('fetch')({request:new Request('https://madladpad.test/voice.js'),respondWith:promise=>{failureResponse=promise;}});
+  assert.equal(await (await failureResponse).text(),'online response remains available','cache write failures should not break online asset delivery');
+});
+
 test('service worker activation removes stale app shells without deleting the Whisper model cache', async () => {
   const sw = readFileSync(join(site, 'sw.js'), 'utf8');
   const handlers = new Map();
-  const cacheNames = ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13', 'madladpad-shell-v14', 'madladpad-shell-v15', 'madladpad-shell-v16', 'madladpad-shell-v17', 'madladpad-shell-v18', 'madladpad-shell-v19', 'transformers-cache', 'another-app-cache'];
+  const cacheNames = ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13', 'madladpad-shell-v14', 'madladpad-shell-v15', 'madladpad-shell-v16', 'madladpad-shell-v17', 'madladpad-shell-v18', 'madladpad-shell-v19', 'madladpad-shell-v20', 'transformers-cache', 'another-app-cache'];
   const deleted = [];
   const context = {
     self: {
@@ -82,7 +120,7 @@ test('service worker activation removes stale app shells without deleting the Wh
   let activation;
   handlers.get('activate')({ waitUntil: promise => { activation = promise; } });
   await activation;
-  assert.deepEqual(deleted, ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13', 'madladpad-shell-v14', 'madladpad-shell-v15', 'madladpad-shell-v16', 'madladpad-shell-v17', 'madladpad-shell-v18']);
+  assert.deepEqual(deleted, ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13', 'madladpad-shell-v14', 'madladpad-shell-v15', 'madladpad-shell-v16', 'madladpad-shell-v17', 'madladpad-shell-v18', 'madladpad-shell-v19']);
 });
 
 
