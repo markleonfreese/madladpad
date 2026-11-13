@@ -218,7 +218,19 @@ function renderMelody(project, save) {
     const row = document.createElement('div'); row.className = 'melody-note';
     const noteLabel = `${note.layer === 'harmony' ? 'Harmony' : 'Note'} ${index + 1}`;
     const noteName = document.createElement('span'); noteName.textContent = `${noteLabel} · ${midiNoteName(note.midi)} · ${midiFrequency(note.midi, project.voice.melody.tuning).toFixed(1)} Hz`;
-    const pitch = document.createElement('input'); pitch.type = 'number'; pitch.min = '24'; pitch.max = '108'; pitch.value = note.midi; pitch.setAttribute('aria-label', `${noteLabel} MIDI pitch`);
+    const pitch = document.createElement('select'); pitch.setAttribute('aria-label', `${noteLabel} pitch`);
+    for (let midi = 24; midi <= 108; midi++) {
+      if (midi % 12 === 0) {
+        const octave = document.createElement('optgroup');
+        octave.label = `${midiNoteName(midi)}–${midiNoteName(Math.min(midi + 11, 108))}`;
+        pitch.append(octave);
+      }
+      const option = document.createElement('option');
+      option.value = String(midi);
+      option.textContent = `${midiNoteName(midi)} (MIDI ${midi})`;
+      pitch.lastElementChild.append(option);
+    }
+    pitch.value = String(note.midi);
     const step = document.createElement('input'); step.type = 'number'; step.min = '0'; step.max = '255'; step.value = note.step; step.setAttribute('aria-label', `${noteLabel} sixteenth step`);
     const duration = document.createElement('input'); duration.type = 'number'; duration.min = '.125'; duration.max = '16'; duration.step = '.125'; duration.value = note.duration; duration.setAttribute('aria-label', `${noteLabel} duration in sixteenth steps`);
     const word = document.createElement('select'); word.setAttribute('aria-label', `Assign phrase word to ${noteLabel.toLowerCase()}`);
