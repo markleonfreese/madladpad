@@ -832,6 +832,7 @@ try {
   await page.locator('#grid-division').selectOption('1/16');
   await openScreen('voice');
   assert.equal(await page.locator('#voice-model-credits').getAttribute('href'),'/credits.html','Voice Lab should provide an easy path to model and license credits');
+  assert.match(await page.locator('#voice-speech-tool').innerText(),/leave about a second of silence after the last word/i,'speech transcription should explain the tested clip-end timing limitation');
   await page.locator('#voice-consent').check();
   await page.evaluate(()=>{window.syntheticVoiceWorkerError=true;});
   await page.locator('#voice-transcribe').click();

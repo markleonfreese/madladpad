@@ -216,7 +216,7 @@
         <section class="voice-card" id="voice-speech-tool" aria-labelledby="transcript-title">
           <h3 id="transcript-title">Speech transcription</h3>
           <label class="voice-label">LOCAL AUDIO / VIDEO SOURCE<select id="voice-source-pad"></select></label>
-          <p class="voice-note">English, on device. First use downloads about 65 MB total: the speech model and audio runtime. Audio is not uploaded. Word confidence is not supplied by this model, so review every word and timestamp.</p>
+          <p class="voice-note">English, on device. First use downloads about 65 MB total: the speech model and audio runtime. Audio is not uploaded. Leave about a second of silence after the last word so its ending can be transcribed. Word confidence is not supplied by this model, so review every word and timestamp.</p>
           <p class="voice-note">Recognition uses Whisper Tiny English in ONNX format. <a id="voice-model-credits" href="/credits.html" target="_blank" rel="noopener">Model, runtime and license credits</a>.</p>
           <label class="consent-line"><input type="checkbox" id="voice-consent"> I choose to transcribe this clip on this device.</label>
           <div class="voice-actions"><button class="pill-button" id="voice-transcribe" disabled>TRANSCRIBE LOCALLY</button><button class="pill-button" id="voice-cancel" hidden>CANCEL</button></div>
