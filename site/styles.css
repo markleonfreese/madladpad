@@ -381,3 +381,5 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
   .transport-settings #demo-button{grid-column:1/-1;width:100%}
 }
 .melody-scale-controls{display:flex;flex-wrap:wrap;align-items:end;gap:7px;margin:10px 0}.melody-scale-controls .voice-label{margin:4px 0;flex:1 1 120px}.melody-scale-controls .voice-label select{min-width:0;width:100%}.melody-scale-controls #melody-snap-scale{min-height:44px;max-width:100%}
+.voice-selection-tools[hidden]{display:none}
+.voice-selection-tools #voice-selection-status{color:#a9b5a4;font-size:11px}

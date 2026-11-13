@@ -869,6 +869,15 @@ try {
   await page.locator('#voice-transcribe').click();
   await page.waitForFunction(()=>document.querySelectorAll('#voice-word-list .voice-word').length===3);
   assert.match(await page.locator('#voice-status').textContent(),/Confidence is not provided/);
+  await page.locator('#voice-select-all').click();
+  assert.equal(await page.locator('#voice-word-list input[type="checkbox"]:checked').count(),3,'select all should include every timestamped transcript word');
+  assert.equal(await page.locator('#voice-selection-status').textContent(),'3 of 3 words selected.','bulk selection should announce its current word count');
+  assert.equal(await page.locator('#voice-make-phrase').isDisabled(),false,'selecting all words should enable phrase creation');
+  await page.locator('#voice-clear-selection').click();
+  assert.equal(await page.locator('#voice-word-list input[type="checkbox"]:checked').count(),0,'clear selection should leave transcript words unselected');
+  assert.equal(await page.locator('#voice-selection-status').textContent(),'No words selected.','clearing selection should announce the empty state');
+  assert.equal(await page.locator('#voice-make-phrase').isDisabled(),true,'clearing selection should disable phrase creation');
+  assert.equal(await page.evaluate(()=>document.activeElement?.id),'voice-clear-selection','bulk selection actions should preserve keyboard focus');
   await page.locator('#voice-word-list .voice-word').nth(0).locator('input[type=checkbox]').check();
   assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Use word 1, Hello','selecting a transcript word should keep keyboard focus on that checkbox');
   await page.locator('#voice-word-list .voice-word').nth(1).locator('input[aria-label="Word 2 start seconds"]').fill('0.15');
