@@ -1388,6 +1388,12 @@ try {
   const pack = JSON.parse(await readFile(await download.path(), 'utf8'));
   assert.equal(pack.format, 'madladpad');
   assert.ok(pack.media[0].startsWith('data:audio/'));
+  assert.equal(pack.project.voice.transcripts.length,3,'project packs should preserve every saved transcript take');
+  assert.deepEqual(pack.project.voice.transcripts[0].words.map(word=>word.text),['Hello','from edited','MadLadPad'],'project packs should preserve corrected transcript words');
+  assert.ok(pack.project.voice.transcripts[2].words.some(word=>word.text==='by hand'),'project packs should preserve manual corrections in the selected transcript');
+  assert.equal(pack.project.voice.phrases.length,3,'project packs should preserve original phrases and the combined story');
+  assert.ok(pack.project.voice.melody.notes.some(note=>note.midi===69&&note.word==='MadLadPad'),'project packs should preserve melody pitch and its transcript-word cue');
+  assert.equal(pack.project.voice.rap.bars[0],'Hello from the other side','project packs should preserve the written rap bars');
   assert.equal(pack.project.pads[modePadId].stepPlaybackMode,'loop','portable project packs should include the per-pad playback mode');
   assert.equal(pack.project.pads[1].steps[4],true,'project pack should preserve the second lane pattern');
   assert.equal(pack.project.pads[2].steps[4],true,'project pack should preserve the third lane pattern loaded from the saved scene');
@@ -1404,6 +1410,15 @@ try {
   await page.reload();
   await page.waitForFunction(()=>document.querySelector('#sample-info').textContent.includes('synthetic.wav · AUDIO · stored on this device'));
   assert.equal(await page.locator('#project-title').inputValue(), 'Smoke pack');
+  await openScreen('voice');
+  await page.waitForFunction(()=>document.querySelectorAll('#voice-transcript-select option').length===3);
+  assert.ok(await page.locator('#voice-word-list input[type=text]').evaluateAll(inputs=>inputs.some(input=>input.value==='by hand')),'imported transcript corrections should still render after reloading the project');
+  assert.equal(await page.locator('#voice-phrases .voice-phrase').count(),3,'imported phrases and the combined story should render after reload');
+  await page.locator('[data-voice-jump="melody-title"]').click();
+  assert.ok(await page.locator('#melody-notes .melody-note').count()>=1,'imported melody notes should render after reload');
+  assert.ok(await page.locator('#melody-notes .melody-note').evaluateAll(notes=>notes.some(note=>note.textContent.includes('MadLadPad'))),'the imported melody should retain its transcript-word cue');
+  await page.locator('[data-voice-jump="rap-title"]').click();
+  assert.equal(await page.locator('#rap-bars textarea').first().inputValue(),'Hello from the other side','imported rap lyrics should render after reload');
   const beforePackModeViewport=await page.evaluate(()=>({width:innerWidth,height:innerHeight}));
   await page.setViewportSize({width:390,height:844});
   await openScreen('beats');
