@@ -1,6 +1,6 @@
 # MadLadPad current-main phone acceptance preview — 13 November 2026
 
-PR #84 is a review-only, non-production preview and is **not for merging**. It serves current application source `9ef9bef2bad222a424b814160da189359f7158ae` plus UAT documentation only. Before opening it, confirm the latest PR #84 **Verify** and **Workers Builds** checks passed on the same head; use the Workers Builds preview link as the test URL. Pages production remains deployment `bd8f37c8-50ee-44d0-b73f-b82b7f3c07be` from app source `17b7290` and does not include the #153 camera meter timing fix.
+PR #84 is a review-only, non-production preview and is **not for merging**. The refreshed branch is based on current application source `42517be1ed696cfffed0fc9ca3487bd7e1a963a8` plus UAT documentation only. Before opening it, confirm the latest PR #84 **Verify** and **Workers Builds** checks passed on the same head; use the Workers Builds preview link as the test URL. Pages production is deployment `7774a174-6f15-4208-a5a3-278ec4af9024` from app source `42517be`; this preview does not change production.
 
 First-use speech transcription downloads about 65 MB of model/runtime files. The selected speech clip stays on-device; use consenting testers and never attach raw recordings, transcripts, or private project packs.
 
@@ -11,6 +11,6 @@ Review checklist (see [DEVICE-ACCEPTANCE.md](DEVICE-ACCEPTANCE.md) for detailed 
 - [ ] Open Sounds and Beat Grid editors; verify selection, sample editing and lane editing.
 - [ ] Use three tracks at 120 BPM, scene launch, one-step playback, held-step loop behavior, and audiovisual composition. Confirm touch, timing, and audio/video alignment.
 - [ ] Record a camera sample on an empty pad and save-as-new on an occupied pad. Include leading/trailing silence around a clear event; compare suggested bounds with the event, adjust, preview and listen. Try quiet speech, room noise, silence, permission denial, Retake, Cancel and rotation. Report if mobile timing jitter moves the suggestion.
-- [ ] Test Speech, Melody and Rap: explicitly opt into transcription; review/edit word text and timing; edit/reorder a phrase and export WAV; write/play a melody, add harmony and export MIDI; write ABAB bars, edit syllable flow, audition and export lyrics. Record human usefulness/listening notes.
+- [ ] Test Speech, Melody and Rap: explicitly opt into transcription; review/edit word text and timing; edit/reorder a phrase and export WAV; choose A4 and confirm 440 Hz; set a note to step 16 and confirm “Bar 2 · Beat 1 · 16th 1”; add harmony and export MIDI; write ABAB bars, edit syllable flow, audition and export lyrics. Record human usefulness/listening notes.
 - [ ] Check warm offline model use, local project/pack persistence, microphone/camera indicator release, and TalkBack/VoiceOver.
 - [ ] Add sanitized results, URL, tested SHA, device/browser, and failures to Issue #2. Synthetic desktop and hosted CI checks do not count as physical-device or listening acceptance.
