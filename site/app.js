@@ -1504,9 +1504,10 @@ async function captureCamera() {
     const recorder=new MediaRecorder(cameraStream,mime?{mimeType:mime}:undefined);
     cameraRecorder=recorder;
     const chunks=[],levels=[];
+    let meterStartedAt=performance.now();
     recorder.ondataavailable=event=>{if(event.data.size)chunks.push(event.data);};
     recorder.onerror=event=>{if(cameraSession.current(token)){closeCamera();notify(`Recording failed: ${event.error?.message||'unknown error'}`);}};
-    try {const analyser=audio.context.createAnalyser();analyser.fftSize=1024;cameraMeterSource=audio.context.createMediaStreamSource(cameraStream);cameraMeterSource.connect(analyser);const samples=new Float32Array(analyser.fftSize);cameraMeterTimer=setInterval(()=>{analyser.getFloatTimeDomainData(samples);let sum=0;for(const sample of samples)sum+=sample*sample;levels.push(Math.sqrt(sum/samples.length));},50);} catch { /* The full clip remains available when live metering is unsupported. */ }
+    try {const analyser=audio.context.createAnalyser();analyser.fftSize=1024;cameraMeterSource=audio.context.createMediaStreamSource(cameraStream);cameraMeterSource.connect(analyser);const samples=new Float32Array(analyser.fftSize);cameraMeterTimer=setInterval(()=>{analyser.getFloatTimeDomainData(samples);let sum=0;for(const sample of samples)sum+=sample*sample;levels.push({time:(performance.now()-meterStartedAt)/1000,level:Math.sqrt(sum/samples.length)});},50);} catch { /* The full clip remains available when live metering is unsupported. */ }
     recorder.onstop=()=>{
       if(!cameraSession.current(token))return;
       if(cameraRecorder===recorder)cameraRecorder=null;clearInterval(cameraMeterTimer);cameraMeterTimer=null;cameraMeterSource?.disconnect();cameraMeterSource=null;clearTimeout(cameraTimer);cameraTimer=null;
@@ -1524,7 +1525,7 @@ async function captureCamera() {
         $('camera-review').hidden=false;$('camera-status').textContent='Camera and microphone stopped. Preparing a trim suggestion…';
       } catch(error){closeCamera();notify(`Could not review take: ${error.message}`);}
     };
-    recorder.start(200);$('camera-capture').disabled=false;$('camera-capture').textContent='■ STOP RECORDING';
+    meterStartedAt=performance.now();recorder.start(200);$('camera-capture').disabled=false;$('camera-capture').textContent='■ STOP RECORDING';
     $('camera-status').textContent=`Recording… tap Stop when ready. Stops automatically after ${MAX_CAMERA_TAKE_SECONDS} seconds.`;
     cameraTimer=setTimeout(()=>{if(recorder.state!=='inactive')recorder.stop();},MAX_CAMERA_TAKE_SECONDS*1000);
   } catch(error){cameraRecorder=null;closeCamera();notify(`Recording failed: ${error.message}`);}
