@@ -1,4 +1,4 @@
-import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, findAudioRecorderMime, extensionForAudioMime, AsyncActivity } from './core.js';
+import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, findAudioRecorderMime, extensionForAudioMime, AsyncActivity } from './core.js';
 import { getValue, saveVoiceLayer, deleteVoiceLayer } from './storage.js';
 import { detectPitch } from './tuner.js';
 
@@ -217,7 +217,10 @@ function renderMelody(project, save) {
   project.voice.melody.notes.forEach((note, index) => {
     const row = document.createElement('div'); row.className = 'melody-note';
     const noteLabel = `${note.layer === 'harmony' ? 'Harmony' : 'Note'} ${index + 1}`;
+    const description = document.createElement('div'); description.className = 'melody-note-description';
     const noteName = document.createElement('span'); noteName.textContent = `${noteLabel} · ${midiNoteName(note.midi)} · ${midiFrequency(note.midi, project.voice.melody.tuning).toFixed(1)} Hz`;
+    const positionName = document.createElement('small'); positionName.textContent = melodyPositionLabel(note.step);
+    description.append(noteName, positionName);
     const pitch = document.createElement('select'); pitch.setAttribute('aria-label', `${noteLabel} pitch`);
     for (let midi = 24; midi <= 108; midi++) {
       if (midi % 12 === 0) {
@@ -237,7 +240,7 @@ function renderMelody(project, save) {
     wordOptions.forEach(value => { const option = document.createElement('option'); option.value = value; option.textContent = value || 'No word cue'; word.append(option); }); word.value = note.word;
     for (const [input, key] of [[pitch, 'midi'], [step, 'step'], [duration, 'duration'], [word, 'word']]) input.addEventListener('change', () => { note[key] = key === 'word' ? input.value : Number(input.value); save(); renderMelody(project, save); });
     const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'pill-button'; remove.textContent = '×'; remove.setAttribute('aria-label', `Delete ${noteLabel.toLowerCase()}`); remove.addEventListener('click', () => { project.voice.melody.notes.splice(index, 1); save(); renderMelody(project, save); });
-    row.append(noteName, pitch, step, duration, word, remove); host.append(row);
+    row.append(description, pitch, step, duration, word, remove); host.append(row);
   });
   $('melody-add').disabled = project.voice.melody.notes.length >= MAX_MELODY_NOTES;
   $('melody-harmony-add').disabled = project.voice.melody.notes.length >= MAX_MELODY_NOTES;
