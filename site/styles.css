@@ -76,10 +76,20 @@ body[data-screen="beats"] .pad-bg{font-size:18px}
 .rap-flow-step[aria-pressed=true]{border-color:var(--acid);background:#b5db58;color:#152014;font-weight:800}
 .rap-flow-step:focus-visible{outline:2px solid var(--coral);outline-offset:2px}
 .rap-flow>.pill-button{margin:0 10px 10px;min-height:42px}
+.rap-bar-number{color:var(--acid);font:11px var(--mono);padding-top:10px}
+.rap-rhyme-ideas{grid-column:2;min-width:0;margin-top:-2px}
+.rap-rhyme-ideas[hidden]{display:none}
+.rap-rhyme-ideas>summary{display:inline-flex;align-items:center;min-height:36px;color:#aab8a8;font:9px var(--mono);letter-spacing:.04em;cursor:pointer}
+.rap-rhyme-ideas[open]>summary{color:var(--acid)}
+.rap-rhyme-list{display:flex;flex-wrap:wrap;gap:6px;padding:3px 0 6px}
+.rap-rhyme-chip{min-width:52px;min-height:38px;padding:7px 11px;border:1px solid #455548;border-radius:999px;background:#202b22;color:#d5e7ce;font:11px var(--mono);cursor:pointer;touch-action:manipulation}
+.rap-rhyme-chip:hover{border-color:var(--acid);color:var(--acid)}
+.rap-rhyme-chip:focus-visible,.rap-rhyme-ideas>summary:focus-visible{outline:2px solid var(--coral);outline-offset:2px}
 @media(max-width:740px){
   .rap-flow-grid{grid-template-columns:repeat(8,minmax(44px,1fr))}
   .rap-flow-step{min-width:44px;min-height:44px}
   .voice-card .pill-button,.voice-card .rap-flow>summary,.voice-card input:not([type=checkbox]),.voice-card select{min-height:44px}
+  .rap-rhyme-ideas>summary,.rap-rhyme-chip{min-height:44px}
 }
 @media(max-width:430px){#vocal-add-harmony{min-width:0;max-width:100%;white-space:normal}}
 @media(max-width:430px){.rap-flow-grid{grid-template-columns:repeat(4,minmax(44px,1fr))}}

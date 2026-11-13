@@ -32,6 +32,22 @@ function rhymeGroup(index, scheme) {
   return null;
 }
 
+function insertRhymeEnding(line, suggestion) {
+  const match = /(\S+)(\s*)$/.exec(line);
+  if (!match) return suggestion;
+  const ending = match[1];
+  const leading = ending.match(/^[^a-z0-9']*/i)?.[0] || '';
+  const trailing = ending.match(/[^a-z0-9']*$/i)?.[0] || '';
+  const core = ending.slice(leading.length, ending.length - trailing.length || undefined);
+  const replacement = core && core === core.toUpperCase()
+    ? suggestion.toUpperCase()
+    : core && core[0] === core[0].toUpperCase()
+      ? suggestion[0].toUpperCase() + suggestion.slice(1)
+      : suggestion;
+  const prefix = line.slice(0, match.index);
+  return `${prefix}${leading}${replacement}${trailing}${match[2]}`;
+}
+
 async function renderPhraseBuffer(phrase, audio) {
   if (!phrase.words.length) throw new Error('Add words to the phrase before exporting.');
   const sampleRate = Math.min(48000, audio.context.sampleRate);
@@ -250,10 +266,10 @@ function renderRap(project, save, audio, notify) {
   $('rap-scheme').value = project.voice.rap.scheme;
   const host = $('rap-bars'); host.replaceChildren();
   project.voice.rap.bars.forEach((line, index) => {
-    const row = document.createElement('label'); row.className = 'rap-bar';
+    const row = document.createElement('div'); row.className = 'rap-bar';
     row.dataset.bar=String(index);
-    const number = document.createElement('span'); number.textContent = String(index + 1).padStart(2, '0');
-    const text = document.createElement('textarea'); text.maxLength = 500; text.rows = 2; text.value = line; text.placeholder = `Bar ${index + 1}`; text.setAttribute('aria-label', `Rap bar ${index + 1}`);
+    const number = document.createElement('label'); number.className = 'rap-bar-number'; number.htmlFor = `rap-bar-input-${index}`; number.textContent = String(index + 1).padStart(2, '0');
+    const text = document.createElement('textarea'); text.id = `rap-bar-input-${index}`; text.maxLength = 500; text.rows = 2; text.value = line; text.placeholder = `Bar ${index + 1}`; text.setAttribute('aria-label', `Rap bar ${index + 1}`);
     const meta = document.createElement('small'); const renderMeta = () => {
       const line = project.voice.rap.bars[index], scheme = project.voice.rap.scheme, group = rhymeGroup(index, scheme);
       let anchor = null;
@@ -267,11 +283,26 @@ function renderRap(project, save, audio, notify) {
       const hints = rhymeHints(target).filter(word => word !== currentEnding).slice(0, 3);
       const cues = [];
       if (anchor) cues.push(`match bar ${anchor.index + 1} “${anchor.word}”`);
-      if (hints.length) cues.push(`rhyme ideas: ${hints.join(', ')}`);
       meta.textContent = [`${group ? `${group} rhyme` : 'Free rhyme'}`, `${estimateSyllables(line)} estimated syllables`, ...cues].join(' · ');
+      rhymeDetails.hidden = !hints.length;
+      rhymeSummary.textContent = `RHYME IDEAS · ${hints.length}`;
+      rhymeButtons.replaceChildren();
+      hints.forEach(suggestion => {
+        const button = document.createElement('button'); button.type = 'button'; button.className = 'rap-rhyme-chip'; button.textContent = suggestion;
+        button.setAttribute('aria-label', `Use rhyme idea ${suggestion} for bar ${index + 1}`);
+        button.addEventListener('click', () => {
+          text.value = insertRhymeEnding(text.value, suggestion);
+          text.dispatchEvent(new Event('input', { bubbles: true }));
+          text.focus();
+        });
+        rhymeButtons.append(button);
+      });
     };
+    const rhymeDetails = document.createElement('details'); rhymeDetails.className = 'rap-rhyme-ideas';
+    const rhymeSummary = document.createElement('summary'); rhymeDetails.append(rhymeSummary);
+    const rhymeButtons = document.createElement('div'); rhymeButtons.className = 'rap-rhyme-list'; rhymeDetails.append(rhymeButtons);
     row.updateMeta = renderMeta;
-    text.addEventListener('input', () => { project.voice.rap.bars[index] = text.value; host.querySelectorAll('.rap-bar').forEach(item => item.updateMeta?.()); save(); }); renderMeta(); row.append(number, text, meta);
+    text.addEventListener('input', () => { project.voice.rap.bars[index] = text.value; host.querySelectorAll('.rap-bar').forEach(item => item.updateMeta?.()); save(); }); renderMeta(); row.append(number, text, meta, rhymeDetails);
     const flowDetails=document.createElement('details');flowDetails.className='rap-flow';
     const summary=document.createElement('summary');summary.textContent=`FLOW · ${project.voice.rap.flow[index].filter(Boolean).length}/16 syllable starts`;flowDetails.append(summary);
     const grid=document.createElement('div');grid.className='rap-flow-grid';grid.setAttribute('role','group');grid.setAttribute('aria-label',`Rap bar ${index+1} syllable flow steps`);
