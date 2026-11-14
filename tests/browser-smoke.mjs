@@ -72,7 +72,7 @@ try {
   const context = await browser.newContext({acceptDownloads:true});
   await context.grantPermissions(['camera','microphone'],{origin});
   await context.route('**/*',routeLocalOnly);
-  const page = await context.newPage();
+  let page = await context.newPage();
   const firstRunContext=await browser.newContext();
   await firstRunContext.route('**/*',routeLocalOnly);
   const firstRunPage=await firstRunContext.newPage();
@@ -94,7 +94,7 @@ try {
   await toggleGlobalDemo(firstRunPage);
   assert.equal(await firstRunPage.locator('#demo-button').getAttribute('aria-pressed'),'false','Settings should disable fallback demo sounds again');
   await firstRunContext.close();
-  await page.addInitScript(() => {
+  await context.addInitScript(() => {
     const NativeAudioContext=window.AudioContext;
     window.AudioContext=class extends NativeAudioContext {
       constructor(...args){super(...args);window.__madladpadAppAudioContext??=this;}
@@ -110,7 +110,7 @@ try {
       return decodeAudioData.call(this,data,...args);
     };
   });
-  await page.addInitScript(() => {
+  await context.addInitScript(() => {
     window.syntheticVoiceWorkerError = false;
     window.syntheticVoiceWorkerDelay = 20;
     window.syntheticVoiceWords = null;
@@ -1168,33 +1168,60 @@ try {
       finally { await context.close(); }
     },vocalMixBytes.toString('base64'));
     assert.ok(vocalMixRms>importedRms*.1,`an imported Song audio track should reach the exported mix (track RMS ${importedRms}, export RMS ${vocalMixRms})`);
-    await page.evaluate(async({id,encoded})=>{
-      const {beginAudioRecordingRecovery,appendAudioRecordingRecoveryChunk}=await import('/storage.js');
-      const bytes=Uint8Array.from(atob(encoded),character=>character.charCodeAt(0));
-      await beginAudioRecordingRecovery(id,{startStep:16,mime:'audio/wav'});
-      await appendAudioRecordingRecoveryChunk(id,new Blob([bytes],{type:'audio/wav'}));
-    },{id:'interrupted-smoke',encoded:micWav.toString('base64')});
-    await page.reload();
-    await page.waitForFunction(()=>document.querySelector('#connection-indicator')?.textContent.includes('STUDIO'),null,{timeout:20000});
-    await openScreen('overdub');
-    await page.locator('#voice-overdub-recover').waitFor({state:'visible',timeout:5000});
-    assert.match(await page.locator('#voice-overdub-status').textContent(),/interrupted local take.*1 saved audio chunks/i,'a pending local recording should be clearly offered after reload');
-    await page.locator('#voice-overdub-recover').click();
-    await page.waitForFunction(()=>document.querySelectorAll('#voice-overdub-layers .vocal-layer').length===3,null,{timeout:8000});
-    assert.match(await page.locator('#voice-overdub-layers .vocal-layer').nth(2).locator('.vocal-layer-name').inputValue(),/Recovered take/,'recovery should create an editable Song audio layer');
-    assert.deepEqual(await page.evaluate(async()=>(await (await import('/storage.js')).listInterruptedAudioRecordings()).map(item=>item.id)),[],'recovery should remove its temporary chunks only after saving the complete local track');
-    const recoveredId=await page.locator('#voice-overdub-layers .vocal-layer').nth(2).getAttribute('data-layer');
-    const recoveredRms=await page.evaluate(async id=>{
-      const file=await (await import('/storage.js')).getValue(`voice-layer:${id}`);
-      const context=new AudioContext();
-      try{const decoded=await context.decodeAudioData(await file.arrayBuffer());const samples=decoded.getChannelData(0);return Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length);}
-      finally{await context.close();}
-    },recoveredId);
-    assert.ok(recoveredRms>.1,`recovered chunks should retain decodable signal, got RMS ${recoveredRms}`);
-    page.once('dialog',dialog=>dialog.accept());
-    await page.getByRole('button',{name:/Delete audio track 3 and its saved local audio file/}).click();
-    await page.waitForFunction(()=>document.querySelectorAll('#voice-overdub-layers .vocal-layer').length===2);
-    checkpoint('interrupted microphone take recovers from local journal into editable Song audio');
+    const crashPage=page;
+    await crashPage.goto(`${origin}/#overdub`);
+    await crashPage.waitForFunction(()=>document.body.dataset.screen==='overdub');
+    const recoveryIdsBeforeCrashTest=await crashPage.evaluate(async()=>(await (await import('/storage.js')).listInterruptedAudioRecordings()).map(take=>take.id));
+    await crashPage.locator('#play-seq').click();
+    await crashPage.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
+    await crashPage.waitForFunction(()=>!document.querySelector('#voice-overdub-record').disabled);
+    await crashPage.locator('#voice-overdub-record').click();
+    await crashPage.waitForFunction(()=>document.querySelector('#voice-overdub-status').textContent.includes('Recording microphone audio'));
+    checkpoint('renderer-crash recording started');
+    const journalSnapshot=await crashPage.evaluate(async previousIds=>{
+      const deadline=Date.now()+10000;
+      let takes=[];
+      while(Date.now()<deadline){
+        takes=await (await import('/storage.js')).listInterruptedAudioRecordings();
+        const take=takes.find(item=>!previousIds.includes(item.id)&&item.completeChunks>=1&&item.blob.size>0);
+        if(take)return{id:take.id,chunks:take.completeChunks,bytes:take.blob.size};
+        await new Promise(resolve=>setTimeout(resolve,150));
+      }
+      return{status:document.querySelector('#voice-overdub-status')?.textContent,takes:takes.map(take=>({id:take.id,chunks:take.completeChunks,bytes:take.blob.size}))};
+    },recoveryIdsBeforeCrashTest);
+    assert.ok(journalSnapshot.id,`the new microphone take should have a committed journal chunk before renderer crash: ${JSON.stringify(journalSnapshot)}`);
+    const crashRecoveryId=journalSnapshot.id;
+    checkpoint('renderer-crash journal chunk committed');
+    const crashSession=await context.newCDPSession(crashPage);
+    const crashed=crashPage.waitForEvent('crash',{timeout:5000});
+    void crashSession.send('Page.crash').catch(()=>{});
+    await crashed;
+    checkpoint('renderer process crash observed');
+    await crashPage.close().catch(()=>{});
+    const recoveryPage=await context.newPage();
+    await recoveryPage.goto(`${origin}/#overdub`);
+    await recoveryPage.waitForFunction(()=>document.querySelector('#connection-indicator')?.textContent.includes('STUDIO'),null,{timeout:20000});
+    const recoveredJournal=await recoveryPage.evaluate(async id=>{
+      const item=(await (await import('/storage.js')).listInterruptedAudioRecordings()).find(take=>take.id===id);
+      return item&&{id:item.id,chunks:item.chunks,completeChunks:item.completeChunks,manifestBytes:item.bytes,blobBytes:item.blob.size};
+    },crashRecoveryId);
+    console.log(`[smoke] renderer-crash journal after reload: ${JSON.stringify(recoveredJournal)}`);
+    checkpoint('renderer-crash recovery app reloaded');
+    assert.ok(recoveredJournal?.completeChunks>=1&&recoveredJournal.blobBytes>0,'the same take that committed a chunk before the crash should remain recoverable after reload');
+    await recoveryPage.locator('#voice-overdub-recover').waitFor({state:'visible',timeout:5000});
+    assert.match(await recoveryPage.locator('#voice-overdub-status').textContent(),/interrupted local take.*saved audio chunks/i,'a committed microphone chunk should be offered after a renderer crash');
+    await recoveryPage.locator('#voice-overdub-recover').click();
+    await recoveryPage.waitForFunction(()=>document.querySelectorAll('#voice-overdub-layers .vocal-layer').length===3,null,{timeout:8000});
+    assert.match(await recoveryPage.locator('#voice-overdub-layers .vocal-layer').nth(2).locator('.vocal-layer-name').inputValue(),/Recovered take/,'recovery should create an editable Song audio layer');
+    assert.deepEqual(await recoveryPage.evaluate(async()=>(await (await import('/storage.js')).listInterruptedAudioRecordings()).map(item=>item.id)),[],'recovery should remove temporary chunks only after saving the recovered local track');
+    const recoveredId=await recoveryPage.locator('#voice-overdub-layers .vocal-layer').nth(2).getAttribute('data-layer');
+    const recoveredBytes=await recoveryPage.evaluate(async id=>(await (await import('/storage.js')).getValue(`voice-layer:${id}`))?.size,recoveredId);
+    assert.ok(recoveredBytes>0,`recovered audio should retain its committed media bytes, got ${recoveredBytes}`);
+    recoveryPage.once('dialog',dialog=>dialog.accept());
+    await recoveryPage.getByRole('button',{name:/Delete audio track 3 and its saved local audio file/}).click();
+    await recoveryPage.waitForFunction(()=>document.querySelectorAll('#voice-overdub-layers .vocal-layer').length===2);
+    page=recoveryPage;
+    checkpoint('real Chromium renderer crash recovers journaled microphone chunks into an editable Song track');
   }
   await openScreen('overdub');
   const songVideoSource=await readFile(resolve('tests/fixtures/webkit-stop-boundary.mp4'));
