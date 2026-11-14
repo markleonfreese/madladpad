@@ -1,5 +1,5 @@
 import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, findRecorderMime, extensionForAudioMime, extensionForMime, vocalLayerClip, songVideoPositionAtStep, songTotalBars, AsyncActivity, localRecordingBudget, createBoundedRecordingCapture } from './core.js';
-import { getValue, saveVoiceLayer, deleteVoiceLayer, saveSongVideoLayer, deleteSongVideoLayer } from './storage.js';
+import { getValue, saveVoiceLayer, deleteVoiceLayer, saveSongVideoLayer, deleteSongVideoLayer, beginAudioRecordingRecovery, appendAudioRecordingRecoveryChunk, listInterruptedAudioRecordings, deleteInterruptedAudioRecording } from './storage.js';
 import { detectPitch } from './tuner.js';
 
 const $ = id => document.getElementById(id);
@@ -367,6 +367,8 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   let worker = null;
   const transcriptionActivity = new AsyncActivity();
   let vocalRecording = null;
+  let interruptedAudioRecordings = [];
+  let interruptedAudioRecording = null;
   let videoRecording = null;
   const videoRecordingActivity = new AsyncActivity();
   let tunerStream = null, tunerSource = null, tunerAnalyser = null, tunerTimer = null, tunerFrame = null;
@@ -401,7 +403,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   const updateOverdubControls = () => {
     const state = transportState();
     const videoStarting=videoRecordingActivity.phase==='starting';
-    $('voice-overdub-record').disabled = !state.running || Boolean(vocalRecording) || Boolean(videoRecording) || videoStarting || project.voice.layers.length >= MAX_VOCAL_LAYERS;
+    $('voice-overdub-record').disabled = !state.running || Boolean(vocalRecording) || Boolean(videoRecording) || videoStarting || Boolean(interruptedAudioRecording) || project.voice.layers.length >= MAX_VOCAL_LAYERS;
     $('voice-overdub-stop').hidden = !vocalRecording;
     if (project.voice.layers.length >= MAX_VOCAL_LAYERS && !vocalRecording) $('voice-overdub-status').textContent = `The ${MAX_VOCAL_LAYERS} audio-track limit is full. Export a project pack before deleting a local track.`;
     else if (!state.running && !vocalRecording && !$('voice-overdub-status').textContent) $('voice-overdub-status').textContent = 'Start the sequencer to record an audio track.';
@@ -412,6 +414,27 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     $('overdub-video-cancel').hidden=!videoRecording;
     if(project.voice.videoLayers.length>=MAX_VOCAL_LAYERS&&!videoRecording)$('song-video-status').textContent=`The ${MAX_VOCAL_LAYERS} video-track limit is full. Delete a track before adding another.`;
     else if(!state.running&&!videoRecording&&!videoStarting&&!$('song-video-status').textContent)$('song-video-status').textContent='Start the Song to record a video track.';
+  };
+
+  const renderInterruptedAudioRecovery = () => {
+    interruptedAudioRecording=interruptedAudioRecordings[0]||null;
+    const recover=$('voice-overdub-recover'),discard=$('voice-overdub-discard');
+    recover.hidden=!interruptedAudioRecording;
+    discard.hidden=!interruptedAudioRecording;
+    if(interruptedAudioRecording){
+      recover.disabled=!interruptedAudioRecording.blob.size;
+      const when=new Date(interruptedAudioRecording.createdAt).toLocaleString();
+      $('voice-overdub-status').textContent=interruptedAudioRecording.blob.size
+        ?`An interrupted local take from ${when} has ${interruptedAudioRecording.completeChunks} saved audio chunks (${(interruptedAudioRecording.blob.size/1024/1024).toFixed(1)} MB). Recover it into Song tracks or discard it.`
+        :'An interrupted local take has no complete audio chunks. You can discard this empty recovery record.';
+    }
+    updateOverdubControls();
+  };
+
+  const refreshInterruptedAudioRecordings = async () => {
+    try { interruptedAudioRecordings=await listInterruptedAudioRecordings(); }
+    catch(error){console.warn('Interrupted audio recovery could not be checked',error);}
+    renderInterruptedAudioRecovery();
   };
 
   function renderOverdubTimeline(){
@@ -751,13 +774,61 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     $('voice-overdub-status').textContent = 'Saving the raw vocal take locally…';
     if (take.recorder.state !== 'inactive') take.recorder.stop();
   };
+  $('voice-overdub-recover').addEventListener('click',async()=>{
+    const recovery=interruptedAudioRecording;
+    if(!recovery?.blob.size)return;
+    if(project.voice.layers.length>=MAX_VOCAL_LAYERS){
+      $('voice-overdub-status').textContent=`The ${MAX_VOCAL_LAYERS} audio-track limit is full. Delete a local track, then try recovery again; the interrupted chunks remain saved.`;
+      return;
+    }
+    const usedBytes=[...getMediaFiles().values(),...vocalFiles.values()].reduce((sum,file)=>sum+(file?.size||0),0);
+    if(usedBytes+recovery.blob.size>MAX_MEDIA_BYTES){
+      $('voice-overdub-status').textContent='There is not enough project media space to restore this take. Export a project pack and remove unused media, then try recovery again.';
+      return;
+    }
+    $('voice-overdub-recover').disabled=true;
+    $('voice-overdub-status').textContent='Restoring the last safely saved audio chunks…';
+    try{
+      const id=`vocal-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+      const index=project.voice.layers.length+1;
+      const file=new File([recovery.blob],`recovered-vocal-take-${Date.now()}.${extensionForAudioMime(recovery.mime)}`,{type:recovery.mime});
+      const layer={id,name:`Recovered take ${index}`,origin:'recording',startStep:recovery.startStep,gain:1,muted:false,solo:false};
+      const nextLayers=[...project.voice.layers,layer];
+      await saveVoiceLayer(id,file,{...project,voice:{...project.voice,layers:nextLayers}},{recoveryId:recovery.id});
+      project.voice.layers.push(layer);vocalFiles.set(id,file);
+      const playable=await audio.loadVocalLayer(id,file);
+      save();renderVocalLayers();
+      interruptedAudioRecordings=interruptedAudioRecordings.filter(item=>item.id!==recovery.id);
+      renderInterruptedAudioRecovery();
+      $('voice-overdub-status').textContent=playable
+        ?`${layer.name} recovered from ${recovery.completeChunks} locally saved chunks. Review it in the Song tracks below.`
+        :`${layer.name} recovered and saved locally, but this browser cannot decode its audio format.`;
+    }catch(error){
+      $('voice-overdub-status').textContent=`Could not recover this audio take: ${error.message}. Its saved chunks are still available to retry.`;
+      $('voice-overdub-recover').disabled=false;
+    }
+  });
+  $('voice-overdub-discard').addEventListener('click',async()=>{
+    const recovery=interruptedAudioRecording;
+    if(!recovery)return;
+    $('voice-overdub-discard').disabled=true;
+    try{
+      await deleteInterruptedAudioRecording(recovery.id);
+      interruptedAudioRecordings=interruptedAudioRecordings.filter(item=>item.id!==recovery.id);
+      renderInterruptedAudioRecovery();
+      if(!interruptedAudioRecording)$('voice-overdub-status').textContent='Interrupted audio recovery discarded.';
+    }catch(error){
+      $('voice-overdub-status').textContent=`Could not discard the interrupted take: ${error.message}`;
+      $('voice-overdub-discard').disabled=false;
+    }
+  });
   $('voice-overdub-record').addEventListener('click', async () => {
     if (project.voice.layers.length >= MAX_VOCAL_LAYERS) return updateOverdubControls();
     const currentTransport = transportState();
     if (!currentTransport.running) { $('voice-overdub-status').textContent = 'Start the sequencer before recording a vocal overdub.'; return; }
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { $('voice-overdub-status').textContent = 'This browser does not support local microphone recording.'; return; }
     $('voice-overdub-record').disabled = true; $('voice-overdub-status').textContent = 'Requesting microphone access…';
-    let stream;
+    let stream,recoveryId=null;
     try {
       const usedBytes = [...getMediaFiles().values(), ...vocalFiles.values()].reduce((sum, file) => sum + (file?.size || 0), 0);
       let storageEstimate = null;
@@ -780,13 +851,22 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const alignedTransport = transportState();
       if (!alignedTransport.running || alignedTransport.epoch !== transport.epoch) throw new Error('The sequencer changed before the aligned recording could start.');
       const capture = createBoundedRecordingCapture(recordingBudget + RECORDING_STORAGE_RESERVE_BYTES, recordingBudget);
-      const take = {stream, recorder, startStep, capture}; vocalRecording = take;
+      recoveryId=`vocal-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+      await beginAudioRecordingRecovery(recoveryId,{startStep,mime:recorder.mimeType||mime||'audio/webm'});
+      const take = {stream, recorder, startStep, capture, recoveryId, journalWrite:Promise.resolve(), journalError:null}; vocalRecording = take;
       recorder.ondataavailable = event => {
         if (!event.data?.size) return;
         if (!capture.add(event.data)) {
           $('voice-overdub-status').textContent = 'Pausing at the safe local-storage limit and saving the captured audio…';
           if (recorder.state !== 'inactive') recorder.stop();
           return;
+        }
+        if(!take.journalError){
+          take.journalWrite=take.journalWrite.then(()=>appendAudioRecordingRecoveryChunk(recoveryId,event.data)).catch(error=>{
+            take.journalError=error;
+            $('voice-overdub-status').textContent=`Local recovery paused: ${error.message}. Saving the captured audio now…`;
+            if(recorder.state!=='inactive')recorder.stop();
+          });
         }
         if (capture.shouldStop && recorder.state !== 'inactive') {
           $('voice-overdub-status').textContent = 'Pausing at the safe local-storage limit and saving the captured audio…';
@@ -799,14 +879,18 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
         const type = recorder.mimeType || mime || 'audio/webm';
         const blob = new Blob(capture.chunks, {type});
         try {
-          if (!blob.size) throw new Error('The browser did not capture any microphone audio.');
+          await take.journalWrite;
+          if (!blob.size) {
+            await deleteInterruptedAudioRecording(take.recoveryId);
+            throw new Error('The browser did not capture any microphone audio.');
+          }
           const usedBytes = [...getMediaFiles().values(), ...vocalFiles.values()].reduce((sum, file) => sum + (file?.size || 0), 0);
           if (usedBytes + blob.size > MAX_MEDIA_BYTES) throw new Error('This take would exceed the 80 MB local project media limit. Export a pack and remove unused media before recording more.');
           const index = project.voice.layers.length + 1, id = `vocal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
           const file = new File([blob], `vocal-take-${Date.now()}.${extensionForAudioMime(type)}`, {type});
           const layer = {id, name:`Vocal take ${index}`, origin:'recording', startStep:take.startStep, gain:1, muted:false, solo:false};
           const nextLayers = [...project.voice.layers, layer];
-          await saveVoiceLayer(id, file, {...project, voice:{...project.voice, layers:nextLayers}});
+          await saveVoiceLayer(id, file, {...project, voice:{...project.voice, layers:nextLayers}},{recoveryId:take.recoveryId});
           project.voice.layers.push(layer); vocalFiles.set(id, file);
           const playable = await audio.loadVocalLayer(id, file);
           save(); renderVocalLayers();
@@ -816,14 +900,15 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
           $('voice-overdub-status').textContent = capture.stoppedForStorage
             ? `${savedMessage} Recording stopped at the safe local-storage limit; export a pack and remove unused media before the next take.`
             : savedMessage;
-        } catch (error) { $('voice-overdub-status').textContent = `Could not save vocal take: ${error.message}`; }
+        } catch (error) { $('voice-overdub-status').textContent = `Could not save vocal take: ${error.message}`; await refreshInterruptedAudioRecordings(); }
         finally { if (vocalRecording === take) vocalRecording = null; updateOverdubControls(); }
       };
-      recorder.start(200);
+      recorder.start(1000);
       $('voice-overdub-stop').hidden = false;
       const availableMb = (recordingBudget / 1024 / 1024).toFixed(1);
-      $('voice-overdub-status').textContent = `Recording microphone audio over the playing sequence. Raw audio stays on this device; up to ${availableMb} MB is available for this take, with a small safety margin.`;
+      $('voice-overdub-status').textContent = `Recording microphone audio over the playing sequence. Audio chunks save locally about once per second for interruption recovery; up to ${availableMb} MB is available for this take, with a small safety margin.`;
     } catch (error) {
+      if(recoveryId)try{await deleteInterruptedAudioRecording(recoveryId);}catch(cleanupError){console.warn('Could not clear unused audio recovery record',cleanupError);}
       stream?.getTracks().forEach(track => track.stop());
       vocalRecording = null; updateOverdubControls();
       $('voice-overdub-status').textContent = `Could not start local vocal recording: ${error.message}`;
@@ -987,6 +1072,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     renderVocalLayers();renderVideoLayers();
   }
   await reloadLayers();
+  await refreshInterruptedAudioRecordings();
   window.addEventListener('madladpad-media-change', render);
   $('voice-source-pad').addEventListener('change', () => {
     if (transcriptionActivity.phase!=='idle') cancelTranscription('Source changed. Previous transcription canceled.');
