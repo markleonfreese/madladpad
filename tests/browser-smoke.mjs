@@ -1812,6 +1812,13 @@ try {
   }
   assert.equal(await page.locator('#song-timeline .song-section-clip').count(),4,'A-B-C-A must create four timeline blocks');
   assert.match(await page.locator('#song-status').textContent(),/36 bars/,'Song must exceed the single 16-step loop');
+  await openScreen('overdub');
+  assert.equal(await page.locator('#overdub-timeline .overdub-song-section').count(),4,'overdub timeline should display the matching four Song sections');
+  assert.deepEqual(await page.locator('#overdub-timeline .overdub-song-section').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-label'))),['A from bar 1 through bar 8','B from bar 9 through bar 24','C from bar 25 through bar 28','A from bar 29 through bar 36'],'overdub section labels should stay aligned to the Song bar positions');
+  assert.equal(await page.locator('#overdub-timeline .overdub-ruler').textContent().then(text=>text.includes('Bar 36')),true,'overdub ruler should extend through the end of the Song');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth===document.documentElement.clientWidth),true,'a Song-sized overdub timeline must scroll internally without widening the page');
+  await openScreen('beats');
+  await page.locator('#song-view').click();
   const savedSong=await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1')));
   assert.deepEqual(savedSong.song.clips.map(clip=>clip.bars),[8,16,4,8]);
   assert.deepEqual(savedSong.song.clips.map(clip=>savedSong.scenes.find(scene=>scene.id===clip.sceneId).name),['A','B','C','A']);
