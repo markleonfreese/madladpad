@@ -383,3 +383,25 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
 .melody-scale-controls{display:flex;flex-wrap:wrap;align-items:end;gap:7px;margin:10px 0}.melody-scale-controls .voice-label{margin:4px 0;flex:1 1 120px}.melody-scale-controls .voice-label select{min-width:0;width:100%}.melody-scale-controls #melody-snap-scale{min-height:44px;max-width:100%}
 .voice-selection-tools[hidden]{display:none}
 .voice-selection-tools #voice-selection-status{color:#a9b5a4;font-size:11px}
+
+
+/* Optional per-track piano roll: deliberately scrolls inside its own dialog on phones. */
+.sample-note-dialog{width:min(94vw,940px);max-width:940px;max-height:92vh}
+.sample-note-controls{display:flex;align-items:end;gap:9px;flex-wrap:wrap;margin:12px 0}
+.sample-note-controls label{display:grid;gap:4px;font:11px var(--mono);color:var(--muted)}
+.sample-note-controls select,.sample-note-controls input{background:#101710;color:var(--ink);border:1px solid var(--line);border-radius:7px;min-height:44px;padding:8px;max-width:220px}
+.sample-note-scroll{max-height:53vh;overflow:auto;border:1px solid #405341;border-radius:8px;overscroll-behavior:contain}
+.sample-note-ruler,.sample-note-row{display:grid;grid-template-columns:68px repeat(16,minmax(34px,1fr));min-width:680px}
+.sample-note-ruler{position:sticky;top:0;z-index:2;background:#19241c;font:10px var(--mono);color:#c4d2bb}
+.sample-note-ruler span,.sample-note-pitch{display:grid;place-items:center;min-height:29px;border-bottom:1px solid #344637}
+.sample-note-pitch{position:sticky;left:0;z-index:1;background:#1c2b20;color:#d0e2ce;font:11px var(--mono)}
+.sample-note-cell{min-height:33px;padding:0;border:1px solid #304332;background:#121c15;color:#e4f5dc;touch-action:none;font-size:11px}
+.sample-note-cell:nth-of-type(4n+1){border-left-color:#60775e}
+.sample-note-cell:hover,.sample-note-cell:focus-visible,.sample-note-cell.drawing{background:#42613e;outline:2px solid #bfe8a9;outline-offset:-2px}
+.sample-note-cell.note-held{background:#425c36;border-color:#546f43}
+.sample-note-cell.note-start{background:#87b754;color:#07120a;border-left:3px solid #c8ef9f;font-weight:700}
+.sample-note-cell.selected{outline:2px solid #fff;outline-offset:-2px}
+.track-steps .step.note-held,.track-steps .step-overview.note-held{background:#57773e}
+.track-steps .step.note-start,.track-steps .step-overview.note-start{border-left:3px solid #c6ee97}
+.track-note-edit{min-width:50px}
+@media(max-width:740px){.sample-note-dialog{padding:12px}.sample-note-controls label{flex:1 1 130px}.sample-note-controls select,.sample-note-controls input{width:100%}.sample-note-scroll{max-height:50vh}}
