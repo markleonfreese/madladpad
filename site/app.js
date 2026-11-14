@@ -1429,7 +1429,7 @@ function drawPerformanceFrame() {
   const shot=project.video.shots[directorPlayingStep??directorEditStep];
   const activePads=layout==='directed'?directedPads(shot,triggered,PAD_COUNT[project.layout]):adaptive?triggered:Array.from({length:PAD_COUNT[project.layout]},(_,id)=>id);
   const secondsPerStep=60/project.bpm/4;
-  const songStep=transportTimer&&Number.isFinite(audio.transportEpoch)?(audio.context.currentTime-audio.transportEpoch)/secondsPerStep:null;
+  const songStep=(transportTimer||songEndTimer!==null)&&Number.isFinite(audio.transportEpoch)?(audio.context.currentTime-audio.transportEpoch)/secondsPerStep:null;
   const songVideos=layout==='directed'&&shot.mode==='black'?[]:voiceLab?.songVideoFramesAtStep?.(songStep)||[];
   const cells=[...songVideos.map(track=>({kind:'song-video',track})),...activePads.map(id=>({kind:'pad',id}))];
   if(adaptive&&!cells.length){
@@ -2210,7 +2210,7 @@ async function initialise() {
       } catch(error){console.warn(`Failed to restore pad ${id+1}`,error);}
     }
     renderSession();
-    voiceLab=await initVoiceLab({ getProject: () => project, getMediaFiles: () => mediaFiles, getAudio: () => audio, getTransport: () => ({running:Boolean(transportTimer),epoch:audio.transportEpoch,bpm:project.bpm}), notify, save: queueSave, assignWordsToPads: assignVoiceWordsToPads });
+    voiceLab=await initVoiceLab({ getProject: () => project, getMediaFiles: () => mediaFiles, getAudio: () => audio, getTransport: () => ({running:Boolean(transportTimer||songEndTimer!==null),epoch:audio.transportEpoch,bpm:project.bpm}), notify, save: queueSave, assignWordsToPads: assignVoiceWordsToPads });
     await restoreSavedTakes();
     if(restored)notify(`Restored ${restored} locally saved samples.`);
     if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost'))navigator.serviceWorker.register('/sw.js').catch(()=>{});

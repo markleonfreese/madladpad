@@ -1226,6 +1226,8 @@ try {
   assert.ok(recordedVideoInfo.size>0,'the locally saved camera track should contain media');
   await page.locator('#play-seq').click();
   await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('PLAY'));
+  await recordedVideoTrack.locator('[aria-label="TRIM IN (S) for video track 2"]').fill('0.10');
+  await recordedVideoTrack.locator('[aria-label="TRIM IN (S) for video track 2"]').press('Tab');
   await recordedVideoTrack.locator('.vocal-layer-start input').first().fill('32');
   await recordedVideoTrack.locator('.vocal-layer-start input').first().press('Tab');
   await page.locator('#play-seq').click();
@@ -1234,7 +1236,7 @@ try {
     const prototype=CanvasRenderingContext2D.prototype,drawImage=prototype.drawImage;
     window.__songVideoFramesDrawn=0;
     prototype.drawImage=function(media,...args){
-      if(this.canvas?.id==='capture-canvas'&&media?.dataset?.songVideoTrack)window.__songVideoFramesDrawn++;
+      if(this.canvas?.id==='capture-canvas'&&media?.dataset?.songVideoTrack){window.__songVideoFramesDrawn++;window.__songVideoFirstSourceTime??=media.currentTime;}
       return drawImage.call(this,media,...args);
     };
   });
@@ -1244,6 +1246,7 @@ try {
   await page.waitForFunction(()=>document.querySelector('#start-record').textContent.includes('STOP RECORDING'));
   await page.waitForFunction(()=>window.__songVideoFramesDrawn>0,null,{timeout:15000});
   assert.ok(await page.evaluate(()=>window.__songVideoFramesDrawn)>0,'the active Song video track should be drawn into the exported video composition');
+  assert.ok(await page.evaluate(()=>window.__songVideoFirstSourceTime)>=.10,'the first exported video frame should start at the selected nonzero trim-in point');
   await page.waitForTimeout(300);
   await page.locator('#start-record').click();
   await page.waitForFunction(()=>document.querySelector('#start-record').textContent.includes('RECORD SET'));

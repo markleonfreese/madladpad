@@ -525,7 +525,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     videoPlaybackElements.clear();
   }
 
-  function pauseSongVideoPlayers(){for(const video of videoPlaybackElements.values())video.pause();}
+  function pauseSongVideoPlayers(){for(const video of videoPlaybackElements.values()){video.pause();video.dataset.songVideoActive='false';}}
 
   function songVideoFramesAtStep(absoluteStep){
     const transport=transportState();
@@ -533,7 +533,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     const activeIds=new Set(),frames=[];
     for(const layer of project.voice.videoLayers){
       const url=videoUrls.get(layer.id),sourceSec=songVideoPositionAtStep(layer,absoluteStep,transport.bpm);
-      if(!url||!videoFiles.has(layer.id)||sourceSec===null){videoPlaybackElements.get(layer.id)?.pause();continue;}
+      if(!url||!videoFiles.has(layer.id)||sourceSec===null){const inactive=videoPlaybackElements.get(layer.id);if(inactive){inactive.pause();inactive.dataset.songVideoActive='false';}continue;}
       activeIds.add(layer.id);
       let video=videoPlaybackElements.get(layer.id);
       if(!video){
@@ -541,8 +541,9 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
         Object.assign(video.style,{position:'fixed',left:'-4px',top:'-4px',width:'1px',height:'1px',opacity:'0.001',pointerEvents:'none'});
         video.src=url;document.body.append(video);videoPlaybackElements.set(layer.id,video);
       }
-      try{if(video.readyState>=1&&Math.abs(video.currentTime-sourceSec)>.20)video.currentTime=sourceSec;}catch{}
-      if(video.paused)video.play().catch(()=>{});
+      const firstActiveFrame=video.dataset.songVideoActive!=='true';
+      try{if(video.readyState>=1&&(firstActiveFrame||(!video.seeking&&Math.abs(video.currentTime-sourceSec)>.20))){video.currentTime=sourceSec;video.dataset.songVideoActive='true';}}catch{}
+      if(video.dataset.songVideoActive==='true'&&video.paused)video.play().catch(()=>{});
       if(video.readyState>=2)frames.push({id:layer.id,name:layer.name,video});
     }
     for(const [id,video] of videoPlaybackElements)if(!activeIds.has(id))video.pause();
