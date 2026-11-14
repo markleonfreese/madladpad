@@ -450,3 +450,25 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
 .song-section-editor input{width:85px;max-width:100%}
 .song-section-editor button{min-width:44px;min-height:44px}
 @media(max-width:740px){.song-add-controls label{flex:1 1 130px}.song-add-controls select{width:100%}.song-section-editor strong{flex:1 1 100%}}
+
+
+/* Explicit handles keep horizontal timeline scrolling available from the clip body. */
+.song-drag-help{font-size:12px;line-height:1.45;color:var(--muted)}
+.song-bar-ruler{display:flex;flex:none;min-width:max-content;min-height:24px;align-items:stretch;background:#23372b;color:#d2dfca;font:10px var(--mono)}
+.song-bar-tick{display:block;box-sizing:border-box;flex:0 0 28px;padding:5px 2px;border-left:1px solid #3b5544}
+.song-bar-tick.major{border-left-color:#a0c2a0;font-weight:700}
+.song-clip-wrap{position:relative;flex:none;height:58px;box-sizing:border-box}
+.song-clip-wrap .song-section-clip{display:block;width:100%;height:100%;padding:8px 45px}
+.song-clip-wrap:not(:has(.song-clip-move)) .song-section-clip{padding:8px 4px}
+.song-clip-text{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.song-clip-wrap:nth-child(even) .song-section-clip{background:#42616e;border-color:#9bc9ca}
+.song-clip-wrap.selected .song-section-clip{outline:2px solid #e0f1a3;outline-offset:-2px}
+.song-clip-move,.song-clip-resize{position:absolute;top:7px;z-index:2;min-height:44px;min-width:44px;width:44px;padding:0;border:1px solid #d2eab2;background:#253c2c;color:#eef5de;border-radius:5px;font-size:20px;line-height:1;touch-action:none;user-select:none}
+.song-clip-move{left:0;cursor:grab}
+.song-clip-resize{right:0;cursor:ew-resize}
+.song-clip-move:hover,.song-clip-resize:hover,.song-clip-move:focus-visible,.song-clip-resize:focus-visible{outline:2px solid #f4e5a7;outline-offset:-2px;background:#4a654c}
+.song-clip-wrap.song-dragging .song-section-clip{opacity:.72}
+.song-clip-wrap.drop-before::before,.song-clip-wrap.drop-after::after{content:"";position:absolute;top:-7px;bottom:-7px;width:4px;z-index:3;border-radius:2px;background:#f7df8c;pointer-events:none}
+.song-clip-wrap.drop-before::before{left:-2px}
+.song-clip-wrap.drop-after::after{right:-2px}
+@media(max-width:740px){.song-drag-help{font-size:11px}.song-clip-move,.song-clip-resize{min-height:44px}}
