@@ -1,4 +1,4 @@
-import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, findAudioRecorderMime, extensionForAudioMime, vocalLayerClip, AsyncActivity } from './core.js';
+import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, findAudioRecorderMime, extensionForAudioMime, vocalLayerClip, songTotalBars, AsyncActivity } from './core.js';
 import { getValue, saveVoiceLayer, deleteVoiceLayer } from './storage.js';
 import { detectPitch } from './tuner.js';
 
@@ -402,7 +402,8 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     const host=$('overdub-timeline');
     host.replaceChildren();
     const secondsPerStep=60/clamp(project.bpm,40,240)/4;
-    const maxEnd=Math.max(16,...project.voice.layers.map(layer=>{
+    const songSteps=Math.min(4096,songTotalBars(project.song)*16);
+    const maxEnd=Math.max(16,songSteps,...project.voice.layers.map(layer=>{
       const raw=audio.vocalSources.get(layer.id)?.buffer?.duration||0;
       return layer.startStep+vocalLayerClip(layer,raw).duration/secondsPerStep;
     }));
@@ -416,6 +417,20 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       mark.textContent='Bar '+(step/16+1);ruler.append(mark);
     }
     host.append(ruler);
+    if(project.song?.clips?.length){
+      const arrangement=document.createElement('div');arrangement.className='overdub-song-sections';arrangement.style.width=width+'px';
+      arrangement.setAttribute('role','group');arrangement.setAttribute('aria-label','Song sections aligned to the overdub bar ruler');
+      let startStep=0;
+      for(const clip of project.song.clips){
+        const scene=project.scenes.find(item=>item.id===clip.sceneId),sectionSteps=clip.bars*16;
+        const segment=document.createElement('div');segment.className='overdub-song-section';
+        segment.style.left=(startStep/totalSteps*100)+'%';segment.style.width=(sectionSteps/totalSteps*100)+'%';
+        segment.textContent=(scene?.name||'Missing pattern')+' · '+clip.bars+' bars';
+        segment.setAttribute('aria-label',(scene?.name||'Missing pattern')+' from bar '+(Math.floor(startStep/16)+1)+' through bar '+Math.ceil((startStep+sectionSteps)/16));
+        arrangement.append(segment);startStep+=sectionSteps;
+      }
+      host.append(arrangement);
+    }
     for(const [index,layer] of project.voice.layers.entries()){
       const row=document.createElement('div');row.className='overdub-wave-row';row.dataset.waveLayer=layer.id;row.style.width=width+'px';
       const title=document.createElement('strong');title.textContent=(index+1)+'. '+layer.name;row.append(title);
@@ -445,7 +460,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       row.append(svg);host.append(row);
     }
     $('overdub-timeline-status').textContent=project.voice.layers.length
-      ?'Bars are shared across all recorded tracks. Green is the audible trimmed waveform; the gold line marks its end. Drag the timeline sideways on a phone. Changes to start or trim take effect on the next loop start.'
+      ?'Bars align with the Song arrangement when one is present. Green is the audible trimmed waveform; the gold line marks its end. Drag the timeline sideways on a phone. Changes to start or trim take effect on the next loop start.'
       :'Recorded vocal waveforms will appear here, aligned with your Sequence bars. Raw files are kept locally.';
   }
 
@@ -836,6 +851,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     transportStarted(epoch, bpm) { audio.playVocalLayers(project.voice.layers, epoch, bpm); updateOverdubControls(); },
     transportStopped() { audio.stopVocalLayers(); if (vocalRecording) stopOverdub(); updateOverdubControls(); },
     stopTuner,
+    refreshTimeline() { renderOverdubTimeline(); },
     transportChanged() { updateOverdubControls(); },
     isRecording() { return Boolean(vocalRecording); },
     reloadLayers

@@ -121,6 +121,7 @@ function showStudioScreen() {
   $('voice-lab').hidden = screen!=='voice';
   $('overdub-lab').hidden = screen!=='overdub';
   $('export-lab').hidden = screen!=='export';
+  if(screen==='overdub')voiceLab?.refreshTimeline?.();
 }
 
 function dismissIntro() {
