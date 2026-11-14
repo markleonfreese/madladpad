@@ -1,5 +1,5 @@
 import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, extensionForAudioMime, vocalLayerClip, songTotalBars, AsyncActivity, localRecordingBudget, createBoundedRecordingCapture } from './core.js';
-import { getValue, saveVoiceLayer, deleteVoiceLayer } from './storage.js';
+import { getValue, saveVoiceLayer, deleteVoiceLayer, saveSongVideoLayer, deleteSongVideoLayer } from './storage.js';
 import { detectPitch } from './tuner.js';
 
 const $ = id => document.getElementById(id);
@@ -370,6 +370,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   let tunerStream = null, tunerSource = null, tunerAnalyser = null, tunerTimer = null, tunerFrame = null;
   const tunerActivity = new AsyncActivity();
   const vocalFiles = new Map();
+  const videoFiles = new Map(), videoUrls = new Map();
   const updateConsentState = () => { $('voice-transcribe').disabled = transcriptionActivity.phase!=='idle' || !$('voice-source-pad').value || !$('voice-consent').checked; };
   const cancelTranscription = (message = null) => {
     transcriptionActivity.cancel();
@@ -408,7 +409,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     const maxEnd=Math.max(16,songSteps,...project.voice.layers.map(layer=>{
       const raw=audio.vocalSources.get(layer.id)?.buffer?.duration||0;
       return layer.startStep+vocalLayerClip(layer,raw).duration/secondsPerStep;
-    }));
+    }),...project.voice.videoLayers.map(layer=>layer.startStep+Math.max(0,(layer.durationSec-(layer.trimStartSec||0)-(layer.trimEndSec==null?0:Math.max(0,layer.durationSec-layer.trimEndSec)))/secondsPerStep)));
     // Vocal placements support up to 256 bars; keep the full arrangement compact
     // and scrollable inside this component rather than widening the page.
     const totalSteps=Math.max(16,Math.min(4096,Math.ceil(maxEnd/16)*16));
@@ -461,9 +462,58 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       }
       row.append(svg);host.append(row);
     }
-    $('overdub-timeline-status').textContent=project.voice.layers.length
-      ?'Bars align with the Song arrangement when one is present. Green is the audible trimmed waveform; the gold line marks its end. Drag the timeline sideways on a phone. Changes to start or trim take effect on the next loop start.'
+    for(const [index,layer] of project.voice.videoLayers.entries()){
+      const row=document.createElement('div');row.className='overdub-wave-row';row.dataset.videoLayer=layer.id;row.style.width=width+'px';
+      const title=document.createElement('strong');title.textContent=`VIDEO ${index+1}. ${layer.name}`;row.append(title);
+      const lane=document.createElement('div');lane.className='overdub-video-lane';lane.style.width=width+'px';lane.setAttribute('role','img');lane.setAttribute('aria-label',`Song placement lane for video track ${index+1}, ${layer.name}`);
+      const start=clamp(layer.startStep,0,totalSteps),rawEnd=layer.trimEndSec==null?layer.durationSec:Math.min(layer.durationSec,layer.trimEndSec);
+      const clipSeconds=Math.max(0,rawEnd-clamp(layer.trimStartSec,0,Math.max(0,rawEnd-.01)));
+      if(start<totalSteps&&clipSeconds>0){
+        const clip=document.createElement('span');clip.className='overdub-video-clip';clip.style.left=`${start/totalSteps*100}%`;clip.style.width=`${Math.min(100-start/totalSteps*100,clipSeconds/secondsPerStep/totalSteps*100)}%`;clip.textContent=layer.name;
+        clip.setAttribute('aria-label',`${layer.name} video from bar ${Math.floor(start/16)+1} for ${clipSeconds.toFixed(1)} seconds`);lane.append(clip);
+      }
+      row.append(lane);host.append(row);
+    }
+    $('overdub-timeline-status').textContent=project.voice.layers.length||project.voice.videoLayers.length
+      ?'Bars align with the Song arrangement when one is present. Green shows trimmed audio waveforms; purple shows placed video clips. Drag the timeline sideways on a phone. Changes to start or trim affect the next playback.'
       :'Recorded and imported audio waveforms will appear here, aligned with your Song bars. Original files stay local.';
+  }
+
+  function renderVideoLayers(){
+    const host=$('song-video-layers');host.replaceChildren();
+    project.voice.videoLayers.forEach((layer,index)=>{
+      const row=document.createElement('article');row.className='song-video-track';row.dataset.videoLayer=layer.id;
+      const name=document.createElement('input');name.className='vocal-layer-name';name.value=layer.name;name.maxLength=48;name.setAttribute('aria-label',`Video track ${index+1} name`);
+      name.addEventListener('change',()=>{layer.name=name.value.trim()||`Video track ${index+1}`;save();renderVideoLayers();});
+      const url=videoUrls.get(layer.id),preview=document.createElement('video');preview.controls=true;preview.muted=true;preview.playsInline=true;preview.preload='metadata';preview.setAttribute('aria-label',`Muted preview for video track ${index+1}`);if(url)preview.src=url;
+      const controls=document.createElement('div');controls.className='song-video-controls';
+      const field=(key,labelText,value,max)=>{
+        const label=document.createElement('label');label.className='vocal-layer-start';label.append(document.createTextNode(labelText));
+        const input=document.createElement('input');input.type='number';input.min='0';input.max=String(max);input.step='0.05';input.value=String(Number(value.toFixed(2)));input.setAttribute('aria-label',`${labelText} for video track ${index+1}`);
+        input.addEventListener('change',()=>{const n=clamp(input.value,0,max);if(key==='startStep')layer.startStep=Math.round(n);else if(key==='trimStartSec')layer.trimStartSec=Math.min(n,Math.max(0,(layer.trimEndSec??layer.durationSec)-.01));else layer.trimEndSec=Math.max(n,Math.min(layer.durationSec,(layer.trimStartSec||0)+.01));save();renderVideoLayers();renderOverdubTimeline();});
+        label.append(input);controls.append(label);
+      };
+      field('startStep','START STEP',layer.startStep,4096);field('trimStartSec','TRIM IN (S)',layer.trimStartSec,layer.durationSec);
+      field('trimEndSec','TRIM OUT (S)',layer.trimEndSec??layer.durationSec,layer.durationSec);
+      const remove=document.createElement('button');remove.type='button';remove.className='pill-button';remove.textContent='DELETE VIDEO';remove.setAttribute('aria-label',`Delete video track ${index+1} and its local source`);
+      remove.addEventListener('click',async()=>{
+        if(!confirm(`Delete ${layer.name} and its saved local video file?`))return;
+        const nextLayers=project.voice.videoLayers.filter(item=>item.id!==layer.id);
+        try{await deleteSongVideoLayer(layer.id,{...project,voice:{...project.voice,videoLayers:nextLayers}});project.voice.videoLayers=nextLayers;videoFiles.delete(layer.id);const url=videoUrls.get(layer.id);if(url)URL.revokeObjectURL(url);videoUrls.delete(layer.id);save();renderVideoLayers();renderOverdubTimeline();$('song-video-status').textContent='Video track and its local source file deleted.';}
+        catch(error){$('song-video-status').textContent=`Could not delete the video track: ${error.message}`;}
+      });controls.append(remove);
+      const meta=document.createElement('small');meta.className='song-video-meta';const clipStart=layer.trimStartSec||0,clipEnd=layer.trimEndSec??layer.durationSec;meta.textContent=`${videoFiles.has(layer.id)?'Original video saved on this device':'Local video file missing'} · bar ${Math.floor(layer.startStep/16)+1}, step ${layer.startStep%16+1} · ${Math.max(0,clipEnd-clipStart).toFixed(2)} s visible · muted preview`;
+      row.append(name,preview,controls,meta);host.append(row);
+    });
+  }
+
+  function probeVideoDuration(file){
+    return new Promise((resolve,reject)=>{
+      const video=document.createElement('video'),url=URL.createObjectURL(file),timer=setTimeout(()=>finish(new Error('This video did not report a readable duration.')),10000);
+      const finish=error=>{const duration=video.duration;clearTimeout(timer);video.removeAttribute('src');video.load();URL.revokeObjectURL(url);error?reject(error):resolve(duration);};
+      video.preload='metadata';video.onloadedmetadata=()=>Number.isFinite(video.duration)&&video.duration>0?finish():finish(new Error('This video has no readable duration.'));
+      video.onerror=()=>finish(new Error('This browser cannot read the selected video format.'));video.src=url;
+    });
   }
 
   function renderVocalLayers() {
@@ -545,7 +595,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     for (const [id, file] of getMediaFiles()) if (/^(audio|video)\//.test(file.type)) { const option = document.createElement('option'); option.value = id; option.textContent = `${project.pads[id].name} · ${file.name || file.type}`; select.append(option); }
     if ([...select.options].some(option => option.value === selected)) select.value = selected;
     updateConsentState(); updateManualEntryState(); renderTranscriptPicker();
-    renderWords(project, save, activeTranscript); renderPhrases(project, audio, notify, save, assignWordsToPads); renderMelody(project, save); renderRap(project, save, audio, notify); renderVocalLayers();
+    renderWords(project, save, activeTranscript); renderPhrases(project, audio, notify, save, assignWordsToPads); renderMelody(project, save); renderRap(project, save, audio, notify); renderVocalLayers();renderVideoLayers();
   }
   const stopOverdub = () => {
     const take = vocalRecording;
@@ -663,6 +713,32 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       $('voice-overdub-status').textContent = `Could not import audio track: ${error.message}`;
     } finally { $('overdub-import-audio').disabled = false; }
   });
+  $('overdub-import-video').addEventListener('click',()=>{
+    if(project.voice.videoLayers.length>=MAX_VOCAL_LAYERS){$('song-video-status').textContent=`The ${MAX_VOCAL_LAYERS} video-track limit is full. Delete a track before adding another.`;return;}
+    $('overdub-video-input').click();
+  });
+  $('overdub-video-input').addEventListener('change',async event=>{
+    const input=event.currentTarget,file=input.files?.[0];input.value='';if(!file)return;
+    if(!file.type.startsWith('video/')){$('song-video-status').textContent='Choose a video file for a Song video track.';return;}
+    if(project.voice.videoLayers.length>=MAX_VOCAL_LAYERS)return;
+    const button=$('overdub-import-video');button.disabled=true;$('song-video-status').textContent='Checking local storage and reading video duration…';
+    let id=null;
+    try{
+      const usedBytes=[...getMediaFiles().values(),...vocalFiles.values(),...videoFiles.values()].reduce((sum,item)=>sum+(item?.size||0),0);
+      let estimate=null;try{estimate=await navigator.storage?.estimate?.();}catch{}
+      if(file.size>localRecordingBudget(usedBytes,estimate))throw new Error('This file is larger than the safe local storage available. Export a project pack and remove unused media, or free space on this device.');
+      const durationSec=await probeVideoDuration(file);
+      if(durationSec>10800)throw new Error('Video tracks are limited to three hours per source clip.');
+      id=`video-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+      const baseName=file.name.replace(/\.[^.]+$/,'').trim().slice(0,48)||`Video track ${project.voice.videoLayers.length+1}`;
+      const layer={id,name:baseName,origin:'import',startStep:0,trimStartSec:0,trimEndSec:durationSec,durationSec,type:file.type};
+      const nextLayers=[...project.voice.videoLayers,layer];
+      await saveSongVideoLayer(id,file,{...project,voice:{...project.voice,videoLayers:nextLayers}});
+      project.voice.videoLayers.push(layer);videoFiles.set(id,file);videoUrls.set(id,URL.createObjectURL(file));save();renderVideoLayers();renderOverdubTimeline();
+      $('song-video-status').textContent=`Imported “${baseName}” as a local video clip at bar 1. Set its start and trim range below; the preview is muted.`;
+    }catch(error){if(id){videoFiles.delete(id);const url=videoUrls.get(id);if(url)URL.revokeObjectURL(url);videoUrls.delete(id);}$('song-video-status').textContent=`Could not import video track: ${error.message}`;}
+    finally{button.disabled=false;}
+  });
   $('voice-overdub-stop').addEventListener('click', stopOverdub);
   $('vocal-add-harmony').addEventListener('click',async()=>{
     if(!audio.pitchReady)return notify('The local pitch processor is unavailable; a harmony would not stay in tune and time on this device.');
@@ -688,7 +764,9 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const file = await getValue(`voice-layer:${layer.id}`);
       if (file?.type?.startsWith('audio/')) { vocalFiles.set(layer.id, file); await audio.loadVocalLayer(layer.id, file); }
     }
-    renderVocalLayers();
+    for(const url of videoUrls.values())URL.revokeObjectURL(url);videoUrls.clear();videoFiles.clear();
+    for(const layer of project.voice.videoLayers){const file=await getValue(`video-layer:${layer.id}`);if(file?.type?.startsWith('video/')){videoFiles.set(layer.id,file);videoUrls.set(layer.id,URL.createObjectURL(file));}}
+    renderVocalLayers();renderVideoLayers();
   }
   await reloadLayers();
   window.addEventListener('madladpad-media-change', render);

@@ -1,6 +1,6 @@
 import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, DEMO_SOUNDS, directedPads, makeProject, normaliseProject, normaliseRegion, copyPadSound, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, AsyncActivity, suggestActiveRegion, captureRegionStatus, cameraTakeTargetSeconds, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, songSectionAtStep, songTotalBars, MAX_SONG_CLIPS, MAX_SONG_BARS, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, nextBarTime, videoVisualDurationMs } from './core.js';
 import { SamplerAudio } from './audio.js';
-import { getValue, putValue, deleteValue, collectProjectMedia, collectVoiceMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
+import { getValue, putValue, deleteValue, collectProjectMedia, collectVoiceMedia, collectSongVideoMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
 import { isGooglePickerConfigured, pickFromDrive, pickFromPhotos } from './google.js';
 import { initVoiceLab } from './voice.js';
 import { detectPitch } from './tuning.js';
@@ -1801,15 +1801,19 @@ async function exportPack() {
     if (voiceLab?.isRecording()) throw new Error('Stop and save the active vocal take before exporting the project pack.');
     const media=await collectProjectMedia();
     const voiceMedia=await collectVoiceMedia(project.voice.layers);
+    const videoMedia=await collectSongVideoMedia(project.voice.videoLayers);
     if(voiceMedia.some(item=>!item.file))throw new Error('A vocal layer raw take is missing. Export the take or remove that layer before making a pack.');
-    const bytes=[...media,...voiceMedia.map(item=>item.file)].reduce((sum,blob)=>sum+(blob?.size||0),0);
+    if(videoMedia.some(item=>!item.file))throw new Error('A Song video source is missing. Remove that track before making a pack.');
+    const bytes=[...media,...voiceMedia.map(item=>item.file),...videoMedia.map(item=>item.file)].reduce((sum,blob)=>sum+(blob?.size||0),0);
     if(bytes>MAX_MEDIA_BYTES) throw new Error('This pack exceeds 80 MB. Save smaller clips before exporting.');
     notify('Preparing a portable project with its media…');
     const contents=[];
     for(const blob of media) contents.push(blob?await blobAsDataUrl(blob):null);
     const voiceContents=[];
     for(const item of voiceMedia)voiceContents.push(await blobAsDataUrl(item.file));
-    const pack={format:'madladpad',version:1,project,media:contents,voiceMedia:voiceContents};
+    const videoContents=[];
+    for(const item of videoMedia)videoContents.push(await blobAsDataUrl(item.file));
+    const pack={format:'madladpad',version:1,project,media:contents,voiceMedia:voiceContents,videoMedia:videoContents};
     download(new Blob([JSON.stringify(pack)],{type:'application/json'}),`${project.title.replace(/[^a-z0-9-]+/gi,'-').toLowerCase()||'session'}.madladpad`);
     notify('Project pack downloaded. It contains your media, so share it thoughtfully.');
   } catch(error) {notify(`Export failed: ${error.message}`);}
@@ -1829,13 +1833,18 @@ async function importPack(file) {
     if(blobs.some(blob=>blob && blob.size>MAX_MEDIA_BYTES)) throw new Error('A sample is larger than the 80 MB limit');
     const files=blobs.map((blob,i)=>blob ? new File([blob],incoming.pads[i].fileName||`sample-${i+1}`,{type:blob.type}) : null);
     const voiceFiles=voiceBlobs.map((blob,index)=>new File([blob],`vocal-take-${index+1}`,{type:blob.type}));
-    if([...files,...voiceFiles].reduce((sum,file)=>sum+(file?.size||0),0)>MAX_MEDIA_BYTES)throw new Error('This pack exceeds the 80 MB local media limit.');
+    const rawVideo=Array.isArray(raw.videoMedia)?raw.videoMedia:[];
+    if(rawVideo.length!==incoming.voice.videoLayers.length)throw new Error('This pack is missing one or more Song video sources.');
+    const videoBlobs=rawVideo.map(data=>data?dataUrlAsBlob(data):null);
+    if(videoBlobs.some(blob=>!blob||!blob.type.startsWith('video/')))throw new Error('Song video tracks must include local video sources.');
+    const videoFiles=videoBlobs.map((blob,index)=>new File([blob],`${incoming.voice.videoLayers[index].name||`video-track-${index+1}`}.${blob.type.includes('mp4')?'mp4':'webm'}`,{type:blob.type}));
+    if([...files,...voiceFiles,...videoFiles].reduce((sum,file)=>sum+(file?.size||0),0)>MAX_MEDIA_BYTES)throw new Error('This pack exceeds the 80 MB local media limit.');
     if(voiceLab?.isRecording())throw new Error('Stop and save the active vocal take before importing a project pack.');
     if(!confirm('Replace your current local project? Export it first if you want a backup.')) return;
     patternRecording=null;patternUndoSnapshot=null;renderPatternRecordingState();
     // A single IndexedDB transaction prevents a partial replacement on quota or write failure.
     discardPendingProjectSave();
-    try { await replaceProjectMedia(incoming,files,incoming.voice.layers.map((layer,index)=>({id:layer.id,file:voiceFiles[index]}))); }
+    try { await replaceProjectMedia(incoming,files,incoming.voice.layers.map((layer,index)=>({id:layer.id,file:voiceFiles[index]})),incoming.voice.videoLayers.map((layer,index)=>({id:layer.id,file:videoFiles[index]}))); }
     catch(error) { queueSave(); throw error; }
     stopSequencer();
     replaceProjectState(incoming);selected=0;

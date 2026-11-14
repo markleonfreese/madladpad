@@ -89,7 +89,7 @@ export function directedPads(shot, active, padCount=12) {
 }
 
 export const makeVoiceData = () => ({
-  transcripts: [], phrases: [], layers: [], melody: { tuning: 440, key:0, scale:'major', notes: [], followBeat:false },
+  transcripts: [], phrases: [], layers: [], videoLayers: [], melody: { tuning: 440, key:0, scale:'major', notes: [], followBeat:false },
   rap: { scheme: 'AABB', bars: Array(RAP_BAR_COUNT).fill(''), flow:Array.from({length:RAP_BAR_COUNT},()=>Array(16).fill(false)) }
 });
 
@@ -130,6 +130,14 @@ function normaliseVoice(value) {
     sourceId: String(layer?.sourceId || layer?.id || `vocal-${index+1}`).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,64),
     pitch:clamp(layer?.pitch ?? 0,-12,12)
   })) : [];
+  const videoLayers = Array.isArray(source.videoLayers) ? source.videoLayers.slice(0, MAX_VOCAL_LAYERS).map((layer,index) => ({
+    id:String(layer?.id || `video-${index+1}`).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,64) || `video-${index+1}`,
+    name:String(layer?.name || `Video track ${index+1}`).slice(0,48),
+    origin:'import', startStep:clamp(layer?.startStep ?? 0,0,4096),
+    trimStartSec:clamp(layer?.trimStartSec ?? 0,0,10799.99),
+    trimEndSec:layer?.trimEndSec==null?null:clamp(layer.trimEndSec,0.01,10800),
+    durationSec:clamp(layer?.durationSec ?? 0,0,10800), type:String(layer?.type || 'video/webm').slice(0,80)
+  })) : [];
   const melodySource = source.melody && typeof source.melody === 'object' ? source.melody : {};
   const notes = Array.isArray(melodySource.notes) ? melodySource.notes.slice(0, MAX_MELODY_NOTES).map(note => ({
     midi: clamp(Math.round(note?.midi ?? 60), 24, 108),
@@ -140,7 +148,7 @@ function normaliseVoice(value) {
   })) : [];
   const rapSource = source.rap && typeof source.rap === 'object' ? source.rap : {};
   return {
-    transcripts, phrases, layers,
+    transcripts, phrases, layers, videoLayers,
     melody: {
       tuning: clamp(melodySource.tuning ?? 440, 400, 480),
       key: clamp(Math.round(melodySource.key ?? 0), 0, 11),

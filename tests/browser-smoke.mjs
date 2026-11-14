@@ -1158,6 +1158,31 @@ try {
     assert.ok(vocalMixRms>importedRms*.1,`an imported Song audio track should reach the exported mix (track RMS ${importedRms}, export RMS ${vocalMixRms})`);
     checkpoint('recorded and imported audio tracks reach the exported mix');
   }
+  await openScreen('overdub');
+  const songVideoSource=await readFile(resolve('tests/fixtures/webkit-stop-boundary.mp4'));
+  await page.locator('#overdub-video-input').setInputFiles({name:'verse-visual.mp4',mimeType:'video/mp4',buffer:songVideoSource});
+  await page.waitForFunction(()=>document.querySelectorAll('#song-video-layers .song-video-track').length===1,null,{timeout:10000});
+  assert.equal(await page.locator('#song-video-layers .vocal-layer-name').inputValue(),'verse-visual','video import should create an independent named Song video track');
+  assert.equal(await page.locator('#song-video-layers video').evaluate(video=>video.muted&&video.playsInline),true,'video preview should be muted and inline so it cannot surprise the master mix');
+  assert.equal(await page.locator('#overdub-timeline .overdub-video-clip').count(),1,'the Song timeline should show a separate video clip');
+  await page.setViewportSize({width:320,height:844});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth===document.documentElement.clientWidth),true,'video track controls should fit a 320px mobile viewport');
+  await page.addScriptTag({path:axePath});
+  const videoAxe=await page.evaluate(async()=>axe.run(document.querySelector('#overdub-lab')));
+  assert.deepEqual(videoAxe.violations.map(issue=>issue.id),[],'the Song video track editor should pass axe accessibility checks');
+  await page.setViewportSize(desktopViewport);
+  const videoTrackId=await page.locator('#song-video-layers .song-video-track').getAttribute('data-video-layer');
+  const videoTrackBytes=await page.evaluate(async id=>(await (await import('/storage.js')).getValue(`video-layer:${id}`))?.size,videoTrackId);
+  assert.equal(videoTrackBytes,songVideoSource.length,'video source should be stored locally in IndexedDB');
+  const videoStart=page.locator('#song-video-layers .song-video-track .vocal-layer-start input').nth(0);
+  await videoStart.fill('32');await videoStart.press('Tab');
+  const videoTrim=page.locator('#song-video-layers .song-video-track .vocal-layer-start input').nth(1);
+  const videoTrimSeconds=Number(await videoTrim.getAttribute('max'))/2;
+  await videoTrim.fill(String(videoTrimSeconds));await videoTrim.press('Tab');
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.videoLayers?.[0]?.startStep),32,'video clip placement should persist independently from source trim');
+  await page.waitForFunction(seconds=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.videoLayers?.[0]?.trimStartSec===seconds,videoTrimSeconds,{timeout:2000});
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.videoLayers?.[0]?.trimStartSec),videoTrimSeconds,'video trim should persist as a non-destructive source offset');
+  checkpoint('local Song video track import, placement and trim');
   await page.waitForTimeout(500);
   await page.reload();
   await openScreen('sounds');
@@ -1434,6 +1459,9 @@ try {
   assert.equal(pack.project.pads[2].steps[4],true,'project pack should preserve the third lane pattern loaded from the saved scene');
   assert.equal(pack.project.pads[2].steps[15],true,'project pack should preserve the third lane overdub');
   if(vocalOverdubSupported){assert.equal(pack.voiceMedia.length,2);assert.ok(pack.voiceMedia.every(content=>content.startsWith('data:audio/')),'portable packs should preserve every recorded or imported track source');assert.equal(pack.project.voice.layers[1].origin,'import','project packs should retain the imported-track source kind');}
+  assert.equal(pack.videoMedia.length,1,'project packs should include independent Song video sources');
+  assert.ok(pack.videoMedia[0].startsWith('data:video/'),'project packs should retain the original video bytes');
+  assert.equal(pack.project.voice.videoLayers[0].name,'verse-visual','project packs should retain video track identity');
   if(recordingSupported)assert.ok(pack.media[1].startsWith('data:video/'),'portable pack should retain the synthetic video sample');
   await page.locator('#project-title').fill('Before restore');
   page.once('dialog', dialog => dialog.accept());
@@ -1442,6 +1470,8 @@ try {
   assert.match(await page.locator('#toast').textContent(),/Project restored with its media\./,'the exported pack should restore without errors');
   assert.equal(await page.locator('#project-title').inputValue(), 'Smoke pack');
   if(vocalOverdubSupported){assert.equal(await page.locator('#voice-overdub-layers .vocal-layer-name').count(),2,'restoring a project pack should restore each audio track');assert.equal(await page.locator('#voice-overdub-layers .vocal-layer-name').nth(0).inputValue(),'Lead take','restoring a project pack should restore recorded-track metadata');assert.match(await page.locator('#voice-overdub-layers .vocal-layer-meta').nth(0).textContent(),/Raw take saved locally/,'restoring a project pack should restore its raw take');assert.equal(await page.locator('#voice-overdub-layers .vocal-layer-name').nth(1).inputValue(),'imported-song-stem','project pack round-trip should retain imported track identity');assert.match(await page.locator('#voice-overdub-layers .vocal-layer-meta').nth(1).textContent(),/Imported audio saved locally/,'the imported track source should stay available after restore');}
+  assert.equal(await page.locator('#song-video-layers .song-video-track .vocal-layer-name').inputValue(),'verse-visual','project pack restore should restore the Song video track');
+  assert.equal(await page.evaluate(async id=>Boolean(await (await import('/storage.js')).getValue(`video-layer:${id}`)),videoTrackId),true,'project pack restore should restore the original video source locally');
   await page.reload();
   await page.waitForFunction(()=>document.querySelector('#sample-info').textContent.includes('synthetic.wav · AUDIO · stored on this device'));
   assert.equal(await page.locator('#project-title').inputValue(), 'Smoke pack');
@@ -1645,10 +1675,10 @@ try {
   },null,{timeout:8000});
   await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
   checkpoint('service worker ready');
-  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v23')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
-  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v23')).match('/audio.js')).text()),/pendingStarts/,'the current fallback retrigger fix should be cached before offline use');
-  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v23')).match('/voice.js')).text()),/Use rhyme idea/,'the current Rap Lab writing aid should be cached before offline use');
-  const cachedFonts=await page.evaluate(async()=>Promise.all(['/fonts/dm-sans-variable-latin.woff2','/fonts/dm-sans-variable-latin-ext.woff2','/fonts/dm-mono-400-latin.woff2','/fonts/dm-mono-400-latin-ext.woff2','/fonts/dm-mono-500-latin.woff2','/fonts/dm-mono-500-latin-ext.woff2'].map(async path=>Boolean(await (await caches.open('madladpad-shell-v23')).match(path)))));
+  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v24')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
+  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v24')).match('/audio.js')).text()),/pendingStarts/,'the current fallback retrigger fix should be cached before offline use');
+  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v24')).match('/voice.js')).text()),/Use rhyme idea/,'the current Rap Lab writing aid should be cached before offline use');
+  const cachedFonts=await page.evaluate(async()=>Promise.all(['/fonts/dm-sans-variable-latin.woff2','/fonts/dm-sans-variable-latin-ext.woff2','/fonts/dm-mono-400-latin.woff2','/fonts/dm-mono-400-latin-ext.woff2','/fonts/dm-mono-500-latin.woff2','/fonts/dm-mono-500-latin-ext.woff2'].map(async path=>Boolean(await (await caches.open('madladpad-shell-v24')).match(path)))));
   assert.ok(cachedFonts.every(Boolean),'both local UI fonts and their Latin/extended subsets should be cached for offline use');
   await page.reload();
   await page.waitForFunction(()=>Boolean(navigator.serviceWorker.controller));
