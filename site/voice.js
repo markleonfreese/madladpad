@@ -1,4 +1,4 @@
-import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, extensionForAudioMime, vocalLayerClip, songTotalBars, AsyncActivity, localRecordingBudget, createBoundedRecordingCapture } from './core.js';
+import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, findRecorderMime, extensionForAudioMime, extensionForMime, vocalLayerClip, songTotalBars, AsyncActivity, localRecordingBudget, createBoundedRecordingCapture } from './core.js';
 import { getValue, saveVoiceLayer, deleteVoiceLayer, saveSongVideoLayer, deleteSongVideoLayer } from './storage.js';
 import { detectPitch } from './tuner.js';
 
@@ -367,6 +367,8 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   let worker = null;
   const transcriptionActivity = new AsyncActivity();
   let vocalRecording = null;
+  let videoRecording = null;
+  const videoRecordingActivity = new AsyncActivity();
   let tunerStream = null, tunerSource = null, tunerAnalyser = null, tunerTimer = null, tunerFrame = null;
   const tunerActivity = new AsyncActivity();
   const vocalFiles = new Map();
@@ -395,10 +397,18 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   };
   const updateOverdubControls = () => {
     const state = transportState();
-    $('voice-overdub-record').disabled = !state.running || Boolean(vocalRecording) || project.voice.layers.length >= MAX_VOCAL_LAYERS;
+    const videoStarting=videoRecordingActivity.phase==='starting';
+    $('voice-overdub-record').disabled = !state.running || Boolean(vocalRecording) || Boolean(videoRecording) || videoStarting || project.voice.layers.length >= MAX_VOCAL_LAYERS;
     $('voice-overdub-stop').hidden = !vocalRecording;
     if (project.voice.layers.length >= MAX_VOCAL_LAYERS && !vocalRecording) $('voice-overdub-status').textContent = `The ${MAX_VOCAL_LAYERS} audio-track limit is full. Export a project pack before deleting a local track.`;
     else if (!state.running && !vocalRecording && !$('voice-overdub-status').textContent) $('voice-overdub-status').textContent = 'Start the sequencer to record an audio track.';
+    $('overdub-video-record').disabled=!state.running||Boolean(vocalRecording)||Boolean(videoRecording)||videoStarting||project.voice.videoLayers.length>=MAX_VOCAL_LAYERS;
+    $('overdub-video-record').textContent=videoStarting?'× CANCEL CAMERA START':'● RECORD VIDEO TRACK';
+    $('overdub-video-record').setAttribute('aria-label',videoStarting?'Cancel Song camera start':'Record a video track over the Song');
+    $('overdub-video-stop').hidden=!videoRecording;
+    $('overdub-video-cancel').hidden=!videoRecording;
+    if(project.voice.videoLayers.length>=MAX_VOCAL_LAYERS&&!videoRecording)$('song-video-status').textContent=`The ${MAX_VOCAL_LAYERS} video-track limit is full. Delete a track before adding another.`;
+    else if(!state.running&&!videoRecording&&!videoStarting&&!$('song-video-status').textContent)$('song-video-status').textContent='Start the Song to record a video track.';
   };
 
   function renderOverdubTimeline(){
@@ -502,7 +512,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
         try{await deleteSongVideoLayer(layer.id,{...project,voice:{...project.voice,videoLayers:nextLayers}});project.voice.videoLayers=nextLayers;videoFiles.delete(layer.id);const url=videoUrls.get(layer.id);if(url)URL.revokeObjectURL(url);videoUrls.delete(layer.id);save();renderVideoLayers();renderOverdubTimeline();$('song-video-status').textContent='Video track and its local source file deleted.';}
         catch(error){$('song-video-status').textContent=`Could not delete the video track: ${error.message}`;}
       });controls.append(remove);
-      const meta=document.createElement('small');meta.className='song-video-meta';const clipStart=layer.trimStartSec||0,clipEnd=layer.trimEndSec??layer.durationSec;meta.textContent=`${videoFiles.has(layer.id)?'Original video saved on this device':'Local video file missing'} · bar ${Math.floor(layer.startStep/16)+1}, step ${layer.startStep%16+1} · ${Math.max(0,clipEnd-clipStart).toFixed(2)} s visible · muted preview`;
+      const meta=document.createElement('small');meta.className='song-video-meta';const clipStart=layer.trimStartSec||0,clipEnd=layer.trimEndSec??layer.durationSec;const sourceKind=layer.origin==='recording'?'Raw camera take saved locally':'Original video saved on this device';meta.textContent=`${videoFiles.has(layer.id)?sourceKind:'Local video file missing'} · bar ${Math.floor(layer.startStep/16)+1}, step ${layer.startStep%16+1} · ${Math.max(0,clipEnd-clipStart).toFixed(2)} s visible · muted preview`;
       row.append(name,preview,controls,meta);host.append(row);
     });
   }
@@ -739,6 +749,76 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     }catch(error){if(id){videoFiles.delete(id);const url=videoUrls.get(id);if(url)URL.revokeObjectURL(url);videoUrls.delete(id);}$('song-video-status').textContent=`Could not import video track: ${error.message}`;}
     finally{button.disabled=false;}
   });
+  const stopSongVideoRecording=(discard=false)=>{
+    if(videoRecordingActivity.phase==='starting'){
+      videoRecordingActivity.cancel();$('song-video-status').textContent='Camera start canceled. No camera or microphone remains active.';updateOverdubControls();return;
+    }
+    const take=videoRecording;if(!take)return;
+    take.discard=discard;
+    $('song-video-status').textContent=discard?'Discarding the camera take.':'Stopping and saving the raw camera take locally…';
+    if(take.recorder.state!=='inactive')take.recorder.stop();
+  };
+  $('overdub-video-record').addEventListener('click',async()=>{
+    if(videoRecordingActivity.phase==='starting'){stopSongVideoRecording(true);return;}
+    if(videoRecording||project.voice.videoLayers.length>=MAX_VOCAL_LAYERS)return updateOverdubControls();
+    const transport=transportState();
+    if(!transport.running){$('song-video-status').textContent='Start the Song before recording a video track.';return;}
+    if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){$('song-video-status').textContent='This browser does not support local camera and microphone recording.';return;}
+    const token=videoRecordingActivity.begin();if(token===null)return;
+    $('song-video-status').textContent='Checking local storage before requesting camera and microphone access…';updateOverdubControls();
+    let stream=null;
+    try{
+      const usedBytes=[...getMediaFiles().values(),...vocalFiles.values(),...videoFiles.values()].reduce((sum,file)=>sum+(file?.size||0),0);
+      let estimate=null;try{estimate=await navigator.storage?.estimate?.();}catch{}
+      const budget=localRecordingBudget(usedBytes,estimate);
+      if(!budget)throw new Error('There is not enough safe local storage for another video take. Export a project pack, remove unused media, or free space on this device.');
+      await audio.unlock();if(!videoRecordingActivity.current(token))return;
+      stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:true});
+      if(!videoRecordingActivity.current(token)){stream.getTracks().forEach(track=>track.stop());return;}
+      if(!stream.getVideoTracks().length||!stream.getAudioTracks().length)throw new Error('Both camera and microphone are required for a Song video take.');
+      const secondsPerStep=60/clamp(transport.bpm,40,240)/4;
+      const startStep=Math.max(0,Math.ceil((audio.context.currentTime-transport.epoch-.001)/secondsPerStep));
+      const targetTime=transport.epoch+startStep*secondsPerStep;
+      if(targetTime>audio.context.currentTime){$('song-video-status').textContent='Camera ready. Aligning the video take to the next sixteenth note…';await new Promise(resolve=>setTimeout(resolve,Math.ceil((targetTime-audio.context.currentTime)*1000)));}
+      const aligned=transportState();
+      if(!videoRecordingActivity.current(token)||!aligned.running||aligned.epoch!==transport.epoch)throw new Error('The Song stopped or changed before video recording could begin.');
+      const mime=findRecorderMime();if(!mime)throw new Error('This browser has no supported local video recording format.');
+      const capture=createBoundedRecordingCapture(budget+RECORDING_STORAGE_RESERVE_BYTES,budget);
+      const recorder=new MediaRecorder(stream,{mimeType:mime});
+      const take={stream,recorder,capture,startStep,discard:false};videoRecording=take;
+      recorder.ondataavailable=event=>{
+        if(!event.data?.size)return;
+        if(!capture.add(event.data)){if(recorder.state!=='inactive')recorder.stop();return;}
+        if(capture.shouldStop&&recorder.state!=='inactive')recorder.stop();
+      };
+      recorder.onerror=event=>{$('song-video-status').textContent=`Camera recording failed: ${event.error?.message||'unknown error'}`;stopSongVideoRecording(false);};
+      recorder.onstop=async()=>{
+        stream.getTracks().forEach(track=>track.stop());
+        const type=recorder.mimeType||mime,blob=new Blob(capture.chunks,{type});
+        try{
+          if(take.discard){$('song-video-status').textContent='Camera take discarded. No video was saved.';return;}
+          if(!blob.size)throw new Error('The browser did not capture a video take.');
+          const currentBytes=[...getMediaFiles().values(),...vocalFiles.values(),...videoFiles.values()].reduce((sum,file)=>sum+(file?.size||0),0);
+          if(currentBytes+blob.size>MAX_MEDIA_BYTES)throw new Error('This take reached the project media limit. Export a pack and remove media before recording another.');
+          const durationSec=await probeVideoDuration(blob);
+          const index=project.voice.videoLayers.length+1,id=`video-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+          const file=new File([blob],`song-video-${Date.now()}.${extensionForMime(type)}`,{type});
+          const layer={id,name:`Video take ${index}`,origin:'recording',startStep:take.startStep,trimStartSec:0,trimEndSec:durationSec,durationSec,type};
+          const nextLayers=[...project.voice.videoLayers,layer];
+          await saveSongVideoLayer(id,file,{...project,voice:{...project.voice,videoLayers:nextLayers}});
+          project.voice.videoLayers.push(layer);videoFiles.set(id,file);videoUrls.set(id,URL.createObjectURL(file));save();renderVideoLayers();renderOverdubTimeline();
+          $('song-video-status').textContent=capture.stoppedForStorage
+            ?`${layer.name} saved locally from bar ${Math.floor(layer.startStep/16)+1}. Recording stopped at the safe storage limit.`
+            :`${layer.name} saved locally from bar ${Math.floor(layer.startStep/16)+1}. The raw camera take is retained.`;
+        }catch(error){$('song-video-status').textContent=`Could not save camera take: ${error.message}`;}
+        finally{if(videoRecording===take)videoRecording=null;videoRecordingActivity.cancel();updateOverdubControls();}
+      };
+      if(!videoRecordingActivity.activate(token))throw new Error('Camera recording start was canceled.');
+      recorder.start(200);$('song-video-status').textContent=`Recording camera and microphone locally over the Song. Up to ${(budget/1024/1024).toFixed(1)} MB is available for this take; Stop saves it, Cancel discards it.`;updateOverdubControls();
+    }catch(error){stream?.getTracks().forEach(track=>track.stop());videoRecording=null;videoRecordingActivity.cancel();$('song-video-status').textContent=`Could not start Song camera recording: ${error.message}`;updateOverdubControls();}
+  });
+  $('overdub-video-stop').addEventListener('click',()=>stopSongVideoRecording(false));
+  $('overdub-video-cancel').addEventListener('click',()=>stopSongVideoRecording(true));
   $('voice-overdub-stop').addEventListener('click', stopOverdub);
   $('vocal-add-harmony').addEventListener('click',async()=>{
     if(!audio.pitchReady)return notify('The local pitch processor is unavailable; a harmony would not stay in tune and time on this device.');
@@ -983,11 +1063,11 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       for(const row of $('rap-bars').children)row.classList.toggle('current',Number(row.dataset.bar)===bar);
     },
     transportStarted(epoch, bpm) { audio.playVocalLayers(project.voice.layers, epoch, bpm); updateOverdubControls(); },
-    transportStopped() { audio.stopVocalLayers(); if (vocalRecording) stopOverdub(); updateOverdubControls(); },
+    transportStopped() { audio.stopVocalLayers(); if (vocalRecording) stopOverdub(); if(videoRecordingActivity.phase==='starting')stopSongVideoRecording(true);else if(videoRecording)stopSongVideoRecording(false);updateOverdubControls(); },
     stopTuner,
     refreshTimeline() { renderOverdubTimeline(); },
     transportChanged() { updateOverdubControls(); },
-    isRecording() { return Boolean(vocalRecording); },
+    isRecording() { return Boolean(vocalRecording||videoRecording||videoRecordingActivity.phase==='starting'); },
     reloadLayers
   };
 }

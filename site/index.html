@@ -321,8 +321,8 @@
       </section>
       <section class="voice-card" aria-labelledby="video-layers-title">
         <h3 id="video-layers-title">Video tracks</h3>
-        <p class="voice-note">Place local video clips over the Song and trim the visible source range. Video stays on this device. Embedded video audio and picture are not included in exports yet.</p>
-        <div class="voice-actions"><button class="pill-button" id="overdub-import-video" type="button">＋ IMPORT VIDEO TRACK</button></div>
+        <p class="voice-note">Record a camera take over the playing Song or import a local clip. Takes stop with the Song and stay on this device. Start timing follows the next sixteenth note; camera and microphone latency varies by device and is not compensated. Embedded video audio and picture are not included in exports yet.</p>
+        <div class="voice-actions"><button class="pill-button" id="overdub-video-record" type="button" disabled>● RECORD VIDEO TRACK</button><button class="pill-button" id="overdub-video-stop" type="button" hidden>■ STOP AND SAVE VIDEO</button><button class="pill-button" id="overdub-video-cancel" type="button" hidden>× DISCARD VIDEO TAKE</button><button class="pill-button" id="overdub-import-video" type="button">＋ IMPORT VIDEO TRACK</button></div>
         <input hidden id="overdub-video-input" type="file" accept="video/*">
         <div id="song-video-layers" class="song-video-layers" role="group" aria-label="Song video tracks"></div>
         <p id="song-video-status" class="voice-status" role="status" aria-live="polite">Add a video clip to place it on the Song timeline.</p>

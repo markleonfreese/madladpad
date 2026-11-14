@@ -201,7 +201,9 @@ try{
       assert.equal(result.paused,true,`WebKit should pause the 50 ms selected region at Speed ${speed}×`);
       assert.ok(result.playingPosition>=.35&&result.playingPosition<=.50,`WebKit should start the selected region at 0.40 s at Speed ${speed}×, got ${JSON.stringify(result)}`);
       assert.ok(result.currentTime>=.40&&result.currentTime<result.duration-.05,`WebKit should stop the short trim before natural playback ends at Speed ${speed}×, got ${JSON.stringify(result)}`);
-      assert.ok(result.playedForMs>=10&&result.playedForMs<500,`WebKit should play briefly then stop without the old one-second grace period at Speed ${speed}×, got ${JSON.stringify(result)}`);
+      const mediaTimePastTrim=result.currentTime-result.playingPosition;
+      assert.ok(mediaTimePastTrim>=0&&mediaTimePastTrim<.20,`WebKit should stop close to the selected trim boundary at Speed ${speed}×, got ${JSON.stringify(result)}`);
+      assert.ok(result.playedForMs>=10&&result.playedForMs<2000,`WebKit should reach the short-trim stop without hanging at Speed ${speed}×, got ${JSON.stringify(result)}`);
       trimmedPlayback.push({speed,...result});
     }
     console.log(`WebKit short-trim boundary passed: ${JSON.stringify(trimmedPlayback)}.`);

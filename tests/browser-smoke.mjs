@@ -1183,6 +1183,24 @@ try {
   await page.waitForFunction(seconds=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.videoLayers?.[0]?.trimStartSec===seconds,videoTrimSeconds,{timeout:2000});
   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.videoLayers?.[0]?.trimStartSec),videoTrimSeconds,'video trim should persist as a non-destructive source offset');
   checkpoint('local Song video track import, placement and trim');
+  await page.locator('#play-seq').click();
+  await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
+  await page.locator('#overdub-video-record').click();
+  await page.locator('#overdub-video-stop').waitFor({state:'visible',timeout:8000});
+  assert.match(await page.locator('#song-video-status').textContent(),/Recording camera and microphone locally.*up to [\d.]+ MB is available/i,'camera take should disclose local-only capture and its storage budget');
+  await page.waitForTimeout(1200);
+  await page.locator('#overdub-video-stop').click();
+  await page.waitForFunction(()=>document.querySelectorAll('#song-video-layers .song-video-track').length===2,null,{timeout:10000});
+  const recordedVideoTrack=page.locator('#song-video-layers .song-video-track').nth(1);
+  assert.equal(await recordedVideoTrack.locator('.vocal-layer-name').inputValue(),'Video take 2','a Song camera take should be saved as its own video track');
+  assert.match(await recordedVideoTrack.locator('.song-video-meta').textContent(),/Raw camera take saved locally/,'the original raw camera take should be retained');
+  const recordedVideoTrackId=await recordedVideoTrack.getAttribute('data-video-layer');
+  const recordedVideoInfo=await page.evaluate(async id=>{const file=await (await import('/storage.js')).getValue(`video-layer:${id}`);return {type:file?.type,size:file?.size};},recordedVideoTrackId);
+  assert.match(recordedVideoInfo.type,/^video\//,'the camera track should save its real video container');
+  assert.ok(recordedVideoInfo.size>0,'the locally saved camera track should contain media');
+  await page.locator('#play-seq').click();
+  await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('PLAY'));
+  checkpoint('Song-length camera capture saved as a local video track');
   await page.waitForTimeout(500);
   await page.reload();
   await openScreen('sounds');
@@ -1459,9 +1477,11 @@ try {
   assert.equal(pack.project.pads[2].steps[4],true,'project pack should preserve the third lane pattern loaded from the saved scene');
   assert.equal(pack.project.pads[2].steps[15],true,'project pack should preserve the third lane overdub');
   if(vocalOverdubSupported){assert.equal(pack.voiceMedia.length,2);assert.ok(pack.voiceMedia.every(content=>content.startsWith('data:audio/')),'portable packs should preserve every recorded or imported track source');assert.equal(pack.project.voice.layers[1].origin,'import','project packs should retain the imported-track source kind');}
-  assert.equal(pack.videoMedia.length,1,'project packs should include independent Song video sources');
+  assert.equal(pack.videoMedia.length,2,'project packs should include imported and recorded Song video sources');
   assert.ok(pack.videoMedia[0].startsWith('data:video/'),'project packs should retain the original video bytes');
   assert.equal(pack.project.voice.videoLayers[0].name,'verse-visual','project packs should retain video track identity');
+  assert.ok(pack.videoMedia[1].startsWith('data:video/'),'project packs should retain the recorded camera source');
+  assert.equal(pack.project.voice.videoLayers[1].origin,'recording','project packs should retain the camera source kind');
   if(recordingSupported)assert.ok(pack.media[1].startsWith('data:video/'),'portable pack should retain the synthetic video sample');
   await page.locator('#project-title').fill('Before restore');
   page.once('dialog', dialog => dialog.accept());
@@ -1470,8 +1490,10 @@ try {
   assert.match(await page.locator('#toast').textContent(),/Project restored with its media\./,'the exported pack should restore without errors');
   assert.equal(await page.locator('#project-title').inputValue(), 'Smoke pack');
   if(vocalOverdubSupported){assert.equal(await page.locator('#voice-overdub-layers .vocal-layer-name').count(),2,'restoring a project pack should restore each audio track');assert.equal(await page.locator('#voice-overdub-layers .vocal-layer-name').nth(0).inputValue(),'Lead take','restoring a project pack should restore recorded-track metadata');assert.match(await page.locator('#voice-overdub-layers .vocal-layer-meta').nth(0).textContent(),/Raw take saved locally/,'restoring a project pack should restore its raw take');assert.equal(await page.locator('#voice-overdub-layers .vocal-layer-name').nth(1).inputValue(),'imported-song-stem','project pack round-trip should retain imported track identity');assert.match(await page.locator('#voice-overdub-layers .vocal-layer-meta').nth(1).textContent(),/Imported audio saved locally/,'the imported track source should stay available after restore');}
-  assert.equal(await page.locator('#song-video-layers .song-video-track .vocal-layer-name').inputValue(),'verse-visual','project pack restore should restore the Song video track');
+  assert.equal(await page.locator('#song-video-layers .song-video-track .vocal-layer-name').nth(0).inputValue(),'verse-visual','project pack restore should restore the Song video track');
   assert.equal(await page.evaluate(async id=>Boolean(await (await import('/storage.js')).getValue(`video-layer:${id}`)),videoTrackId),true,'project pack restore should restore the original video source locally');
+  assert.equal(await page.locator('#song-video-layers .song-video-track .vocal-layer-name').nth(1).inputValue(),'Video take 2','project pack restore should restore the recorded video track');
+  assert.equal(await page.evaluate(async id=>Boolean(await (await import('/storage.js')).getValue(`video-layer:${id}`)),recordedVideoTrackId),true,'project pack restore should restore the recorded video source locally');
   await page.reload();
   await page.waitForFunction(()=>document.querySelector('#sample-info').textContent.includes('synthetic.wav · AUDIO · stored on this device'));
   assert.equal(await page.locator('#project-title').inputValue(), 'Smoke pack');
@@ -1867,7 +1889,8 @@ try {
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth===document.documentElement.clientWidth),true,'a Song-sized overdub timeline must scroll internally without widening the page');
   await openScreen('beats');
   await page.locator('#song-view').click();
-  const savedSong=await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1')));
+  await page.waitForTimeout(350);
+  const savedSong=await page.evaluate(async()=>(await import('/storage.js')).getValue('project'));
   assert.deepEqual(savedSong.song.clips.map(clip=>clip.bars),[8,16,4,8]);
   assert.deepEqual(savedSong.song.clips.map(clip=>savedSong.scenes.find(scene=>scene.id===clip.sceneId).name),['A','B','C','A']);
   const firstSceneId=songSceneIds[0];
