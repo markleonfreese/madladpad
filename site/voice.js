@@ -1,4 +1,4 @@
-import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, findRecorderMime, extensionForAudioMime, extensionForMime, vocalLayerClip, songTotalBars, AsyncActivity, localRecordingBudget, createBoundedRecordingCapture } from './core.js';
+import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, findRecorderMime, extensionForAudioMime, extensionForMime, vocalLayerClip, songVideoPositionAtStep, songTotalBars, AsyncActivity, localRecordingBudget, createBoundedRecordingCapture } from './core.js';
 import { getValue, saveVoiceLayer, deleteVoiceLayer, saveSongVideoLayer, deleteSongVideoLayer } from './storage.js';
 import { detectPitch } from './tuner.js';
 
@@ -373,6 +373,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   const tunerActivity = new AsyncActivity();
   const vocalFiles = new Map();
   const videoFiles = new Map(), videoUrls = new Map();
+  const videoPlaybackElements = new Map();
   const updateConsentState = () => { $('voice-transcribe').disabled = transcriptionActivity.phase!=='idle' || !$('voice-source-pad').value || !$('voice-consent').checked; };
   const cancelTranscription = (message = null) => {
     transcriptionActivity.cancel();
@@ -509,12 +510,43 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       remove.addEventListener('click',async()=>{
         if(!confirm(`Delete ${layer.name} and its saved local video file?`))return;
         const nextLayers=project.voice.videoLayers.filter(item=>item.id!==layer.id);
-        try{await deleteSongVideoLayer(layer.id,{...project,voice:{...project.voice,videoLayers:nextLayers}});project.voice.videoLayers=nextLayers;videoFiles.delete(layer.id);const url=videoUrls.get(layer.id);if(url)URL.revokeObjectURL(url);videoUrls.delete(layer.id);save();renderVideoLayers();renderOverdubTimeline();$('song-video-status').textContent='Video track and its local source file deleted.';}
+        try{await deleteSongVideoLayer(layer.id,{...project,voice:{...project.voice,videoLayers:nextLayers}});project.voice.videoLayers=nextLayers;videoFiles.delete(layer.id);const player=videoPlaybackElements.get(layer.id);if(player){player.pause();player.removeAttribute('src');player.load();player.remove();videoPlaybackElements.delete(layer.id);}const url=videoUrls.get(layer.id);if(url)URL.revokeObjectURL(url);videoUrls.delete(layer.id);save();renderVideoLayers();renderOverdubTimeline();$('song-video-status').textContent='Video track and its local source file deleted.';}
         catch(error){$('song-video-status').textContent=`Could not delete the video track: ${error.message}`;}
       });controls.append(remove);
       const meta=document.createElement('small');meta.className='song-video-meta';const clipStart=layer.trimStartSec||0,clipEnd=layer.trimEndSec??layer.durationSec;const sourceKind=layer.origin==='recording'?'Raw camera take saved locally':'Original video saved on this device';meta.textContent=`${videoFiles.has(layer.id)?sourceKind:'Local video file missing'} · bar ${Math.floor(layer.startStep/16)+1}, step ${layer.startStep%16+1} · ${Math.max(0,clipEnd-clipStart).toFixed(2)} s visible · muted preview`;
       row.append(name,preview,controls,meta);host.append(row);
     });
+  }
+
+  function releaseSongVideoPlayers(){
+    for(const video of videoPlaybackElements.values()){
+      video.pause();video.removeAttribute('src');video.load();video.remove();
+    }
+    videoPlaybackElements.clear();
+  }
+
+  function pauseSongVideoPlayers(){for(const video of videoPlaybackElements.values())video.pause();}
+
+  function songVideoFramesAtStep(absoluteStep){
+    const transport=transportState();
+    if(!transport.running||!Number.isFinite(absoluteStep)){pauseSongVideoPlayers();return [];}
+    const activeIds=new Set(),frames=[];
+    for(const layer of project.voice.videoLayers){
+      const url=videoUrls.get(layer.id),sourceSec=songVideoPositionAtStep(layer,absoluteStep,transport.bpm);
+      if(!url||!videoFiles.has(layer.id)||sourceSec===null){videoPlaybackElements.get(layer.id)?.pause();continue;}
+      activeIds.add(layer.id);
+      let video=videoPlaybackElements.get(layer.id);
+      if(!video){
+        video=document.createElement('video');video.muted=true;video.playsInline=true;video.preload='auto';video.controls=false;video.tabIndex=-1;video.dataset.songVideoTrack=layer.id;video.setAttribute('aria-hidden','true');
+        Object.assign(video.style,{position:'fixed',left:'-4px',top:'-4px',width:'1px',height:'1px',opacity:'0.001',pointerEvents:'none'});
+        video.src=url;document.body.append(video);videoPlaybackElements.set(layer.id,video);
+      }
+      try{if(video.readyState>=1&&Math.abs(video.currentTime-sourceSec)>.20)video.currentTime=sourceSec;}catch{}
+      if(video.paused)video.play().catch(()=>{});
+      if(video.readyState>=2)frames.push({id:layer.id,name:layer.name,video});
+    }
+    for(const [id,video] of videoPlaybackElements)if(!activeIds.has(id))video.pause();
+    return frames;
   }
 
   function probeVideoDuration(file,fallbackDurationSec=null){
@@ -846,7 +878,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const file = await getValue(`voice-layer:${layer.id}`);
       if (file?.type?.startsWith('audio/')) { vocalFiles.set(layer.id, file); await audio.loadVocalLayer(layer.id, file); }
     }
-    for(const url of videoUrls.values())URL.revokeObjectURL(url);videoUrls.clear();videoFiles.clear();
+    releaseSongVideoPlayers();for(const url of videoUrls.values())URL.revokeObjectURL(url);videoUrls.clear();videoFiles.clear();
     for(const layer of project.voice.videoLayers){const file=await getValue(`video-layer:${layer.id}`);if(file?.type?.startsWith('video/')){videoFiles.set(layer.id,file);videoUrls.set(layer.id,URL.createObjectURL(file));}}
     renderVocalLayers();renderVideoLayers();
   }
@@ -1065,7 +1097,9 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       for(const row of $('rap-bars').children)row.classList.toggle('current',Number(row.dataset.bar)===bar);
     },
     transportStarted(epoch, bpm) { audio.playVocalLayers(project.voice.layers, epoch, bpm); updateOverdubControls(); },
-    transportStopped() { audio.stopVocalLayers(); if (vocalRecording) stopOverdub(); if(videoRecordingActivity.phase==='starting')stopSongVideoRecording(true);else if(videoRecording)stopSongVideoRecording(false);updateOverdubControls(); },
+    transportStopped() { audio.stopVocalLayers();pauseSongVideoPlayers(); if (vocalRecording) stopOverdub(); if(videoRecordingActivity.phase==='starting')stopSongVideoRecording(true);else if(videoRecording)stopSongVideoRecording(false);updateOverdubControls(); },
+    songVideoFramesAtStep,
+    stopSongVideoPlayback:pauseSongVideoPlayers,
     stopTuner,
     refreshTimeline() { renderOverdubTimeline(); },
     transportChanged() { updateOverdubControls(); },

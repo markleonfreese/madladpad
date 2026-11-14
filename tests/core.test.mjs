@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withModelReferrerPolicy } from '../site/voice-model-fetch.js';
-import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars, localRecordingBudget, MAX_MEDIA_BYTES, RECORDING_STORAGE_RESERVE_BYTES, createBoundedRecordingCapture } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, songVideoPositionAtStep, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars, localRecordingBudget, MAX_MEDIA_BYTES, RECORDING_STORAGE_RESERVE_BYTES, createBoundedRecordingCapture } from '../site/core.js';
 
 test('long-form recording budget respects both project and browser storage with headroom', () => {
   assert.equal(localRecordingBudget(10 * 1024 * 1024, {usage:90 * 1024 * 1024,quota:100 * 1024 * 1024}), 10 * 1024 * 1024 - RECORDING_STORAGE_RESERVE_BYTES);
@@ -15,6 +15,15 @@ test('Song video clips normalize stable identity, placement and source trim meta
   assert.deepEqual(video,{id:'clip_1',name:'Verse visual',origin:'import',startStep:384,trimStartSec:2,trimEndSec:8,durationSec:10,type:'video/mp4'});
   assert.equal(normaliseProject({voice:{videoLayers:[{id:'take_1',origin:'recording'}]}}).voice.videoLayers[0].origin,'recording','camera take identity should survive project and pack normalization');
   assert.deepEqual(normaliseProject({}).voice.videoLayers,[],'older project packs default to no video tracks');
+});
+
+test('Song video track source time follows Song placement, tempo and trim bounds',()=>{
+  const layer={startStep:32,trimStartSec:2,trimEndSec:8,durationSec:10};
+  assert.equal(songVideoPositionAtStep(layer,31,120),null,'a placed clip must stay inactive before its Song step');
+  assert.equal(songVideoPositionAtStep(layer,32,120),2,'a placed clip starts at its non-destructive source trim');
+  assert.equal(songVideoPositionAtStep(layer,34,120),2.25,'two Song steps advance by the current tempo');
+  assert.equal(songVideoPositionAtStep(layer,80,120),null,'the trim-out boundary is exclusive');
+  assert.equal(songVideoPositionAtStep({...layer,startStep:0},8,240),2.5,'faster tempo advances through source time sooner');
 });
 
 test('storage-bounded recording keeps only chunks inside its limit and records the stop reason', () => {

@@ -1427,28 +1427,33 @@ function drawPerformanceFrame() {
   const layout=$('record-layout').value,adaptive=layout!=='fixed';
   const triggered=[...visualUntil].filter(([,until])=>until>performance.now()).map(([id])=>id);
   const shot=project.video.shots[directorPlayingStep??directorEditStep];
-  const active=layout==='directed'?directedPads(shot,triggered,PAD_COUNT[project.layout]):adaptive?triggered:Array.from({length:PAD_COUNT[project.layout]},(_,id)=>id);
-  if(adaptive&&!active.length){
+  const activePads=layout==='directed'?directedPads(shot,triggered,PAD_COUNT[project.layout]):adaptive?triggered:Array.from({length:PAD_COUNT[project.layout]},(_,id)=>id);
+  const secondsPerStep=60/project.bpm/4;
+  const songStep=transportTimer&&Number.isFinite(audio.transportEpoch)?(audio.context.currentTime-audio.transportEpoch)/secondsPerStep:null;
+  const songVideos=layout==='directed'&&shot.mode==='black'?[]:voiceLab?.songVideoFramesAtStep?.(songStep)||[];
+  const cells=[...songVideos.map(track=>({kind:'song-video',track})),...activePads.map(id=>({kind:'pad',id}))];
+  if(adaptive&&!cells.length){
     if(!(layout==='directed'&&shot.mode==='black')){context.fillStyle='#d7fc5a';context.font='bold 28px sans-serif';context.textAlign='center';context.fillText('PLAY A PAD TO BEGIN',canvas.width/2,canvas.height/2);context.textAlign='left';}
     requestAnimationFrame(drawPerformanceFrame);return;
   }
-  const total=active.length,cols=adaptive?(total===1?1:total<=4?2:4):(project.layout==='2x2'?2:4);
+  const total=cells.length,cols=adaptive?(total===1?1:total<=4?2:4):(project.layout==='2x2'?2:4);
   const rows=Math.ceil(total/cols),gap=12,margin=28;
   const width=(canvas.width-margin*2-(cols-1)*gap)/cols;
   const height=(canvas.height-margin*2-(rows-1)*gap)/rows;
   for(let index=0;index<total;index++) {
-    const id=active[index],col=index%cols,row=Math.floor(index/cols),x=margin+col*(width+gap),y=margin+row*(height+gap);
-    const source=pads[id],config=project.pads[id];
-    context.fillStyle=(activeUntil.get(id)||0)>performance.now()?'#d7fc5a':'#26372c';
+    const cell=cells[index],col=index%cols,row=Math.floor(index/cols),x=margin+col*(width+gap),y=margin+row*(height+gap);
+    const pad=cell.kind==='pad'?pads[cell.id]:null,config=cell.kind==='pad'?project.pads[cell.id]:null;
+    context.fillStyle=cell.kind==='song-video'?'#c89aff':(activeUntil.get(cell.id)||0)>performance.now()?'#d7fc5a':'#26372c';
     context.fillRect(x-3,y-3,width+6,height+6);
     context.fillStyle='#172219';context.fillRect(x,y,width,height);
     try {
-      if(config.kind==='video' && source.video.readyState>=2) drawMediaCover(context,source.video,x,y,width,height);
-      if(config.kind==='image' && source.image.complete && source.image.naturalWidth) drawMediaCover(context,source.image,x,y,width,height);
+      if(cell.kind==='song-video'&&cell.track.video.readyState>=2)drawMediaCover(context,cell.track.video,x,y,width,height);
+      if(config?.kind==='video' && pad.video.readyState>=2) drawMediaCover(context,pad.video,x,y,width,height);
+      if(config?.kind==='image' && pad.image.complete && pad.image.naturalWidth) drawMediaCover(context,pad.image,x,y,width,height);
     } catch { /* A frame may not be ready yet; preserve the previous capture. */ }
     context.fillStyle='#0d150fcc'; context.fillRect(x,y+height-27,width,27);
     context.fillStyle='#f0f6e8'; context.font='bold 17px sans-serif';
-    context.fillText(config.name.slice(0,21),x+10,y+height-8);
+    context.fillText((cell.kind==='song-video'?`VIDEO · ${cell.track.name}`:config.name).slice(0,21),x+10,y+height-8);
   }
   requestAnimationFrame(drawPerformanceFrame);
 }
@@ -1547,6 +1552,7 @@ async function toggleSetRecording() {
     recorder.onerror=event=>notify(`Recording failed: ${event.error?.message||'unknown error'}`);
     recorder.onstop=()=>{
       drawing=false;
+      voiceLab?.stopSongVideoPlayback?.();
       stream.getVideoTracks().forEach(track=>track.stop());
       const type=recorder.mimeType||mime||'video/webm';
       const blob=new Blob(chunks,{type});
@@ -1568,6 +1574,7 @@ async function toggleSetRecording() {
   } catch(error) {
     if(!takeActivity.current(token))return;
     takeActivity.cancel();takeKind=null;
+    voiceLab?.stopSongVideoPlayback?.();
     canvasStream?.getTracks().forEach(track=>track.stop());
     drawing=false;recording=null;$('capture-canvas').hidden=true;
     $('start-record').classList.remove('recording');$('start-record').innerHTML='<span class="record-dot"></span> RECORD SET';
