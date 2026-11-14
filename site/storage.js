@@ -70,11 +70,13 @@ export const putValue = async (key, value) => {
 export const deleteValue = key => transaction('readwrite', store => store.delete(key));
 
 // Commit project metadata and all 16 media slots together, or preserve the old pack.
-export async function replaceProjectMedia(project, media, voiceMedia = null) {
+export async function replaceProjectMedia(project, media, voiceMedia = null, videoMedia = null) {
   if (!Array.isArray(media) || media.length !== 16) throw new Error('Expected 16 media slots');
   if (voiceMedia !== null && (!Array.isArray(voiceMedia) || voiceMedia.some(item => !/^[a-zA-Z0-9_-]{1,64}$/.test(item?.id) || !item?.file?.type?.startsWith('audio/')))) throw new Error('Invalid vocal layer media');
+  if (videoMedia !== null && (!Array.isArray(videoMedia) || videoMedia.some(item => !/^[a-zA-Z0-9_-]{1,64}$/.test(item?.id) || !item?.file?.type?.startsWith('video/')))) throw new Error('Invalid Song video media');
   const encodedMedia = await Promise.all(media.map(encodeStoredValue));
   const encodedVoiceMedia = voiceMedia === null ? null : await Promise.all(voiceMedia.map(async ({id, file}) => ({id, file:await encodeStoredValue(file)})));
+  const encodedVideoMedia = videoMedia === null ? null : await Promise.all(videoMedia.map(async ({id, file}) => ({id, file:await encodeStoredValue(file)})));
   const db = await openDb();
   try {
     await new Promise((resolve, reject) => {
@@ -94,6 +96,15 @@ export async function replaceProjectMedia(project, media, voiceMedia = null) {
               encodedVoiceMedia.forEach(({id, file}) => store.put(file, `voice-layer:${id}`));
             };
           } else encodedVoiceMedia.forEach(({id, file}) => store.put(file, `voice-layer:${id}`));
+        }
+        if (encodedVideoMedia !== null) {
+          if (store.getAllKeys) {
+            const keys = store.getAllKeys();
+            keys.onsuccess = () => {
+              keys.result.filter(key => typeof key === 'string' && key.startsWith('video-layer:')).forEach(key => store.delete(key));
+              encodedVideoMedia.forEach(({id, file}) => store.put(file, `video-layer:${id}`));
+            };
+          } else encodedVideoMedia.forEach(({id, file}) => store.put(file, `video-layer:${id}`));
         }
       } catch (error) { tx.abort(); reject(error); }
     });
@@ -149,12 +160,47 @@ export async function deleteVoiceLayer(id, project) {
   } finally { db.close(); }
 }
 
+export async function saveSongVideoLayer(id, file, project) {
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(id) || !file?.type?.startsWith('video/')) throw new Error('Invalid Song video track');
+  const encodedFile = await encodeStoredValue(file);
+  const db = await openDb();
+  try {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error('Video track save failed'));
+      tx.onabort = () => reject(tx.error || new Error('Video track save aborted'));
+      try { const store = tx.objectStore(STORE); store.put(encodedFile, `video-layer:${id}`); store.put(project, 'project'); }
+      catch (error) { tx.abort(); reject(error); }
+    });
+  } finally { db.close(); }
+}
+
+export async function deleteSongVideoLayer(id, project) {
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(id)) throw new Error('Invalid Song video track id');
+  const db = await openDb();
+  try {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error('Video track delete failed'));
+      tx.onabort = () => reject(tx.error || new Error('Video track delete aborted'));
+      try { const store = tx.objectStore(STORE); store.delete(`video-layer:${id}`); store.put(project, 'project'); }
+      catch (error) { tx.abort(); reject(error); }
+    });
+  } finally { db.close(); }
+}
+
 export async function collectProjectMedia() {
   return Promise.all(Array.from({length: 16}, (_, id) => getValue(`media:${id}`)));
 }
 
 export async function collectVoiceMedia(layers) {
   return Promise.all(layers.map(async layer => ({id: layer.id, file: await getValue(`voice-layer:${layer.id}`)})));
+}
+
+export async function collectSongVideoMedia(layers) {
+  return Promise.all(layers.map(async layer => ({id: layer.id, file: await getValue(`video-layer:${layer.id}`)})));
 }
 
 export function blobAsDataUrl(blob) {

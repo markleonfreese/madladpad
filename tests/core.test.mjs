@@ -10,6 +10,12 @@ test('long-form recording budget respects both project and browser storage with 
   assert.equal(localRecordingBudget(0, {usage:1,quota:1}), 0);
 });
 
+test('Song video clips normalize stable identity, placement and source trim metadata',()=>{
+  const video=normaliseProject({voice:{videoLayers:[{id:'clip_1',name:'Verse visual',startStep:384,trimStartSec:2,trimEndSec:8,durationSec:10,type:'video/mp4'}]}}).voice.videoLayers[0];
+  assert.deepEqual(video,{id:'clip_1',name:'Verse visual',origin:'import',startStep:384,trimStartSec:2,trimEndSec:8,durationSec:10,type:'video/mp4'});
+  assert.deepEqual(normaliseProject({}).voice.videoLayers,[],'older project packs default to no video tracks');
+});
+
 test('storage-bounded recording keeps only chunks inside its limit and records the stop reason', () => {
   const capture = createBoundedRecordingCapture(10, 6);
   const accepted = {size:6};
