@@ -1436,7 +1436,7 @@ try {
   await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='true');
   await page.locator('#overdub-video-record').click();
   await page.waitForFunction(()=>document.querySelector('#overdub-video-stop').hidden===false,null,{timeout:8000});
-  await page.waitForFunction(()=>document.querySelector('#song-video-status').textContent.includes('Saving the captured take now'),null,{timeout:10000});
+  await page.waitForFunction(()=>window.__videoJournalAbort.attempts===1,null,{timeout:25000});
   await page.waitForFunction(()=>/Video take 3 saved locally|Could not save camera take/.test(document.querySelector('#song-video-status').textContent),null,{timeout:20000});
   assert.match(await page.locator('#song-video-status').textContent(),/Video take 3 saved locally/,'the capture should be saved successfully after the synthetic journal abort');
   assert.equal(await page.evaluate(()=>window.__videoJournalAbort.attempts),1,'the test should abort exactly one IndexedDB video-journal transaction');
@@ -1452,6 +1452,46 @@ try {
   await fallbackVideoTrack.getByRole('button',{name:/Delete video track 3 and its local source/}).click();
   await page.waitForFunction(()=>document.querySelectorAll('#song-video-layers .song-video-track').length===2);
   checkpoint('video take remains saveable after a synthetic journal transaction abort');
+  const audioTracksBeforeAbort=await page.locator('#voice-overdub-layers .vocal-layer').count();
+  await page.evaluate(async()=>{
+    const nativeGetUserMedia=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    const context=new AudioContext(),destination=context.createMediaStreamDestination(),oscillator=context.createOscillator(),gain=context.createGain();
+    gain.gain.value=.2;oscillator.frequency.value=440;oscillator.connect(gain).connect(destination);oscillator.start();await context.resume();
+    window.__audioJournalAbort={attempts:0,restore:async()=>{prototype.put=nativePut;Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,value:nativeGetUserMedia});oscillator.stop();await context.close();},context};
+    const prototype=IDBObjectStore.prototype,nativePut=prototype.put,aborted=new WeakSet();
+    Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,value:constraints=>constraints?.audio&&!constraints?.video?Promise.resolve(destination.stream):nativeGetUserMedia(constraints)});
+    prototype.put=function(value,key){
+      const transaction=this.transaction;
+      if(aborted.has(transaction))return {};
+      if(window.__audioJournalAbort.attempts===0&&typeof key==='string'&&key.startsWith('recording-recovery:audio:')&&key.includes(':chunk:')){
+        window.__audioJournalAbort.attempts++;
+        aborted.add(transaction);
+        transaction.abort();
+        return {};
+      }
+      return nativePut.call(this,value,key);
+    };
+  });
+  await page.locator('#voice-overdub-record').click();
+  await page.waitForFunction(()=>document.querySelector('#voice-overdub-status').textContent.includes('Recording microphone audio'),null,{timeout:8000});
+  await page.waitForFunction(()=>window.__audioJournalAbort.attempts===1,null,{timeout:25000});
+  const expectedAudioTake=`Vocal take ${audioTracksBeforeAbort+1}`;
+  await page.waitForFunction(name=>new RegExp(`${name} saved locally|Could not save vocal take`).test(document.querySelector('#voice-overdub-status').textContent),expectedAudioTake,{timeout:20000});
+  assert.match(await page.locator('#voice-overdub-status').textContent(),new RegExp(`${expectedAudioTake} saved locally`),'the capture should be saved successfully after the synthetic journal abort');
+  assert.equal(await page.evaluate(()=>window.__audioJournalAbort.attempts),1,'the test should abort exactly one IndexedDB audio-journal transaction');
+  assert.equal(await page.locator('#voice-overdub-layers .vocal-layer').count(),audioTracksBeforeAbort+1,'a journal write failure should still save the captured audio as a normal local Song track');
+  const fallbackAudioTrack=page.locator('#voice-overdub-layers .vocal-layer').nth(audioTracksBeforeAbort);
+  assert.equal(await fallbackAudioTrack.locator('.vocal-layer-name').inputValue(),expectedAudioTake,'the fallback audio take should remain an editable Song track');
+  const fallbackAudioId=await fallbackAudioTrack.getAttribute('data-layer');
+  const fallbackAudioInfo=await page.evaluate(async id=>{const file=await (await import('/storage.js')).getValue(`voice-layer:${id}`);return{type:file?.type,size:file?.size};},fallbackAudioId);
+  assert.match(fallbackAudioInfo.type,/^audio\//,'the take should retain its audio container after the journal failure');
+  assert.ok(fallbackAudioInfo.size>0,'the complete captured take should be saved after the journal failure');
+  assert.deepEqual(await page.evaluate(async()=>(await (await import('/storage.js')).listInterruptedAudioRecordings()).map(take=>take.id)),[],'a successfully saved fallback take should remove its incomplete journal');
+  await page.evaluate(()=>window.__audioJournalAbort.restore());
+  page.once('dialog',dialog=>dialog.accept());
+  await fallbackAudioTrack.getByRole('button',{name:new RegExp(`Delete audio track ${audioTracksBeforeAbort+1} and its saved local audio file`)}).click();
+  await page.waitForFunction(count=>document.querySelectorAll('#voice-overdub-layers .vocal-layer').length===count,audioTracksBeforeAbort);
+  checkpoint('audio take remains saveable after a synthetic journal transaction abort');
   await page.waitForTimeout(500);
   await page.reload();
   await openScreen('sounds');
