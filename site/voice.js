@@ -406,8 +406,10 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const raw=audio.vocalSources.get(layer.id)?.buffer?.duration||0;
       return layer.startStep+vocalLayerClip(layer,raw).duration/secondsPerStep;
     }));
-    const totalSteps=Math.max(16,Math.min(256,Math.ceil(maxEnd/16)*16));
-    const width=Math.max(680,totalSteps*24),height=64;
+    // Vocal placements support up to 256 bars; keep the full arrangement compact
+    // and scrollable inside this component rather than widening the page.
+    const totalSteps=Math.max(16,Math.min(4096,Math.ceil(maxEnd/16)*16));
+    const width=Math.max(680,totalSteps*4),height=64;
     const ruler=document.createElement('div');ruler.className='overdub-ruler';ruler.style.width=width+'px';
     for(let step=0;step<totalSteps;step+=16){
       const mark=document.createElement('span');mark.style.width=(16/totalSteps*100)+'%';
@@ -424,7 +426,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const endStep=layer.startStep+clip.duration/secondsPerStep;
       svg.setAttribute('aria-label',layer.name+' from bar '+(Math.floor(layer.startStep/16)+1)+', step '+(layer.startStep%16+1)+' to bar '+(Math.floor(endStep/16)+1)+', step '+((endStep%16)+1).toFixed(1)+'; '+clip.duration.toFixed(2)+' seconds of audible audio');
       const add=(tag,attrs)=>{const node=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [key,value] of Object.entries(attrs))node.setAttribute(key,String(value));svg.append(node);return node;};
-      for(let step=0;step<=totalSteps;step+=4){const x=step/totalSteps*width;add('line',{x1:x,x2:x,y1:0,y2:height,stroke:step%16===0?'#758a66':'#344b39','stroke-width':step%16===0?1.6:.6});}
+      for(let step=0;step<=totalSteps;step+=(totalSteps>512?16:4)){const x=step/totalSteps*width;add('line',{x1:x,x2:x,y1:0,y2:height,stroke:step%16===0?'#758a66':'#344b39','stroke-width':step%16===0?1.6:.6});}
       if(source&&clip.duration>0&&layer.startStep<totalSteps){
         const x=layer.startStep/totalSteps*width;
         const audibleWidth=Math.max(1,Math.min(width-x,clip.duration/secondsPerStep/totalSteps*width));

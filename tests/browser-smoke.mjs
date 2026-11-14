@@ -1084,8 +1084,15 @@ try {
     assert.match(await vocalRow.locator('.vocal-layer-meta').textContent(),/Raw take saved locally.*bar/,'a microphone overdub should save its raw local recording and sequencer position');
     await vocalRow.locator('.vocal-layer-name').fill('Lead take');
     await vocalRow.locator('.vocal-layer-name').press('Tab');
-    await vocalRow.locator('.vocal-layer-start input').fill('18');
-    await vocalRow.locator('.vocal-layer-start input').press('Tab');
+    const layerStartInput=vocalRow.locator('.vocal-layer-start input');
+    await layerStartInput.fill('18');
+    await layerStartInput.press('Tab');
+    await layerStartInput.fill('4095');
+    await layerStartInput.press('Tab');
+    assert.match(await page.locator('#overdub-timeline .overdub-ruler').textContent(),/Bar 256/,'the timeline should reach the full supported 256-bar vocal placement range');
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth===document.documentElement.clientWidth),true,'a long overdub arrangement must scroll inside its timeline without widening the page');
+    await layerStartInput.fill('18');
+    await layerStartInput.press('Tab');
     const trimStartInput=vocalRow.locator('.vocal-layer-trim input').first();
     assert.equal(await trimStartInput.inputValue(),'0','new overdubs should preserve their full raw recording by default');
     await trimStartInput.fill('0.05');
