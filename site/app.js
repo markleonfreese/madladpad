@@ -1277,6 +1277,14 @@ async function placeFiles(files,start=selected) {
 }
 
 function startSequencer() {
+  if(sequenceView==='song'){
+    if(!project.song.clips.length)return notify('Add saved patterns to Song before playing.');
+    if(project.song.clips.some(clip=>!project.scenes.some(scene=>scene.id===clip.sceneId)))
+      return notify('A song section refers to a missing pattern. Remove or repair that section before playing.');
+  }
+  const playbackSong=sequenceView==='song'
+    ?JSON.parse(JSON.stringify({song:project.song,scenes:project.scenes}))
+    :null;
   const token = transportActivity.begin();
   if (token===null) return;
   updateTransportButton();
@@ -1287,21 +1295,36 @@ function startSequencer() {
     audio.setEpoch(audio.context.currentTime+.08);
     nextStepTime=audio.transportEpoch;
     nextStep=0;
+    let priorSongClipId=null;
     const tick=() => {
       while (nextStepTime<audio.context.currentTime+.12) {
         const time=nextStepTime;
-        if(pendingScene&&time>=pendingScene.at-1e-4){const queued=pendingScene;pendingScene=null;applyScene(queued.scene,time);renderScenes();notify(`Scene “${queued.scene.name}” launched.`);}
-        const absoluteStep=nextStep,step=absoluteStep%16;
-        const stride=gridStride();
+        if(!playbackSong&&pendingScene&&time>=pendingScene.at-1e-4){const queued=pendingScene;pendingScene=null;applyScene(queued.scene,time);renderScenes();notify(`Scene “${queued.scene.name}” launched.`);}
+        const absoluteStep=nextStep;
+        const section=playbackSong?songSectionAtStep(playbackSong.song,playbackSong.scenes,absoluteStep):null;
+        if(playbackSong&&!section){
+          clearInterval(transportTimer);transportTimer=null;
+          songEndTimer=setTimeout(()=>{
+            if(transportActivity.current(token)){stopSequencer();notify('Song finished. Recordings remain in this project.');}
+          },Math.max(0,(time-audio.context.currentTime)*1000));
+          return;
+        }
+        const step=section?.localStep??absoluteStep%16;
+        const division=section?.scene?.gridDivision??project.gridDivision;
+        const stride=division==='1/4'?4:division==='1/8'?2:1;
+        if(section&&section.clip.id!==priorSongClipId){
+          priorSongClipId=section.clip.id;
+          for(const pad of project.pads.slice(0,PAD_COUNT[project.layout]))releasePad(pad.id,time);
+        }
         project.pads.slice(0,PAD_COUNT[project.layout]).forEach(pad => {
           if(!padIsAudible(pad.id))return;
-          if(pad.sequenceMode==='notes'){
-            const note=sampleNoteAtStep(pad.sampleNotes,step);
+          const lane=section?section.scene?.pads?.[pad.id]:pad;
+          if(!lane)return;
+          if(lane.sequenceMode==='notes'){
+            const note=sampleNoteAtStep(lane.sampleNotes,step);
             if(!note)return;
             const gate=note.length*secondsPerStep;
             const canLoop=audio.supportsSampleLoop(pad.id);
-            // One drawn note gets one attack; adjacent separate notes get two.
-            // A transient pitch override must not mutate the underlying sample.
             const pitched={...pad,pitch:clamp(pad.pitch+note.semitones,-12,12)};
             audio.trigger(pad.id,pitched,flashPad,time,{maxDuration:gate,loop:canLoop});
             if(!canLoop&&!loopFallbackNotified.has(pad.id)){
@@ -1310,11 +1333,12 @@ function startSequencer() {
             }
             return;
           }
-          if(step%stride!==0||!pad.steps[step])return;
-          const offset=pad.stepOffsets?.[step]||0,triggerAt=stepTriggerTime(time,project.bpm,offset);
-          let maxDuration=pad.stepPlaybackMode==='one-step'?stepGateDuration(project.bpm,offset):null,loop=false;
-          if(pad.stepPlaybackMode==='loop'){
-            const gate=stepLoopGateDuration(pad.steps,step,project.bpm,offset,absoluteStep===(loopRestartAtStep.get(pad.id)??0));
+          if(step%stride!==0||!lane.steps[step])return;
+          const offset=lane.stepOffsets?.[step]||0,triggerAt=stepTriggerTime(time,project.bpm,offset);
+          let maxDuration=lane.stepPlaybackMode==='one-step'?stepGateDuration(project.bpm,offset):null,loop=false;
+          if(lane.stepPlaybackMode==='loop'){
+            const initial=section?absoluteStep===(section.startBar-1)*16:absoluteStep===(loopRestartAtStep.get(pad.id)??0);
+            const gate=stepLoopGateDuration(lane.steps,step,project.bpm,offset,initial);
             if(gate===null)return;
             loopRestartAtStep.delete(pad.id);
             if(audio.supportsSampleLoop(pad.id)){loop=true;maxDuration=Number.isFinite(gate)?gate:null;}
@@ -1328,6 +1352,7 @@ function startSequencer() {
           showDirectorPlayingStep(step);
           voiceLab?.highlightRapBar(absoluteStep);
           updateBeatIndicator(Math.floor(step/stride));
+          if(section){for(const node of $('song-timeline').querySelectorAll('.song-section-clip'))node.classList.toggle('current',node.dataset.songClip===section.clip.id);}
         },Math.max(0,(time-audio.context.currentTime)*1000));
         nextStep++;
         nextStepTime+=secondsPerStep;
@@ -1353,6 +1378,8 @@ function updateBeatIndicator(step) {
 
 function stopSequencer() {
   transportActivity.cancel();
+  if(songEndTimer!==null){clearTimeout(songEndTimer);songEndTimer=null;}
+  $('song-timeline').querySelectorAll('.current').forEach(node=>node.classList.remove('current'));
   clearInterval(transportTimer); transportTimer=null;
   loopRestartAtStep.clear();
   audio.stopAllPadVoices();
