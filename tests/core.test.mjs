@@ -1,7 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withModelReferrerPolicy } from '../site/voice-model-fetch.js';
-import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars, localRecordingBudget, MAX_MEDIA_BYTES, RECORDING_STORAGE_RESERVE_BYTES, createBoundedRecordingCapture } from '../site/core.js';
+
+test('long-form recording budget respects both project and browser storage with headroom', () => {
+  assert.equal(localRecordingBudget(10 * 1024 * 1024, {usage:90 * 1024 * 1024,quota:100 * 1024 * 1024}), 10 * 1024 * 1024 - RECORDING_STORAGE_RESERVE_BYTES);
+  assert.equal(localRecordingBudget(10 * 1024 * 1024, {usage:19 * 1024 * 1024,quota:20 * 1024 * 1024}), 1024 * 1024 - RECORDING_STORAGE_RESERVE_BYTES);
+  assert.equal(localRecordingBudget(MAX_MEDIA_BYTES, {usage:0,quota:100 * 1024 * 1024}), 0);
+  assert.equal(localRecordingBudget(0, {usage:1,quota:1}), 0);
+});
+
+test('storage-bounded recording keeps only chunks inside its limit and records the stop reason', () => {
+  const capture = createBoundedRecordingCapture(10, 6);
+  const accepted = {size:6};
+  assert.equal(capture.add(accepted), true);
+  assert.equal(capture.shouldStop, true,'the recorder should be asked to stop before spending its finalization reserve');
+  assert.equal(capture.add({size:4}), true,'the final MediaRecorder chunk may use the reserved headroom');
+  assert.equal(capture.add({size:1}), false);
+  assert.deepEqual(capture.chunks, [accepted,{size:4}]);
+  assert.equal(capture.bytes, 10);
+  assert.equal(capture.stoppedForStorage, true);
+});
 
 test('Whisper model fetch omits the app referrer only for Hugging Face assets', async () => {
   const calls = [];
