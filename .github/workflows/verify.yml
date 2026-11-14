@@ -35,6 +35,8 @@ jobs:
         run: npm test
       - name: Run browser smoke and accessibility checks
         run: npm run test:browser
+      - name: Run integrated full-song media acceptance
+        run: npm run test:song-browser
       - name: Run WebKit mobile-adjacent smoke
         run: npm run test:webkit
       - name: Run native Workers Static Assets runtime smoke
