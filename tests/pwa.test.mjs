@@ -39,7 +39,6 @@ test('offline shell and all locally referenced ES modules exist', () => {
   assert.ok(sw.includes("caches.match('/')"),
     'offline navigation must fall back to the canonical root route used by Workers Static Assets');
   assert.match(sw,/const CACHE = 'madladpad-shell-v22'/,'the write-through cache fix must activate a fresh offline shell');
-  assert.match(sw,/const CACHE = 'madladpad-shell-v22'/,'the write-through cache fix must activate a fresh offline shell');
 });
 
 test('v20 install precaches the updated modules, local fonts and licenses before taking control', async () => {
@@ -54,7 +53,6 @@ test('v20 install precaches the updated modules, local fonts and licenses before
   let installation;
   handlers.get('install')({waitUntil:promise=>{installation=promise;}});
   await installation;
-  assert.equal(cacheName,'madladpad-shell-v22');
   assert.equal(cacheName,'madladpad-shell-v22');
   assert.ok(precache.includes('/audio.js'),'the replacement offline shell must include the fixed audio module');
   assert.ok(precache.includes('/fonts/dm-sans-variable-latin.woff2')&&precache.includes('/fonts/dm-mono-400-latin.woff2'),'the offline shell should include self-hosted UI fonts');
@@ -104,7 +102,6 @@ test('service worker activation removes stale app shells without deleting the Wh
   const sw = readFileSync(join(site, 'sw.js'), 'utf8');
   const handlers = new Map();
   const cacheNames = ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13', 'madladpad-shell-v14', 'madladpad-shell-v15', 'madladpad-shell-v16', 'madladpad-shell-v17', 'madladpad-shell-v18', 'madladpad-shell-v19', 'madladpad-shell-v20', 'madladpad-shell-v21', 'madladpad-shell-v22', 'transformers-cache', 'another-app-cache'];
-  const cacheNames = ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13', 'madladpad-shell-v14', 'madladpad-shell-v15', 'madladpad-shell-v16', 'madladpad-shell-v17', 'madladpad-shell-v18', 'madladpad-shell-v19', 'madladpad-shell-v20', 'madladpad-shell-v21', 'madladpad-shell-v22', 'transformers-cache', 'another-app-cache'];
   const deleted = [];
   const context = {
     self: {
@@ -125,7 +122,6 @@ test('service worker activation removes stale app shells without deleting the Wh
   await activation;
   assert.deepEqual(deleted, ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13', 'madladpad-shell-v14', 'madladpad-shell-v15', 'madladpad-shell-v16', 'madladpad-shell-v17', 'madladpad-shell-v18', 'madladpad-shell-v19', 'madladpad-shell-v20', 'madladpad-shell-v21']);
 });
-
 
 test('Pitch loading copy does not claim the implemented processor is unavailable', () => {
   const html=readFileSync(join(site,'index.html'),'utf8');

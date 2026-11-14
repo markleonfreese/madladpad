@@ -1624,10 +1624,6 @@ try {
   assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v22')).match('/audio.js')).text()),/pendingStarts/,'the current fallback retrigger fix should be cached before offline use');
   assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v22')).match('/voice.js')).text()),/Use rhyme idea/,'the current Rap Lab writing aid should be cached before offline use');
   const cachedFonts=await page.evaluate(async()=>Promise.all(['/fonts/dm-sans-variable-latin.woff2','/fonts/dm-sans-variable-latin-ext.woff2','/fonts/dm-mono-400-latin.woff2','/fonts/dm-mono-400-latin-ext.woff2','/fonts/dm-mono-500-latin.woff2','/fonts/dm-mono-500-latin-ext.woff2'].map(async path=>Boolean(await (await caches.open('madladpad-shell-v22')).match(path)))));
-  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v22')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
-  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v22')).match('/audio.js')).text()),/pendingStarts/,'the current fallback retrigger fix should be cached before offline use');
-  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v22')).match('/voice.js')).text()),/Use rhyme idea/,'the current Rap Lab writing aid should be cached before offline use');
-  const cachedFonts=await page.evaluate(async()=>Promise.all(['/fonts/dm-sans-variable-latin.woff2','/fonts/dm-sans-variable-latin-ext.woff2','/fonts/dm-mono-400-latin.woff2','/fonts/dm-mono-400-latin-ext.woff2','/fonts/dm-mono-500-latin.woff2','/fonts/dm-mono-500-latin-ext.woff2'].map(async path=>Boolean(await (await caches.open('madladpad-shell-v22')).match(path)))));
   assert.ok(cachedFonts.every(Boolean),'both local UI fonts and their Latin/extended subsets should be cached for offline use');
   await page.reload();
   await page.waitForFunction(()=>Boolean(navigator.serviceWorker.controller));
