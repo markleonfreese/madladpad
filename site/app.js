@@ -874,6 +874,7 @@ function renderTrackGrid(){
     const head=document.createElement('div');head.className='track-head';
     const demo=DEMO_SOUNDS.find(sound=>sound.id===pad.demoSound);
     const trackLabel=mediaFiles.has(id)?pad.name:demo?.name||(audio.demoEnabled?`Demo synth ${String(id+1).padStart(2,'0')}`:'Empty pad');
+    const lanePositions=pad.sequenceMode==='notes'?Array.from({length:16},(_,step)=>step):positions;
     const enabledCount=pad.sequenceMode==='notes'?pad.sampleNotes.length:positions.filter(step=>pad.steps[step]).length;
     row.setAttribute('aria-label',compact?`Pattern lane ${id+1}: ${trackLabel}; ${enabledCount} of ${positions.length} steps active. Select lane name to edit.`:`Pattern lane ${id+1}: ${trackLabel}`);
     const name=document.createElement('button');name.type='button';name.dataset.control='name';name.className='track-name';name.textContent=`${String(id+1).padStart(2,'0')} · ${trackLabel}`;name.setAttribute('aria-label',compact?`Edit pattern for pad ${id+1}, ${trackLabel}`:`Select pad ${id+1}, ${trackLabel}`);name.addEventListener('click',()=>compact?openSequenceFocus(id):selectPad(id));head.append(name);
@@ -883,9 +884,9 @@ function renderTrackGrid(){
     const gain=document.createElement('input');gain.type='range';gain.min='0';gain.max='150';gain.value=String(Math.round(pad.volume*100));gain.className='track-gain';gain.setAttribute('aria-label',`Volume for pad ${id+1}`);gain.addEventListener('input',()=>{pad.volume=Number(gain.value)/100;if(selected===id){$('volume').value=gain.value;$('volume-out').textContent=`${gain.value}%`;}queueSave();});head.append(gain);
     if(!compact){const mode=document.createElement('select');mode.dataset.control='playback';mode.className='track-playback';mode.setAttribute('aria-label',`Step playback mode for pad ${id+1}`);mode.title='Full sound can ring; one sound per step gates each cell; loop held steps sustains a contiguous run.';for(const [value,label] of [['full','FULL'],['one-step','ONE STEP'],['loop','LOOP HELD']]){const option=document.createElement('option');option.value=value;option.textContent=label;mode.append(option);}mode.value=pad.stepPlaybackMode;mode.addEventListener('change',()=>{releasePad(id);pad.stepPlaybackMode=['one-step','loop'].includes(mode.value)?mode.value:'full';if(selected===id)$('sequence-focus-playback').value=pad.stepPlaybackMode;if(pad.stepPlaybackMode==='loop'&&!audio.supportsSampleLoop(id))notify('This pad needs decoded local audio for seamless looping; it will play as a one-shot in this browser.');queueSave();});head.append(mode);}
     row.append(head);
-    const cells=document.createElement('div');cells.className=compact?'track-steps compact-overview':'track-steps';cells.style.setProperty('--track-step-count',String(positions.length));
+    const cells=document.createElement('div');cells.className=compact?'track-steps compact-overview':'track-steps';cells.style.setProperty('--track-step-count',String(lanePositions.length));
     if(!compact)cells.addEventListener('scroll',()=>{for(const other of holder.querySelectorAll('.track-steps'))if(other!==cells&&other.scrollLeft!==cells.scrollLeft)other.scrollLeft=cells.scrollLeft;},{passive:true});
-    positions.forEach(index=>{
+    lanePositions.forEach(index=>{
       const note=pad.sequenceMode==='notes'?pad.sampleNotes.find(item=>item.step<=index&&index<item.step+item.length):null;
       const enabled=pad.sequenceMode==='notes'?Boolean(note):pad.steps[index],step=document.createElement(compact?'span':'button');
       step.dataset.step=String(index);
