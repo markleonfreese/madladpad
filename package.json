@@ -20,7 +20,9 @@
     "test:workers-runtime": "node tests/workers-runtime-smoke.mjs",
     "pretest:webkit": "npm run build",
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "test:speech-model": "node tests/speech-model-offline-acceptance.mjs",
+    "pretest:speech-model": "npm run build"
   },
   "devDependencies": {
     "@huggingface/transformers": "^4.3.2",
