@@ -1,4 +1,4 @@
-import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, DEMO_SOUNDS, directedPads, makeProject, normaliseProject, normaliseRegion, copyPadSound, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, AsyncActivity, suggestActiveRegion, captureRegionStatus, cameraTakeTargetSeconds, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, nextBarTime, videoVisualDurationMs } from './core.js';
+import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, DEMO_SOUNDS, directedPads, makeProject, normaliseProject, normaliseRegion, copyPadSound, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, AsyncActivity, suggestActiveRegion, captureRegionStatus, cameraTakeTargetSeconds, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, songSectionAtStep, songTotalBars, MAX_SONG_CLIPS, MAX_SONG_BARS, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, nextBarTime, videoVisualDurationMs } from './core.js';
 import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, collectVoiceMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
 import { isGooglePickerConfigured, pickFromDrive, pickFromPhotos } from './google.js';
@@ -11,6 +11,7 @@ let project = makeProject();
 let selected = 0;
 let sampleEditorTrigger = null;
 let trackGridVisible = true;
+let sequenceView = 'patterns';
 let selectedSampleNote = null;
 let notePointer = null;
 let audio;
@@ -19,6 +20,7 @@ let transportTimer = null;
 const transportActivity = new AsyncActivity();
 let nextStep = 0;
 let nextStepTime = 0;
+let songEndTimer = null;
 let recording = null;
 const takeActivity = new AsyncActivity();
 let takeKind = null;
@@ -202,10 +204,10 @@ function showVoiceTool(tool,{focus=false}={}) {
 
 function updateTransportButton() {
   const running = transportActivity.phase!=='idle';
-  $('studio-play').textContent = transportActivity.phase==='starting' ? '■ CANCEL START' : running ? '■ STOP LOOP' : '▶ PLAY LOOP';
+  $('studio-play').textContent = transportActivity.phase==='starting' ? '■ CANCEL START' : running ? '■ STOP' : sequenceView==='song'?'▶ PLAY SONG':'▶ PLAY LOOP';
   $('studio-play').setAttribute('aria-pressed',String(running));
   $('studio-play').classList.toggle('active',running);
-  $('play-seq').textContent = transportActivity.phase==='starting' ? '■ CANCEL' : running ? '■ STOP' : '▶ PLAY';
+  $('play-seq').textContent = transportActivity.phase==='starting' ? '■ CANCEL' : running ? '■ STOP' : sequenceView==='song'?'▶ PLAY SONG':'▶ PLAY';
   $('play-seq').setAttribute('aria-pressed',String(running));
   $('play-seq').classList.toggle('active',running);
 }
@@ -925,7 +927,7 @@ function renderSession() {
     button.classList.toggle('active',audio.demoEnabled);
     button.setAttribute('aria-pressed',String(audio.demoEnabled));
   }
-  renderGrid(); renderControls(); renderSteps(); setTrackView(trackGridVisible); renderScenes(); renderVideoDirector();
+  renderGrid(); renderControls(); renderSteps(); setTrackView(trackGridVisible); renderScenes(); renderSong(); setSequenceView(sequenceView,false); renderVideoDirector();
   audio.setTransport(project.bpm,project.quantize);
   syncRegionPreview();
 }
@@ -960,8 +962,79 @@ function showDirectorPlayingStep(step){
   for(const [index,element] of [...$('director-steps').children].entries())element.classList.toggle('current',index===step);
 }
 
-function sceneSnapshot(name){
-  return {name,gridDivision:project.gridDivision,pads:project.pads.map(pad=>({steps:[...pad.steps],stepOffsets:[...pad.stepOffsets],stepPlaybackMode:pad.stepPlaybackMode,sequenceMode:pad.sequenceMode,sampleNotes:pad.sampleNotes.map(note=>({...note}))})),videoShots:project.video.shots.map(shot=>({mode:shot.mode,pads:[...shot.pads]}))};
+function sceneSnapshot(name,id=`scene-${Date.now()}-${Math.random().toString(36).slice(2,8)}`){
+  return {id,name,gridDivision:project.gridDivision,pads:project.pads.map(pad=>({steps:[...pad.steps],stepOffsets:[...pad.stepOffsets],stepPlaybackMode:pad.stepPlaybackMode,sequenceMode:pad.sequenceMode,sampleNotes:pad.sampleNotes.map(note=>({...note}))})),videoShots:project.video.shots.map(shot=>({mode:shot.mode,pads:[...shot.pads]}))};
+}
+
+
+function setSequenceView(view,stopOnSwitch=true){
+  const next=view==='song'?'song':'patterns';
+  if(next!==sequenceView&&stopOnSwitch&&transportActivity.phase!=='idle')stopSequencer();
+  sequenceView=next;
+  $('pattern-view').setAttribute('aria-pressed',String(next==='patterns'));
+  $('song-view').setAttribute('aria-pressed',String(next==='song'));
+  $('sequence-pattern-content').hidden=next!=='patterns';
+  $('song-arranger').hidden=next!=='song';
+  if(next==='song')renderSong();
+  updateTransportButton();
+}
+function editSong(mutator){
+  if(transportActivity.phase!=='idle')stopSequencer();
+  mutator(project.song.clips);
+  renderSong();queueSave();
+}
+function renderSong(){
+  const source=$('song-scene-select'),selectedId=source.value;
+  source.replaceChildren();
+  for(const scene of project.scenes){
+    const option=document.createElement('option');option.value=scene.id;option.textContent=scene.name;source.append(option);
+  }
+  if(project.scenes.some(scene=>scene.id===selectedId))source.value=selectedId;
+  const clips=project.song.clips,barCount=songTotalBars(project.song);
+  $('song-add-section').disabled=!project.scenes.length||clips.length>=MAX_SONG_CLIPS||barCount>=MAX_SONG_BARS;
+  const timeline=$('song-timeline'),editor=$('song-clip-editor');
+  timeline.replaceChildren();editor.replaceChildren();
+  let bar=1;
+  for(const [index,clip] of clips.entries()){
+    const scene=project.scenes.find(item=>item.id===clip.sceneId);
+    const name=scene?.name||'Missing pattern';
+    const start=bar,end=bar+clip.bars-1;
+    const segment=document.createElement('button');
+    segment.type='button';segment.className='song-section-clip';
+    segment.style.width=(clip.bars*28)+'px';
+    segment.style.flex='none';segment.dataset.songClip=clip.id;
+    segment.textContent=(scene?name:'?')+' · '+clip.bars+' bars';
+    segment.title=name+' · bars '+start+'–'+end;
+    segment.setAttribute('aria-label',name+' in song from bar '+start+' through '+end+'; select section to edit');
+    segment.addEventListener('click',()=>editor.querySelector('[data-song-section="'+clip.id+'"]')?.focus());
+    timeline.append(segment);
+    const row=document.createElement('div');row.className='song-section-editor';
+    row.dataset.songSection=clip.id;
+    row.tabIndex=-1;
+    const heading=document.createElement('strong');heading.textContent=name+' · bars '+start+'–'+end;
+    const label=document.createElement('label');label.textContent='LENGTH (BARS)';
+    const bars=document.createElement('input');bars.type='number';bars.min='1';bars.max=String(Math.min(64,MAX_SONG_BARS-(barCount-clip.bars)));bars.step='1';bars.value=String(clip.bars);bars.setAttribute('aria-label','Length in bars for '+name+' section '+(index+1));
+    bars.addEventListener('change',()=>{
+      editSong(()=>{clip.bars=Math.round(clamp(bars.value,1,Number(bars.max)));});
+    });label.append(bars);
+    const action=(text,disabled,handler)=>{
+      const button=document.createElement('button');button.type='button';button.className='quiet-button';button.textContent=text;button.disabled=disabled;
+      button.addEventListener('click',handler);return button;
+    };
+    const left=action('←',index===0,()=>editSong(array=>{[array[index-1],array[index]]=[array[index],array[index-1]];}));
+    left.setAttribute('aria-label','Move '+name+' section earlier');
+    const right=action('→',index===clips.length-1,()=>editSong(array=>{[array[index+1],array[index]]=[array[index],array[index+1]];}));
+    right.setAttribute('aria-label','Move '+name+' section later');
+    const copy=action('DUPLICATE',clips.length>=MAX_SONG_CLIPS||barCount+clip.bars>MAX_SONG_BARS,()=>editSong(array=>array.splice(index+1,0,{...clip,id:'song-'+Date.now()+'-'+Math.random().toString(36).slice(2,7)})));
+    const remove=action('REMOVE',false,()=>editSong(array=>array.splice(index,1)));
+    row.append(heading,label,left,right,copy,remove);editor.append(row);
+    bar+=clip.bars;
+  }
+  const seconds=barCount*4*60/clamp(project.bpm,40,240);
+  const minutes=Math.floor(seconds/60),remain=Math.floor(seconds%60);
+  $('song-status').textContent=clips.length
+    ?clips.length+' sections · '+barCount+' bars · approx '+minutes+':'+String(remain).padStart(2,'0')+' at '+project.bpm+' BPM. Patterns remain linked to their saved scene.'
+    :'No song sections yet. Save pattern A, B and C, then add each one in the order you want.';
 }
 
 function renderScenes(){
@@ -978,6 +1051,7 @@ function renderScenes(){
   $('launch-scene').disabled=selectedSceneIndex<0;
   $('launch-scene').textContent=transportTimer?'QUEUE NEXT BAR':'LOAD SCENE';
   $('delete-scene').disabled=selectedSceneIndex<0;
+  renderSong();
 }
 
 function applyScene(scene,atTime=audio.context.currentTime){
@@ -1006,12 +1080,13 @@ function saveScene(){
 function updateScene(){
   if(selectedSceneIndex<0)return;
   const name=$('scene-name').value.trim().slice(0,32)||project.scenes[selectedSceneIndex].name;
-  project.scenes[selectedSceneIndex]=sceneSnapshot(name);renderScenes();queueSave();notify(`Scene “${name}” updated.`);
+  project.scenes[selectedSceneIndex]=sceneSnapshot(name,project.scenes[selectedSceneIndex].id);renderScenes();queueSave();notify(`Scene “${name}” updated.`);
 }
 
 function deleteScene(){
   if(selectedSceneIndex<0)return;
   const scene=project.scenes[selectedSceneIndex];
+  if(project.song.clips.some(clip=>clip.sceneId===scene.id))return notify(`“${scene.name}” is used in the song. Remove its sections before deleting the pattern.`);
   if(!confirm(`Delete the saved scene “${scene.name}”?`))return;
   project.scenes.splice(selectedSceneIndex,1);
   if(pendingScene?.scene.name===scene.name)pendingScene=null;
@@ -1020,6 +1095,7 @@ function deleteScene(){
 
 function launchScene(){
   if(selectedSceneIndex<0)return;
+  if(transportTimer&&sequenceView==='song')return notify('Stop song playback before launching a standalone scene.');
   const scene=JSON.parse(JSON.stringify(project.scenes[selectedSceneIndex]));
   if(transportTimer){
     const earliest=Math.max(audio.context.currentTime+.14,nextStepTime);
@@ -1201,6 +1277,14 @@ async function placeFiles(files,start=selected) {
 }
 
 function startSequencer() {
+  if(sequenceView==='song'){
+    if(!project.song.clips.length)return notify('Add saved patterns to Song before playing.');
+    if(project.song.clips.some(clip=>!project.scenes.some(scene=>scene.id===clip.sceneId)))
+      return notify('A song section refers to a missing pattern. Remove or repair that section before playing.');
+  }
+  const playbackSong=sequenceView==='song'
+    ?JSON.parse(JSON.stringify({song:project.song,scenes:project.scenes}))
+    :null;
   const token = transportActivity.begin();
   if (token===null) return;
   updateTransportButton();
@@ -1211,21 +1295,36 @@ function startSequencer() {
     audio.setEpoch(audio.context.currentTime+.08);
     nextStepTime=audio.transportEpoch;
     nextStep=0;
+    let priorSongClipId=null;
     const tick=() => {
       while (nextStepTime<audio.context.currentTime+.12) {
         const time=nextStepTime;
-        if(pendingScene&&time>=pendingScene.at-1e-4){const queued=pendingScene;pendingScene=null;applyScene(queued.scene,time);renderScenes();notify(`Scene “${queued.scene.name}” launched.`);}
-        const absoluteStep=nextStep,step=absoluteStep%16;
-        const stride=gridStride();
+        if(!playbackSong&&pendingScene&&time>=pendingScene.at-1e-4){const queued=pendingScene;pendingScene=null;applyScene(queued.scene,time);renderScenes();notify(`Scene “${queued.scene.name}” launched.`);}
+        const absoluteStep=nextStep;
+        const section=playbackSong?songSectionAtStep(playbackSong.song,playbackSong.scenes,absoluteStep):null;
+        if(playbackSong&&!section){
+          clearInterval(transportTimer);transportTimer=null;
+          songEndTimer=setTimeout(()=>{
+            if(transportActivity.current(token)){stopSequencer();notify('Song finished. Recordings remain in this project.');}
+          },Math.max(0,(time-audio.context.currentTime)*1000));
+          return;
+        }
+        const step=section?.localStep??absoluteStep%16;
+        const division=section?.scene?.gridDivision??project.gridDivision;
+        const stride=division==='1/4'?4:division==='1/8'?2:1;
+        if(section&&section.clip.id!==priorSongClipId){
+          priorSongClipId=section.clip.id;
+          for(const pad of project.pads.slice(0,PAD_COUNT[project.layout]))releasePad(pad.id,time);
+        }
         project.pads.slice(0,PAD_COUNT[project.layout]).forEach(pad => {
           if(!padIsAudible(pad.id))return;
-          if(pad.sequenceMode==='notes'){
-            const note=sampleNoteAtStep(pad.sampleNotes,step);
+          const lane=section?section.scene?.pads?.[pad.id]:pad;
+          if(!lane)return;
+          if(lane.sequenceMode==='notes'){
+            const note=sampleNoteAtStep(lane.sampleNotes,step);
             if(!note)return;
             const gate=note.length*secondsPerStep;
             const canLoop=audio.supportsSampleLoop(pad.id);
-            // One drawn note gets one attack; adjacent separate notes get two.
-            // A transient pitch override must not mutate the underlying sample.
             const pitched={...pad,pitch:clamp(pad.pitch+note.semitones,-12,12)};
             audio.trigger(pad.id,pitched,flashPad,time,{maxDuration:gate,loop:canLoop});
             if(!canLoop&&!loopFallbackNotified.has(pad.id)){
@@ -1234,11 +1333,12 @@ function startSequencer() {
             }
             return;
           }
-          if(step%stride!==0||!pad.steps[step])return;
-          const offset=pad.stepOffsets?.[step]||0,triggerAt=stepTriggerTime(time,project.bpm,offset);
-          let maxDuration=pad.stepPlaybackMode==='one-step'?stepGateDuration(project.bpm,offset):null,loop=false;
-          if(pad.stepPlaybackMode==='loop'){
-            const gate=stepLoopGateDuration(pad.steps,step,project.bpm,offset,absoluteStep===(loopRestartAtStep.get(pad.id)??0));
+          if(step%stride!==0||!lane.steps[step])return;
+          const offset=lane.stepOffsets?.[step]||0,triggerAt=stepTriggerTime(time,project.bpm,offset);
+          let maxDuration=lane.stepPlaybackMode==='one-step'?stepGateDuration(project.bpm,offset):null,loop=false;
+          if(lane.stepPlaybackMode==='loop'){
+            const initial=section?absoluteStep===(section.startBar-1)*16:absoluteStep===(loopRestartAtStep.get(pad.id)??0);
+            const gate=stepLoopGateDuration(lane.steps,step,project.bpm,offset,initial);
             if(gate===null)return;
             loopRestartAtStep.delete(pad.id);
             if(audio.supportsSampleLoop(pad.id)){loop=true;maxDuration=Number.isFinite(gate)?gate:null;}
@@ -1252,6 +1352,7 @@ function startSequencer() {
           showDirectorPlayingStep(step);
           voiceLab?.highlightRapBar(absoluteStep);
           updateBeatIndicator(Math.floor(step/stride));
+          if(section){for(const node of $('song-timeline').querySelectorAll('.song-section-clip'))node.classList.toggle('current',node.dataset.songClip===section.clip.id);}
         },Math.max(0,(time-audio.context.currentTime)*1000));
         nextStep++;
         nextStepTime+=secondsPerStep;
@@ -1277,6 +1378,8 @@ function updateBeatIndicator(step) {
 
 function stopSequencer() {
   transportActivity.cancel();
+  if(songEndTimer!==null){clearTimeout(songEndTimer);songEndTimer=null;}
+  $('song-timeline').querySelectorAll('.current').forEach(node=>node.classList.remove('current'));
   clearInterval(transportTimer); transportTimer=null;
   loopRestartAtStep.clear();
   audio.stopAllPadVoices();
@@ -1989,6 +2092,16 @@ function bindControls() {
   $('update-scene').addEventListener('click',updateScene);
   $('launch-scene').addEventListener('click',launchScene);
   $('delete-scene').addEventListener('click',deleteScene);
+  $('pattern-view').addEventListener('click',()=>setSequenceView('patterns'));
+  $('song-view').addEventListener('click',()=>setSequenceView('song'));
+  $('song-back-to-patterns').addEventListener('click',()=>{setSequenceView('patterns');$('beat-advanced').open=true;});
+  $('song-add-section').addEventListener('click',()=>{
+    const sceneId=$('song-scene-select').value,scene=project.scenes.find(item=>item.id===sceneId);
+    if(!scene)return notify('Save a pattern first, then add it to the song.');
+    const bars=Math.round(clamp($('song-bars').value,1,64));
+    if(project.song.clips.length>=MAX_SONG_CLIPS||songTotalBars(project.song)+bars>MAX_SONG_BARS)return notify('Song capacity reached. Reduce bar lengths before adding another section.');
+    editSong(clips=>clips.push({id:'song-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),sceneId,bars}));
+  });
   $('track-view').addEventListener('click',()=>{if(compactSequenceOverview()&&trackGridVisible){openSequenceFocus(selected);return;}setTrackView(!trackGridVisible);});
   $('sequence-focus-close').addEventListener('click',closeSequenceFocus);
   $('open-focused-notes').addEventListener('click',()=>openSampleNoteEditor(selected));

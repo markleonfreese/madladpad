@@ -185,12 +185,31 @@
           </details>
         </div>
       </div>
+      <div class="sequence-view-tabs" role="group" aria-label="Sequence editing view">
+        <button id="pattern-view" class="pill-button" type="button" aria-pressed="true">PATTERNS</button>
+        <button id="song-view" class="pill-button" type="button" aria-pressed="false">SONG</button>
+      </div>
+      <section id="song-arranger" class="song-arranger" hidden aria-labelledby="song-title">
+        <h3 id="song-title">Arrange a full song.</h3>
+        <p>Create a beat, save it as A, B or C, then arrange repeating sections on a longer timeline. Change bar lengths without copying any audio.</p>
+        <div class="song-add-controls">
+          <label>SECTION <select id="song-scene-select" aria-label="Pattern to add to Song"></select></label>
+          <label>NUMBER OF BARS <select id="song-bars"><option value="1">1</option><option value="2">2</option><option value="4" selected>4</option><option value="8">8</option><option value="16">16</option><option value="32">32</option><option value="64">64</option></select></label>
+          <button type="button" class="accent-button" id="song-add-section">ADD SECTION</button>
+          <button type="button" class="quiet-button" id="song-back-to-patterns">Edit patterns</button>
+        </div>
+        <div class="song-timeline-scroll" tabindex="0" aria-label="Song timeline, scroll horizontally to view all bars"><div id="song-timeline" role="group" aria-label="Saved pattern sections in song order"></div></div>
+        <div id="song-clip-editor" class="song-clip-editor" role="group" aria-label="Edit or reorder song sections"></div>
+        <p id="song-status" class="pattern-record-status" role="status" aria-live="polite"></p>
+      </section>
+      <div id="sequence-pattern-content">
       <p id="scene-status" class="pattern-record-status" role="status" aria-live="polite">Save the current pattern as a named scene.</p>
       <p id="pattern-record-status" class="pattern-record-status" role="status" aria-live="polite">Ready to record pad taps into the 16-step loop. Coarser grids hide finer steps but keep them saved.</p>
       <div class="steps" id="steps" hidden role="group" aria-label="Pattern steps for selected pad"></div>
       <div class="track-grid" id="track-grid" role="group" aria-label="Patterns for all pads"></div>
       <div class="timeline"><span>1</span><span>2</span><span>3</span><span>4</span></div>
       <div class="beat-next-step"><p>Happy with your loop?</p><button class="pill-button" id="make-video">Make a video</button></div>
+      </div>
     </section>
 
     <details class="video-director-disclosure" id="video-director-details"><summary>Edit video cuts</summary>

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withModelReferrerPolicy } from '../site/voice-model-fetch.js';
-import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, normaliseSampleNotes, setSampleNote, sampleNoteAtStep } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars } from '../site/core.js';
 
 test('Whisper model fetch omits the app referrer only for Hugging Face assets', async () => {
   const calls = [];
@@ -334,4 +334,28 @@ test('overdub trimming is non-destructive, bounded to the raw audio and independ
   assert.deepEqual(vocalLayerClip(edited,3.2),{start:.4,end:2.1,duration:1.7000000000000002});
   assert.deepEqual(vocalLayerClip({trimStartSec:-12,trimEndSec:100},2),{start:0,end:2,duration:2});
   assert.deepEqual(vocalLayerClip({trimStartSec:10,trimEndSec:-4},2),{start:1.99,end:2,duration:.010000000000000009});
+});
+
+test('song sections reference reusable scene IDs, permit A-B-C-A, and set exact bar boundaries', () => {
+  const scenes=[{id:'a',name:'A'},{id:'b',name:'B'},{id:'c',name:'C'}];
+  const song=normaliseSong({clips:[{sceneId:'a',bars:8},{sceneId:'b',bars:16},{sceneId:'c',bars:4},{sceneId:'a',bars:8}]});
+  assert.equal(songTotalBars(song),36);
+  assert.equal(songSectionAtStep(song,scenes,0).scene.name,'A');
+  assert.equal(songSectionAtStep(song,scenes,8*16).scene.name,'B');
+  assert.equal(songSectionAtStep(song,scenes,24*16).scene.name,'C');
+  assert.equal(songSectionAtStep(song,scenes,28*16).scene.name,'A');
+  assert.equal(songSectionAtStep(song,scenes,28*16+15).localStep,15);
+  assert.equal(songSectionAtStep(song,scenes,36*16),null,'song stops at arrangement end rather than looping automatically');
+  assert.equal(songSectionAtStep(song,scenes,NaN),null);
+});
+
+test('song clips retain missing references for repair and respect finite bar and section caps', () => {
+  const legacy=normaliseProject({scenes:[{name:'A'},{name:'B'}]});
+  assert.deepEqual(legacy.song.clips,[],'old projects do not invent a song');
+  assert.deepEqual(legacy.scenes.map(s=>s.id),['scene-1','scene-2']);
+  const p=normaliseProject({scenes:[{id:'beat-a',name:'A'}],song:{clips:[{sceneId:'beat-a',bars:999},{sceneId:'missing',bars:80}]}});
+  assert.equal(p.song.clips[0].bars,64);
+  assert.equal(p.song.clips[1].bars,64);
+  assert.equal(songSectionAtStep(p.song,p.scenes,64*16).scene,null,'missing scene must remain visible for repair');
+  assert.deepEqual(normaliseSong({clips:[{sceneId:'a',bars:-1},{sceneId:'a',bars:3}]}).clips.map(x=>x.bars),[1,3]);
 });

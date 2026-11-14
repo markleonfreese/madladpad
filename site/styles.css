@@ -417,3 +417,29 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
 .vocal-layer-trim{display:grid;gap:4px;font:11px var(--mono);color:var(--muted)}
 .vocal-layer-trim input{width:85px;max-width:100%;min-height:44px;padding:8px;background:#101710;border:1px solid var(--line);color:var(--ink);border-radius:7px}
 @media(max-width:740px){.overdub-timeline-scroll{max-height:330px}.vocal-layer-trim input{width:100%}}
+
+
+/* Song arranger: Serato-style linked section blocks with an editable accessible list. */
+.sequence-view-tabs{display:flex;gap:8px;align-items:center;margin:10px 0 16px}
+.sequence-view-tabs .pill-button{min-width:92px;min-height:44px}
+.sequence-view-tabs [aria-pressed="true"]{color:#142016;background:var(--acid);border-color:var(--acid)}
+#sequence-pattern-content[hidden],#song-arranger[hidden]{display:none!important}
+.song-arranger{display:grid;gap:14px;margin:0 0 15px}
+.song-arranger h3{margin:0;font-size:22px}
+.song-arranger>p{font-size:12px;color:var(--muted);margin:0}
+.song-add-controls{display:flex;gap:8px;align-items:end;flex-wrap:wrap}
+.song-add-controls label{display:grid;gap:4px;font:10px var(--mono);color:var(--muted)}
+.song-add-controls select,.song-section-editor input{min-height:44px;padding:8px;background:#101710;border:1px solid var(--line);color:var(--ink);border-radius:7px}
+.song-timeline-scroll{max-width:100%;overflow:auto;border:1px solid #4a604b;border-radius:10px;padding:12px;background:#18231c;overscroll-behavior-x:contain}
+#song-timeline{display:flex;min-width:max-content;gap:0;min-height:58px;align-items:stretch}
+.song-section-clip{box-sizing:border-box;min-height:58px;max-height:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#3c6147;border:1px solid #90b77e;border-radius:4px;padding:8px;color:#eaf6e4;text-align:left;font:700 12px var(--mono)}
+.song-section-clip:nth-child(even){background:#42616e;border-color:#9bc9ca}
+.song-section-clip:hover,.song-section-clip:focus-visible{outline:2px solid #e0f1a3;outline-offset:-2px}
+.song-clip-editor{display:grid;gap:7px}
+.song-section-editor{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-height:56px;padding:7px 10px;border:1px solid #455746;border-radius:8px;background:#1f2c22}
+.song-section-editor:focus{outline:2px solid var(--acid)}
+.song-section-editor strong{font-size:12px;flex:1 1 130px}
+.song-section-editor label{font:9px var(--mono);color:var(--muted);display:grid;gap:3px}
+.song-section-editor input{width:85px;max-width:100%}
+.song-section-editor button{min-width:44px;min-height:44px}
+@media(max-width:740px){.song-add-controls label{flex:1 1 130px}.song-add-controls select{width:100%}.song-section-editor strong{flex:1 1 100%}}
