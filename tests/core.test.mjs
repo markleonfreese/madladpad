@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withModelReferrerPolicy } from '../site/voice-model-fetch.js';
-import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, normaliseSampleNotes, setSampleNote, sampleNoteAtStep } from '../site/core.js';
 
 test('Whisper model fetch omits the app referrer only for Hugging Face assets', async () => {
   const calls = [];
@@ -287,4 +287,40 @@ test('WAV encoder writes bounded little-endian 16-bit PCM for mono and stereo bu
   const monoBytes=new Uint8Array(await mono.arrayBuffer());
   assert.equal(new DataView(monoBytes.buffer).getUint16(22,true),1);
   assert.equal(new DataView(monoBytes.buffer).getInt16(44,true),8192);
+});
+
+
+test('melodic note lengths distinguish a joined gate from independent adjacent retriggers', () => {
+  const joined = setSampleNote([], {step:2,length:3,semitones:7});
+  assert.deepEqual(joined,[{step:2,length:3,semitones:7}]);
+  assert.equal(sampleNoteAtStep(joined,2).length,3);
+  assert.equal(sampleNoteAtStep(joined,3),null,'held step must not retrigger the sample');
+  const separate = setSampleNote(setSampleNote([], {step:2,length:1,semitones:7}),{step:3,length:1,semitones:7});
+  assert.deepEqual(separate,[{step:2,length:1,semitones:7},{step:3,length:1,semitones:7}]);
+  assert.ok(sampleNoteAtStep(separate,2));
+  assert.ok(sampleNoteAtStep(separate,3),'adjacent distinct notes must retrigger');
+});
+
+test('a newly drawn note replaces overlapping notes, while an unrelated note is preserved', () => {
+  const original = [
+    {step:0,length:2,semitones:0},
+    {step:4,length:1,semitones:3},
+    {step:7,length:2,semitones:-2}
+  ];
+  const edited = setSampleNote(original,{step:3,length:3,semitones:7});
+  assert.deepEqual(edited,[{step:0,length:2,semitones:0},{step:3,length:3,semitones:7},{step:7,length:2,semitones:-2}]);
+});
+
+test('melodic notes normalise safely and survive projects and named scenes without rewriting old step beats', () => {
+  assert.deepEqual(normaliseSampleNotes([{step:15,length:12,semitones:50},{step:-4,length:2,semitones:-99},{step:NaN,length:2}]),[
+    {step:0,length:2,semitones:-12},{step:15,length:1,semitones:12}
+  ]);
+  const legacy=normaliseProject({pads:[{steps:[true,false,true]}]});
+  assert.equal(legacy.pads[0].sequenceMode,'steps');
+  assert.deepEqual(legacy.pads[0].sampleNotes,[]);
+  const project=normaliseProject({pads:[{steps:[true],sequenceMode:'notes',sampleNotes:[{step:1,length:4,semitones:5}]}],scenes:[{pads:[{steps:[true],sequenceMode:'notes',sampleNotes:[{step:1,length:4,semitones:5}]}]}]});
+  assert.equal(project.pads[0].sequenceMode,'notes');
+  assert.deepEqual(project.pads[0].sampleNotes,[{step:1,length:4,semitones:5}]);
+  assert.deepEqual(project.scenes[0].pads[0].sampleNotes,project.pads[0].sampleNotes);
+  assert.deepEqual(project.pads[0].steps.slice(0,3),[true,false,false],'old step pattern remains intact when using notes');
 });
