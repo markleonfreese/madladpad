@@ -1,4 +1,4 @@
-import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, DEMO_SOUNDS, directedPads, makeProject, normaliseProject, normaliseRegion, copyPadSound, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, AsyncActivity, suggestActiveRegion, captureRegionStatus, cameraTakeTargetSeconds, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, nextBarTime, videoVisualDurationMs } from './core.js';
+import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, DEMO_SOUNDS, directedPads, makeProject, normaliseProject, normaliseRegion, copyPadSound, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, AsyncActivity, suggestActiveRegion, captureRegionStatus, cameraTakeTargetSeconds, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, songSectionAtStep, songTotalBars, MAX_SONG_CLIPS, MAX_SONG_BARS, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, nextBarTime, videoVisualDurationMs } from './core.js';
 import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, collectVoiceMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
 import { isGooglePickerConfigured, pickFromDrive, pickFromPhotos } from './google.js';
@@ -11,6 +11,7 @@ let project = makeProject();
 let selected = 0;
 let sampleEditorTrigger = null;
 let trackGridVisible = true;
+let sequenceView = 'patterns';
 let selectedSampleNote = null;
 let notePointer = null;
 let audio;
@@ -19,6 +20,7 @@ let transportTimer = null;
 const transportActivity = new AsyncActivity();
 let nextStep = 0;
 let nextStepTime = 0;
+let songEndTimer = null;
 let recording = null;
 const takeActivity = new AsyncActivity();
 let takeKind = null;
@@ -202,10 +204,10 @@ function showVoiceTool(tool,{focus=false}={}) {
 
 function updateTransportButton() {
   const running = transportActivity.phase!=='idle';
-  $('studio-play').textContent = transportActivity.phase==='starting' ? '■ CANCEL START' : running ? '■ STOP LOOP' : '▶ PLAY LOOP';
+  $('studio-play').textContent = transportActivity.phase==='starting' ? '■ CANCEL START' : running ? '■ STOP' : sequenceView==='song'?'▶ PLAY SONG':'▶ PLAY LOOP';
   $('studio-play').setAttribute('aria-pressed',String(running));
   $('studio-play').classList.toggle('active',running);
-  $('play-seq').textContent = transportActivity.phase==='starting' ? '■ CANCEL' : running ? '■ STOP' : '▶ PLAY';
+  $('play-seq').textContent = transportActivity.phase==='starting' ? '■ CANCEL' : running ? '■ STOP' : sequenceView==='song'?'▶ PLAY SONG':'▶ PLAY';
   $('play-seq').setAttribute('aria-pressed',String(running));
   $('play-seq').classList.toggle('active',running);
 }
@@ -925,7 +927,7 @@ function renderSession() {
     button.classList.toggle('active',audio.demoEnabled);
     button.setAttribute('aria-pressed',String(audio.demoEnabled));
   }
-  renderGrid(); renderControls(); renderSteps(); setTrackView(trackGridVisible); renderScenes(); renderVideoDirector();
+  renderGrid(); renderControls(); renderSteps(); setTrackView(trackGridVisible); renderScenes(); renderSong(); setSequenceView(sequenceView,false); renderVideoDirector();
   audio.setTransport(project.bpm,project.quantize);
   syncRegionPreview();
 }
@@ -960,8 +962,8 @@ function showDirectorPlayingStep(step){
   for(const [index,element] of [...$('director-steps').children].entries())element.classList.toggle('current',index===step);
 }
 
-function sceneSnapshot(name){
-  return {name,gridDivision:project.gridDivision,pads:project.pads.map(pad=>({steps:[...pad.steps],stepOffsets:[...pad.stepOffsets],stepPlaybackMode:pad.stepPlaybackMode,sequenceMode:pad.sequenceMode,sampleNotes:pad.sampleNotes.map(note=>({...note}))})),videoShots:project.video.shots.map(shot=>({mode:shot.mode,pads:[...shot.pads]}))};
+function sceneSnapshot(name,id=`scene-${Date.now()}-${Math.random().toString(36).slice(2,8)}`){
+  return {id,name,gridDivision:project.gridDivision,pads:project.pads.map(pad=>({steps:[...pad.steps],stepOffsets:[...pad.stepOffsets],stepPlaybackMode:pad.stepPlaybackMode,sequenceMode:pad.sequenceMode,sampleNotes:pad.sampleNotes.map(note=>({...note}))})),videoShots:project.video.shots.map(shot=>({mode:shot.mode,pads:[...shot.pads]}))};
 }
 
 function renderScenes(){
@@ -1006,7 +1008,7 @@ function saveScene(){
 function updateScene(){
   if(selectedSceneIndex<0)return;
   const name=$('scene-name').value.trim().slice(0,32)||project.scenes[selectedSceneIndex].name;
-  project.scenes[selectedSceneIndex]=sceneSnapshot(name);renderScenes();queueSave();notify(`Scene “${name}” updated.`);
+  project.scenes[selectedSceneIndex]=sceneSnapshot(name,project.scenes[selectedSceneIndex].id);renderScenes();queueSave();notify(`Scene “${name}” updated.`);
 }
 
 function deleteScene(){
