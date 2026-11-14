@@ -966,6 +966,77 @@ function sceneSnapshot(name,id=`scene-${Date.now()}-${Math.random().toString(36)
   return {id,name,gridDivision:project.gridDivision,pads:project.pads.map(pad=>({steps:[...pad.steps],stepOffsets:[...pad.stepOffsets],stepPlaybackMode:pad.stepPlaybackMode,sequenceMode:pad.sequenceMode,sampleNotes:pad.sampleNotes.map(note=>({...note}))})),videoShots:project.video.shots.map(shot=>({mode:shot.mode,pads:[...shot.pads]}))};
 }
 
+
+function setSequenceView(view,stopOnSwitch=true){
+  const next=view==='song'?'song':'patterns';
+  if(next!==sequenceView&&stopOnSwitch&&transportActivity.phase!=='idle')stopSequencer();
+  sequenceView=next;
+  $('pattern-view').setAttribute('aria-pressed',String(next==='patterns'));
+  $('song-view').setAttribute('aria-pressed',String(next==='song'));
+  $('sequence-pattern-content').hidden=next!=='patterns';
+  $('song-arranger').hidden=next!=='song';
+  if(next==='song')renderSong();
+  updateTransportButton();
+}
+function editSong(mutator){
+  if(transportActivity.phase!=='idle')stopSequencer();
+  mutator(project.song.clips);
+  renderSong();queueSave();
+}
+function renderSong(){
+  const source=$('song-scene-select'),selectedId=source.value;
+  source.replaceChildren();
+  for(const scene of project.scenes){
+    const option=document.createElement('option');option.value=scene.id;option.textContent=scene.name;source.append(option);
+  }
+  if(project.scenes.some(scene=>scene.id===selectedId))source.value=selectedId;
+  const clips=project.song.clips,barCount=songTotalBars(project.song);
+  $('song-add-section').disabled=!project.scenes.length||clips.length>=MAX_SONG_CLIPS||barCount>=MAX_SONG_BARS;
+  const timeline=$('song-timeline'),editor=$('song-clip-editor');
+  timeline.replaceChildren();editor.replaceChildren();
+  let bar=1;
+  for(const [index,clip] of clips.entries()){
+    const scene=project.scenes.find(item=>item.id===clip.sceneId);
+    const name=scene?.name||'Missing pattern';
+    const start=bar,end=bar+clip.bars-1;
+    const segment=document.createElement('button');
+    segment.type='button';segment.className='song-section-clip';
+    segment.style.width=(clip.bars*28)+'px';
+    segment.style.flex='none';segment.dataset.songClip=clip.id;
+    segment.textContent=(scene?name:'?')+' · '+clip.bars+' bars';
+    segment.title=name+' · bars '+start+'–'+end;
+    segment.setAttribute('aria-label',name+' in song from bar '+start+' through '+end+'; select section to edit');
+    segment.addEventListener('click',()=>editor.querySelector('[data-song-section="'+clip.id+'"]')?.focus());
+    timeline.append(segment);
+    const row=document.createElement('div');row.className='song-section-editor';
+    row.dataset.songSection=clip.id;
+    row.tabIndex=-1;
+    const heading=document.createElement('strong');heading.textContent=name+' · bars '+start+'–'+end;
+    const label=document.createElement('label');label.textContent='LENGTH (BARS)';
+    const bars=document.createElement('input');bars.type='number';bars.min='1';bars.max=String(Math.min(64,MAX_SONG_BARS-(barCount-clip.bars)));bars.step='1';bars.value=String(clip.bars);bars.setAttribute('aria-label','Length in bars for '+name+' section '+(index+1));
+    bars.addEventListener('change',()=>{
+      editSong(()=>{clip.bars=Math.round(clamp(bars.value,1,Number(bars.max)));});
+    });label.append(bars);
+    const action=(text,disabled,handler)=>{
+      const button=document.createElement('button');button.type='button';button.className='quiet-button';button.textContent=text;button.disabled=disabled;
+      button.addEventListener('click',handler);return button;
+    };
+    const left=action('←',index===0,()=>editSong(array=>{[array[index-1],array[index]]=[array[index],array[index-1]];}));
+    left.setAttribute('aria-label','Move '+name+' section earlier');
+    const right=action('→',index===clips.length-1,()=>editSong(array=>{[array[index+1],array[index]]=[array[index],array[index+1]];}));
+    right.setAttribute('aria-label','Move '+name+' section later');
+    const copy=action('DUPLICATE',clips.length>=MAX_SONG_CLIPS||barCount+clip.bars>MAX_SONG_BARS,()=>editSong(array=>array.splice(index+1,0,{...clip,id:'song-'+Date.now()+'-'+Math.random().toString(36).slice(2,7)})));
+    const remove=action('REMOVE',false,()=>editSong(array=>array.splice(index,1)));
+    row.append(heading,label,left,right,copy,remove);editor.append(row);
+    bar+=clip.bars;
+  }
+  const seconds=barCount*4*60/clamp(project.bpm,40,240);
+  const minutes=Math.floor(seconds/60),remain=Math.floor(seconds%60);
+  $('song-status').textContent=clips.length
+    ?clips.length+' sections · '+barCount+' bars · approx '+minutes+':'+String(remain).padStart(2,'0')+' at '+project.bpm+' BPM. Patterns remain linked to their saved scene.'
+    :'No song sections yet. Save pattern A, B and C, then add each one in the order you want.';
+}
+
 function renderScenes(){
   const select=$('scene-select');select.replaceChildren();
   if(!project.scenes.length){const option=document.createElement('option');option.value='';option.textContent='No saved scenes';option.disabled=true;select.append(option);selectedSceneIndex=-1;$('scene-status').textContent=pendingScene?`Queued: ${pendingScene.scene.name} · next bar`:'Save the current pattern as a named scene.';}
