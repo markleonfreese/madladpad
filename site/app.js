@@ -1,4 +1,4 @@
-import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, DEMO_SOUNDS, directedPads, makeProject, normaliseProject, normaliseRegion, copyPadSound, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, AsyncActivity, suggestActiveRegion, captureRegionStatus, cameraTakeTargetSeconds, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, songSectionAtStep, songTotalBars, MAX_SONG_CLIPS, MAX_SONG_BARS, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, nextBarTime, videoVisualDurationMs } from './core.js';
+import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, DEMO_SOUNDS, directedPads, makeProject, normaliseProject, normaliseRegion, copyPadSound, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, AsyncActivity, suggestActiveRegion, captureRegionStatus, cameraTakeTargetSeconds, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, songSectionAtStep, songTotalBars, reorderSongClips, resizeSongClipBars, MAX_SONG_CLIPS, MAX_SONG_BARS, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, nextBarTime, videoVisualDurationMs } from './core.js';
 import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, collectVoiceMedia, collectSongVideoMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
 import { isGooglePickerConfigured, pickFromDrive, pickFromPhotos } from './google.js';
@@ -12,6 +12,8 @@ let selected = 0;
 let sampleEditorTrigger = null;
 let trackGridVisible = true;
 let sequenceView = 'patterns';
+let selectedSongClipId = null;
+const SONG_BAR_WIDTH = 28;
 let selectedSampleNote = null;
 let notePointer = null;
 let audio;
@@ -984,6 +986,70 @@ function editSong(mutator){
   mutator(project.song.clips);
   renderSong();queueSave();
 }
+
+function bindSongClipHandle(handle,{kind,clip,index,barCount,timeline,wrapper,label}){
+  const restore=()=>{wrapper.style.width=clip.bars*SONG_BAR_WIDTH+'px';label.textContent=clip.sceneName+' · '+clip.bars+' bars';};
+  const clearDrop=()=>timeline.querySelectorAll('.song-clip-wrap').forEach(node=>node.classList.remove('drop-before','drop-after','song-dragging'));
+  const apply=(next)=>{
+    selectedSongClipId=clip.id;
+    editSong(array=>array.splice(0,array.length,...next));
+    $('song-timeline').querySelector('.song-clip-wrap[data-song-clip="'+clip.id+'"] .song-clip-'+kind)?.focus({preventScroll:true});
+  };
+  handle.addEventListener('keydown',event=>{
+    if(event.key!=='ArrowLeft'&&event.key!=='ArrowRight')return;
+    event.preventDefault();
+    if(transportActivity.phase!=='idle')return notify('Stop Song playback before editing sections.');
+    const delta=event.key==='ArrowRight'?1:-1;
+    if(kind==='resize')apply(resizeSongClipBars(project.song.clips,clip.id,clip.bars+delta));
+    else if(index+delta>=0&&index+delta<project.song.clips.length)
+      apply(reorderSongClips(project.song.clips,clip.id,delta>0?index+2:index-1));
+  });
+  handle.addEventListener('pointerdown',event=>{
+    if(event.button!==0)return;
+    if(transportActivity.phase!=='idle')return notify('Stop Song playback before editing sections.');
+    event.preventDefault();event.stopPropagation();
+    handle.setPointerCapture(event.pointerId);
+    const startX=event.clientX,originalBars=clip.bars;
+    const maxBars=Math.max(1,Math.min(64,256-(barCount-originalBars)));
+    let candidate=kind==='resize'?originalBars:index,changed=false;
+    wrapper.classList.add('song-dragging');
+    const move=point=>{
+      if(point.pointerId!==event.pointerId)return;
+      if(!changed&&Math.abs(point.clientX-startX)<6)return;
+      changed=true;
+      if(kind==='resize'){
+        candidate=Math.round(clamp(originalBars+Math.round((point.clientX-startX)/SONG_BAR_WIDTH),1,maxBars));
+        wrapper.style.width=candidate*SONG_BAR_WIDTH+'px';
+        label.textContent=clip.sceneName+' · '+candidate+' bars';
+        return;
+      }
+      const nodes=[...timeline.querySelectorAll('.song-clip-wrap')];
+      candidate=nodes.reduce((slot,node)=>point.clientX>node.getBoundingClientRect().left+node.getBoundingClientRect().width/2?slot+1:slot,0);
+      clearDrop();wrapper.classList.add('song-dragging');
+      if(candidate===nodes.length)nodes.at(-1)?.classList.add('drop-after');
+      else nodes[candidate]?.classList.add('drop-before');
+    };
+    const cleanup=()=>{
+      handle.removeEventListener('pointermove',move);
+      handle.removeEventListener('pointerup',finish);
+      handle.removeEventListener('pointercancel',cancel);
+      if(handle.hasPointerCapture(event.pointerId))handle.releasePointerCapture(event.pointerId);
+      clearDrop();restore();
+    };
+    const cancel=point=>{if(point.pointerId===event.pointerId)cleanup();};
+    const finish=point=>{
+      if(point.pointerId!==event.pointerId)return;
+      cleanup();
+      if(!changed)return;
+      if(kind==='resize'&&candidate!==originalBars)apply(resizeSongClipBars(project.song.clips,clip.id,candidate));
+      if(kind==='move'&&candidate!==index&&candidate!==index+1)apply(reorderSongClips(project.song.clips,clip.id,candidate));
+    };
+    handle.addEventListener('pointermove',move);
+    handle.addEventListener('pointerup',finish);
+    handle.addEventListener('pointercancel',cancel);
+  });
+}
+
 function renderSong(){
   const source=$('song-scene-select'),selectedId=source.value;
   source.replaceChildren();
@@ -992,23 +1058,45 @@ function renderSong(){
   }
   if(project.scenes.some(scene=>scene.id===selectedId))source.value=selectedId;
   const clips=project.song.clips,barCount=songTotalBars(project.song);
+  if(!clips.some(clip=>clip.id===selectedSongClipId))selectedSongClipId=null;
   $('song-add-section').disabled=!project.scenes.length||clips.length>=MAX_SONG_CLIPS||barCount>=MAX_SONG_BARS;
-  const timeline=$('song-timeline'),editor=$('song-clip-editor');
-  timeline.replaceChildren();editor.replaceChildren();
+  const timeline=$('song-timeline'),editor=$('song-clip-editor'),ruler=$('song-bar-ruler');
+  timeline.replaceChildren();editor.replaceChildren();ruler.replaceChildren();
+  ruler.style.width=barCount*SONG_BAR_WIDTH+'px';
+  for(let n=1;n<=barCount;n++){
+    const tick=document.createElement('span');tick.className='song-bar-tick'+((n-1)%4===0?' major':'');
+    tick.textContent=n===1||(n-1)%4===0?String(n):'';
+    tick.title='Bar '+n;ruler.append(tick);
+  }
   let bar=1;
   for(const [index,clip] of clips.entries()){
     const scene=project.scenes.find(item=>item.id===clip.sceneId);
     const name=scene?.name||'Missing pattern';
     const start=bar,end=bar+clip.bars-1;
-    const segment=document.createElement('button');
-    segment.type='button';segment.className='song-section-clip';
-    segment.style.width=(clip.bars*28)+'px';
-    segment.style.flex='none';segment.dataset.songClip=clip.id;
-    segment.textContent=(scene?name:'?')+' · '+clip.bars+' bars';
+    const wrapper=document.createElement('div');wrapper.className='song-clip-wrap'+(selectedSongClipId===clip.id?' selected':'');
+    wrapper.style.width=clip.bars*SONG_BAR_WIDTH+'px';wrapper.dataset.songClip=clip.id;
+    const segment=document.createElement('button');segment.type='button';segment.className='song-section-clip';
+    segment.dataset.songClip=clip.id;
+    const text=document.createElement('span');text.className='song-clip-text';text.textContent=(scene?name:'?')+' · '+clip.bars+' bars';segment.append(text);
     segment.title=name+' · bars '+start+'–'+end;
     segment.setAttribute('aria-label',name+' in song from bar '+start+' through '+end+'; select section to edit');
-    segment.addEventListener('click',()=>editor.querySelector('[data-song-section="'+clip.id+'"]')?.focus());
-    timeline.append(segment);
+    segment.addEventListener('click',()=>{
+      selectedSongClipId=clip.id;
+      timeline.querySelectorAll('.song-clip-wrap').forEach(node=>node.classList.toggle('selected',node.dataset.songClip===clip.id));
+      editor.querySelector('[data-song-section="'+clip.id+'"]')?.focus();
+    });
+    wrapper.append(segment);
+    if(clip.bars>=4){
+      for(const [kind,glyph,description] of [['move','⠿','Move'],['resize','▏','Resize']]){
+        const handle=document.createElement('button');handle.type='button';handle.className='song-clip-'+kind;
+        handle.textContent=glyph;
+        handle.title=kind==='move'?'Drag to reorder':'Drag to resize by whole bars';
+        handle.setAttribute('aria-label',description+' '+name+' section '+(index+1)+'; drag horizontally or use left and right arrow keys');
+        bindSongClipHandle(handle,{kind,clip:{...clip,sceneName:name},index,barCount,timeline,wrapper,label:text});
+        wrapper.append(handle);
+      }
+    }
+    timeline.append(wrapper);
     const row=document.createElement('div');row.className='song-section-editor';
     row.dataset.songSection=clip.id;
     row.tabIndex=-1;
@@ -1016,7 +1104,7 @@ function renderSong(){
     const label=document.createElement('label');label.textContent='LENGTH (BARS)';
     const bars=document.createElement('input');bars.type='number';bars.min='1';bars.max=String(Math.min(64,MAX_SONG_BARS-(barCount-clip.bars)));bars.step='1';bars.value=String(clip.bars);bars.setAttribute('aria-label','Length in bars for '+name+' section '+(index+1));
     bars.addEventListener('change',()=>{
-      editSong(()=>{clip.bars=Math.round(clamp(bars.value,1,Number(bars.max)));});
+      editSong(items=>items.splice(0,items.length,...resizeSongClipBars(items,clip.id,bars.value)));
     });label.append(bars);
     const action=(text,disabled,handler)=>{
       const button=document.createElement('button');button.type='button';button.className='quiet-button';button.textContent=text;button.disabled=disabled;

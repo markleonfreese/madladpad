@@ -1814,10 +1814,10 @@ try {
   },null,{timeout:8000});
   await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
   checkpoint('service worker ready');
-  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v27')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
-  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v27')).match('/audio.js')).text()),/pendingStarts/,'the current fallback retrigger fix should be cached before offline use');
-  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v27')).match('/voice.js')).text()),/Use rhyme idea/,'the current Rap Lab writing aid should be cached before offline use');
-  const cachedFonts=await page.evaluate(async()=>Promise.all(['/fonts/dm-sans-variable-latin.woff2','/fonts/dm-sans-variable-latin-ext.woff2','/fonts/dm-mono-400-latin.woff2','/fonts/dm-mono-400-latin-ext.woff2','/fonts/dm-mono-500-latin.woff2','/fonts/dm-mono-500-latin-ext.woff2'].map(async path=>Boolean(await (await caches.open('madladpad-shell-v27')).match(path)))));
+  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v28')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
+  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v28')).match('/audio.js')).text()),/pendingStarts/,'the current fallback retrigger fix should be cached before offline use');
+  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v28')).match('/voice.js')).text()),/Use rhyme idea/,'the current Rap Lab writing aid should be cached before offline use');
+  const cachedFonts=await page.evaluate(async()=>Promise.all(['/fonts/dm-sans-variable-latin.woff2','/fonts/dm-sans-variable-latin-ext.woff2','/fonts/dm-mono-400-latin.woff2','/fonts/dm-mono-400-latin-ext.woff2','/fonts/dm-mono-500-latin.woff2','/fonts/dm-mono-500-latin-ext.woff2'].map(async path=>Boolean(await (await caches.open('madladpad-shell-v28')).match(path)))));
   assert.ok(cachedFonts.every(Boolean),'both local UI fonts and their Latin/extended subsets should be cached for offline use');
   await page.reload();
   await page.waitForFunction(()=>Boolean(navigator.serviceWorker.controller));
@@ -2035,6 +2035,39 @@ try {
   await page.locator('#song-view').click();
   assert.equal(await page.locator('#song-timeline .song-section-clip').count(),4,'restored project packs should reopen the full A-B-C-A song');
   assert.match(await page.locator('#song-status').textContent(),/36 bars/,'restored Song duration should remain intact');
+
+  await page.setViewportSize({width:1280,height:900});
+  assert.equal(await page.locator('#song-bar-ruler .song-bar-tick').count(),36,'Song ruler should show one aligned tick per bar');
+  assert.equal(await page.locator('#song-timeline .song-clip-move').count(),4,'long Song sections expose touch-sized move handles');
+  const originalFirstId=await page.locator('#song-timeline .song-clip-wrap').first().getAttribute('data-song-clip');
+  const moveHandle=page.locator('#song-timeline .song-clip-wrap').first().locator('.song-clip-move');
+  const moveBox=await moveHandle.boundingBox(),nextBox=await page.locator('#song-timeline .song-clip-wrap').nth(1).boundingBox();
+  assert.ok(moveBox?.width>=44&&moveBox?.height>=44,'move handle must meet the 44px touch target');
+  await page.mouse.move(moveBox.x+moveBox.width/2,moveBox.y+moveBox.height/2);
+  await page.mouse.down();
+  await page.mouse.move(nextBox.x+nextBox.width/2+12,moveBox.y+moveBox.height/2,{steps:8});
+  await page.mouse.up();
+  assert.deepEqual(await page.locator('#song-clip-editor .song-section-editor strong').allTextContents().then(names=>names.map(name=>name.split(' · ')[0])),['B','A','C','A'],'dragging the first A after B should reorder existing Song sections');
+  assert.equal(await page.locator('#song-timeline .song-clip-wrap').nth(1).getAttribute('data-song-clip'),originalFirstId,'dragged clips preserve identity');
+  await page.locator('#song-timeline .song-clip-wrap[data-song-clip="'+originalFirstId+'"] .song-clip-move').press('ArrowLeft');
+  assert.deepEqual(await page.locator('#song-clip-editor .song-section-editor strong').allTextContents().then(names=>names.map(name=>name.split(' · ')[0])),['A','B','C','A'],'keyboard movement returns the section to its original position');
+  const resizeHandle=page.locator('#song-timeline .song-clip-wrap[data-song-clip="'+originalFirstId+'"] .song-clip-resize');
+  const resizeBox=await resizeHandle.boundingBox();
+  assert.ok(resizeBox?.width>=44&&resizeBox?.height>=44,'resize handle must meet the 44px touch target');
+  await page.mouse.move(resizeBox.x+resizeBox.width/2,resizeBox.y+resizeBox.height/2);
+  await page.mouse.down();
+  await page.mouse.move(resizeBox.x+resizeBox.width/2+56,resizeBox.y+resizeBox.height/2,{steps:8});
+  await page.mouse.up();
+  assert.match(await page.locator('#song-status').textContent(),/38 bars/,'dragging a section edge by two bar-widths must increase the Song by two bars');
+  assert.equal(await page.locator('#song-bar-ruler .song-bar-tick').count(),38,'bar ruler updates with resized Song');
+  const songBarInput=page.locator('#song-clip-editor .song-section-editor[data-song-section="'+originalFirstId+'"] input');
+  await songBarInput.fill('8');
+  await songBarInput.press('Tab');
+  assert.match(await page.locator('#song-status').textContent(),/36 bars/,'numeric bar-length fallback restores exact length');
+  assert.deepEqual(await page.locator('#song-clip-editor .song-section-editor strong').allTextContents().then(names=>names.map(name=>name.split(' · ')[0])),['A','B','C','A'],'reordering and resizing must not replace saved section references');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth===document.documentElement.clientWidth),true,'direct-manipulation Song timeline should scroll internally without widening the page');
+  checkpoint('Song sections support drag reorder, edge resize, keyboard move and numeric bar fallback');
+
 
   assert.deepEqual(errors, []);
   assert.deepEqual(blockedFontProviderRequests,[],'the UI must not request Google Fonts or gstatic at any point');
