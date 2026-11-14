@@ -30,6 +30,15 @@ export function localRecordingBudget(usedBytes, estimate = null, maxBytes = MAX_
   return Math.max(0, remaining - Math.min(RECORDING_STORAGE_RESERVE_BYTES, remaining));
 }
 
+// Journaled takes coexist with their finished source while the final project
+// transaction is written. Reserve enough headroom for that temporary copy.
+export function localJournaledRecordingBudget(usedBytes, estimate = null, maxBytes = MAX_MEDIA_BYTES) {
+  const used=Number.isFinite(usedBytes)?Math.max(0,usedBytes):maxBytes;
+  let remaining=Math.max(0,maxBytes-used);
+  if(Number.isFinite(estimate?.quota)&&Number.isFinite(estimate?.usage))remaining=Math.min(remaining,Math.max(0,estimate.quota-estimate.usage));
+  return Math.max(0,Math.floor(remaining/2)-Math.min(RECORDING_STORAGE_RESERVE_BYTES,Math.floor(remaining/2)));
+}
+
 export function createBoundedRecordingCapture(byteLimit, stopAtBytes = byteLimit) {
   const chunks = [];
   let bytes = 0;

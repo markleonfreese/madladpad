@@ -1,13 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withModelReferrerPolicy } from '../site/voice-model-fetch.js';
-import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, songVideoPositionAtStep, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars, reorderSongClips, resizeSongClipBars, localRecordingBudget, MAX_MEDIA_BYTES, RECORDING_STORAGE_RESERVE_BYTES, createBoundedRecordingCapture } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, songVideoPositionAtStep, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars, reorderSongClips, resizeSongClipBars, localRecordingBudget, localJournaledRecordingBudget, MAX_MEDIA_BYTES, RECORDING_STORAGE_RESERVE_BYTES, createBoundedRecordingCapture } from '../site/core.js';
 
 test('long-form recording budget respects both project and browser storage with headroom', () => {
   assert.equal(localRecordingBudget(10 * 1024 * 1024, {usage:90 * 1024 * 1024,quota:100 * 1024 * 1024}), 10 * 1024 * 1024 - RECORDING_STORAGE_RESERVE_BYTES);
   assert.equal(localRecordingBudget(10 * 1024 * 1024, {usage:19 * 1024 * 1024,quota:20 * 1024 * 1024}), 1024 * 1024 - RECORDING_STORAGE_RESERVE_BYTES);
   assert.equal(localRecordingBudget(MAX_MEDIA_BYTES, {usage:0,quota:100 * 1024 * 1024}), 0);
   assert.equal(localRecordingBudget(0, {usage:1,quota:1}), 0);
+});
+
+test('journaled recording budget reserves space for both recovery chunks and the final saved source',()=>{
+  const free=10*1024*1024;
+  assert.equal(localJournaledRecordingBudget(0,{usage:90*1024*1024,quota:100*1024*1024}),free/2-RECORDING_STORAGE_RESERVE_BYTES);
+  assert.equal(localJournaledRecordingBudget(MAX_MEDIA_BYTES-4*1024*1024,{usage:0,quota:100*1024*1024}),2*1024*1024-RECORDING_STORAGE_RESERVE_BYTES);
+  assert.equal(localJournaledRecordingBudget(MAX_MEDIA_BYTES-RECORDING_STORAGE_RESERVE_BYTES,{usage:0,quota:100*1024*1024}),0);
 });
 
 test('Song video clips normalize stable identity, placement and source trim metadata',()=>{

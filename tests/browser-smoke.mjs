@@ -1172,6 +1172,13 @@ try {
     await crashPage.goto(`${origin}/#overdub`);
     await crashPage.waitForFunction(()=>document.body.dataset.screen==='overdub');
     const recoveryIdsBeforeCrashTest=await crashPage.evaluate(async()=>(await (await import('/storage.js')).listInterruptedAudioRecordings()).map(take=>take.id));
+    await crashPage.evaluate(async()=>{
+      const nativeGetUserMedia=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      const context=new AudioContext(),destination=context.createMediaStreamDestination(),oscillator=context.createOscillator(),gain=context.createGain();
+      gain.gain.value=.2;oscillator.frequency.value=440;oscillator.connect(gain).connect(destination);oscillator.start();await context.resume();
+      window.__recoveryTone={context,oscillator};
+      Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,value:constraints=>constraints?.audio&&!constraints?.video?Promise.resolve(destination.stream):nativeGetUserMedia(constraints)});
+    });
     await crashPage.locator('#play-seq').click();
     await crashPage.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
     await crashPage.waitForFunction(()=>!document.querySelector('#voice-overdub-record').disabled);
@@ -1179,11 +1186,11 @@ try {
     await crashPage.waitForFunction(()=>document.querySelector('#voice-overdub-status').textContent.includes('Recording microphone audio'));
     checkpoint('renderer-crash recording started');
     const journalSnapshot=await crashPage.evaluate(async previousIds=>{
-      const deadline=Date.now()+10000;
+      const deadline=Date.now()+15000;
       let takes=[];
       while(Date.now()<deadline){
         takes=await (await import('/storage.js')).listInterruptedAudioRecordings();
-        const take=takes.find(item=>!previousIds.includes(item.id)&&item.completeChunks>=1&&item.blob.size>0);
+        const take=takes.find(item=>!previousIds.includes(item.id)&&item.completeChunks>=3&&item.blob.size>1000);
         if(take)return{id:take.id,chunks:take.completeChunks,bytes:take.blob.size};
         await new Promise(resolve=>setTimeout(resolve,150));
       }
@@ -1213,6 +1220,7 @@ try {
     await recoveryPage.locator('#voice-overdub-recover').click();
     await recoveryPage.waitForFunction(()=>document.querySelectorAll('#voice-overdub-layers .vocal-layer').length===3,null,{timeout:8000});
     assert.match(await recoveryPage.locator('#voice-overdub-layers .vocal-layer').nth(2).locator('.vocal-layer-name').inputValue(),/Recovered take/,'recovery should create an editable Song audio layer');
+    assert.match(await recoveryPage.locator('#voice-overdub-status').textContent(),/recovered from .* locally saved chunks/i,'the committed microphone chunk should decode into a usable recovered take');
     assert.deepEqual(await recoveryPage.evaluate(async()=>(await (await import('/storage.js')).listInterruptedAudioRecordings()).map(item=>item.id)),[],'recovery should remove temporary chunks only after saving the recovered local track');
     const recoveredId=await recoveryPage.locator('#voice-overdub-layers .vocal-layer').nth(2).getAttribute('data-layer');
     const recoveredBytes=await recoveryPage.evaluate(async id=>(await (await import('/storage.js')).getValue(`voice-layer:${id}`))?.size,recoveredId);
@@ -1267,6 +1275,53 @@ try {
   checkpoint('local Song video track import, placement and trim');
   await page.locator('#play-seq').click();
   await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
+  const videoRecoveryIdsBefore=await page.evaluate(async()=>(await (await import('/storage.js')).listInterruptedVideoRecordings()).map(take=>take.id));
+  await page.locator('#overdub-video-record').click();
+  await page.waitForFunction(()=>document.querySelector('#song-video-status').textContent.includes('Recording camera and microphone locally'));
+  const videoJournal=await page.evaluate(async previousIds=>{
+    const deadline=Date.now()+12000;
+    let takes=[];
+    while(Date.now()<deadline){
+      takes=await (await import('/storage.js')).listInterruptedVideoRecordings();
+      const take=takes.find(item=>!previousIds.includes(item.id)&&item.completeChunks>0&&item.blob.size>0);
+      if(take)return{id:take.id,chunks:take.completeChunks,bytes:take.blob.size,durationSec:take.durationSec};
+      await new Promise(resolve=>setTimeout(resolve,200));
+    }
+    return{status:document.querySelector('#song-video-status')?.textContent,takes:takes.map(take=>({id:take.id,chunks:take.completeChunks,bytes:take.blob.size}))};
+  },videoRecoveryIdsBefore);
+  assert.ok(videoJournal.id,`the camera take should commit a recoverable video chunk before renderer crash: ${JSON.stringify(videoJournal)}`);
+  checkpoint('renderer-crash video chunk committed');
+  const videoCrashSession=await context.newCDPSession(page);
+  const videoPageCrashed=page.waitForEvent('crash',{timeout:5000});
+  void videoCrashSession.send('Page.crash').catch(()=>{});
+  await videoPageCrashed;
+  await page.close().catch(()=>{});
+  const videoRecoveryPage=await context.newPage();
+  await videoRecoveryPage.goto(`${origin}/#overdub`);
+  await videoRecoveryPage.waitForFunction(()=>document.querySelector('#connection-indicator')?.textContent.includes('STUDIO'),null,{timeout:20000});
+  const videoJournalAfterCrash=await videoRecoveryPage.evaluate(async id=>{
+    const item=(await (await import('/storage.js')).listInterruptedVideoRecordings()).find(take=>take.id===id);
+    return item&&{chunks:item.completeChunks,bytes:item.blob.size,durationSec:item.durationSec};
+  },videoJournal.id);
+  assert.ok(videoJournalAfterCrash?.chunks>0&&videoJournalAfterCrash.bytes===videoJournal.bytes,'the same committed video chunks should survive renderer termination');
+  await videoRecoveryPage.locator('#overdub-video-recover').waitFor({state:'visible',timeout:5000});
+  assert.match(await videoRecoveryPage.locator('#song-video-status').textContent(),/interrupted local video take.*saved chunks/i,'interrupted camera capture should be offered in Video tracks');
+  await videoRecoveryPage.locator('#overdub-video-recover').click();
+  await videoRecoveryPage.waitForFunction(()=>document.querySelectorAll('#song-video-layers .song-video-track').length===2,null,{timeout:10000});
+  assert.match(await videoRecoveryPage.locator('#song-video-layers .vocal-layer-name').nth(1).inputValue(),/Recovered video/,'video recovery should create a named editable Song video track');
+  await videoRecoveryPage.waitForFunction(()=>document.querySelectorAll('#song-video-layers .song-video-track video')[1]?.videoWidth>0,null,{timeout:5000});
+  const recoveredVideoId=await videoRecoveryPage.locator('#song-video-layers .song-video-track').nth(1).getAttribute('data-video-layer');
+  const recoveredVideo=await videoRecoveryPage.evaluate(async id=>{const file=await (await import('/storage.js')).getValue(`video-layer:${id}`);return{type:file?.type,size:file?.size};},recoveredVideoId);
+  assert.match(recoveredVideo.type,/^video\//,'recovered video should retain its browser-recorded container');
+  assert.equal(recoveredVideo.size,videoJournal.bytes,'recovered video should contain exactly the committed local chunks');
+  assert.deepEqual(await videoRecoveryPage.evaluate(async()=>(await (await import('/storage.js')).listInterruptedVideoRecordings()).map(take=>take.id)),[],'the journal should clear atomically after the recovered video source and project save');
+  videoRecoveryPage.once('dialog',dialog=>dialog.accept());
+  await videoRecoveryPage.getByRole('button',{name:/Delete video track 2 and its local source/}).click();
+  await videoRecoveryPage.waitForFunction(()=>document.querySelectorAll('#song-video-layers .song-video-track').length===1);
+  page=videoRecoveryPage;
+  await page.locator('#play-seq').click();
+  await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
+  checkpoint('real Chromium renderer crash recovers journaled camera chunks into an editable Song video track');
     await page.evaluate(()=>{
       const getUserMedia=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
       window.__baseSongGetUserMedia=getUserMedia;

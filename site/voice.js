@@ -1,5 +1,5 @@
-import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, findRecorderMime, extensionForAudioMime, extensionForMime, vocalLayerClip, songVideoPositionAtStep, songTotalBars, AsyncActivity, localRecordingBudget, createBoundedRecordingCapture } from './core.js';
-import { getValue, saveVoiceLayer, deleteVoiceLayer, saveSongVideoLayer, deleteSongVideoLayer, beginAudioRecordingRecovery, appendAudioRecordingRecoveryChunk, listInterruptedAudioRecordings, deleteInterruptedAudioRecording } from './storage.js';
+import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, findRecorderMime, extensionForAudioMime, extensionForMime, vocalLayerClip, songVideoPositionAtStep, songTotalBars, AsyncActivity, localRecordingBudget, localJournaledRecordingBudget, createBoundedRecordingCapture } from './core.js';
+import { getValue, saveVoiceLayer, deleteVoiceLayer, saveSongVideoLayer, deleteSongVideoLayer, beginAudioRecordingRecovery, appendAudioRecordingRecoveryChunk, listInterruptedAudioRecordings, deleteInterruptedAudioRecording, beginVideoRecordingRecovery, appendVideoRecordingRecoveryChunk, listInterruptedVideoRecordings, deleteInterruptedVideoRecording } from './storage.js';
 import { detectPitch } from './tuner.js';
 
 const $ = id => document.getElementById(id);
@@ -369,6 +369,8 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   let vocalRecording = null;
   let interruptedAudioRecordings = [];
   let interruptedAudioRecording = null;
+  let interruptedVideoRecordings = [];
+  let interruptedVideoRecording = null;
   let videoRecording = null;
   const videoRecordingActivity = new AsyncActivity();
   let tunerStream = null, tunerSource = null, tunerAnalyser = null, tunerTimer = null, tunerFrame = null;
@@ -407,7 +409,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     $('voice-overdub-stop').hidden = !vocalRecording;
     if (project.voice.layers.length >= MAX_VOCAL_LAYERS && !vocalRecording) $('voice-overdub-status').textContent = `The ${MAX_VOCAL_LAYERS} audio-track limit is full. Export a project pack before deleting a local track.`;
     else if (!state.running && !vocalRecording && !$('voice-overdub-status').textContent) $('voice-overdub-status').textContent = 'Start the sequencer to record an audio track.';
-    $('overdub-video-record').disabled=!state.running||Boolean(vocalRecording)||Boolean(videoRecording)||project.voice.videoLayers.length>=MAX_VOCAL_LAYERS;
+    $('overdub-video-record').disabled=!state.running||Boolean(vocalRecording)||Boolean(videoRecording)||Boolean(interruptedVideoRecording)||project.voice.videoLayers.length>=MAX_VOCAL_LAYERS;
     $('overdub-video-record').textContent=videoStarting?'× CANCEL CAMERA START':'● RECORD VIDEO TRACK';
     $('overdub-video-record').setAttribute('aria-label',videoStarting?'Cancel Song camera start':'Record a video track over the Song');
     $('overdub-video-stop').hidden=!videoRecording;
@@ -435,6 +437,27 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     try { interruptedAudioRecordings=await listInterruptedAudioRecordings(); }
     catch(error){console.warn('Interrupted audio recovery could not be checked',error);}
     renderInterruptedAudioRecovery();
+  };
+
+  const renderInterruptedVideoRecovery=()=>{
+    interruptedVideoRecording=interruptedVideoRecordings[0]||null;
+    const recover=$('overdub-video-recover'),discard=$('overdub-video-discard');
+    recover.hidden=!interruptedVideoRecording;
+    discard.hidden=!interruptedVideoRecording;
+    if(interruptedVideoRecording){
+      recover.disabled=!interruptedVideoRecording.blob.size;
+      const when=new Date(interruptedVideoRecording.createdAt).toLocaleString();
+      $('song-video-status').textContent=interruptedVideoRecording.blob.size
+        ?`An interrupted local video take from ${when} has ${interruptedVideoRecording.completeChunks} saved chunks (${(interruptedVideoRecording.blob.size/1024/1024).toFixed(1)} MB). Recover it into Video tracks or discard it.`
+        :'An interrupted local video take has no complete chunks. You can discard this empty recovery record.';
+    }
+    updateOverdubControls();
+  };
+
+  const refreshInterruptedVideoRecordings=async()=>{
+    try{interruptedVideoRecordings=await listInterruptedVideoRecordings();}
+    catch(error){console.warn('Interrupted video recovery could not be checked',error);}
+    renderInterruptedVideoRecovery();
   };
 
   function renderOverdubTimeline(){
@@ -822,6 +845,52 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       $('voice-overdub-discard').disabled=false;
     }
   });
+  $('overdub-video-recover').addEventListener('click',async()=>{
+    const recovery=interruptedVideoRecording;
+    if(!recovery?.blob.size)return;
+    if(project.voice.videoLayers.length>=MAX_VOCAL_LAYERS){
+      $('song-video-status').textContent=`The ${MAX_VOCAL_LAYERS} video-track limit is full. Delete a local track, then try recovery again; the interrupted chunks remain saved.`;
+      return;
+    }
+    const usedBytes=[...getMediaFiles().values(),...vocalFiles.values(),...videoFiles.values()].reduce((sum,file)=>sum+(file?.size||0),0);
+    if(usedBytes+recovery.blob.size>MAX_MEDIA_BYTES){
+      $('song-video-status').textContent='There is not enough project media space to restore this take. Export a project pack and remove media, then try recovery again.';
+      return;
+    }
+    $('overdub-video-recover').disabled=true;
+    $('song-video-status').textContent='Restoring the last safely saved camera and microphone chunks…';
+    try{
+      const durationSec=await probeVideoDuration(recovery.blob,recovery.durationSec||(Date.now()-recovery.createdAt)/1000);
+      const id=`video-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+      const index=project.voice.videoLayers.length+1;
+      const file=new File([recovery.blob],`recovered-song-video-${Date.now()}.${extensionForMime(recovery.mime)}`,{type:recovery.mime});
+      const layer={id,name:`Recovered video ${index}`,origin:'recording',startStep:recovery.startStep,trimStartSec:0,trimEndSec:durationSec,durationSec,type:recovery.mime};
+      const nextLayers=[...project.voice.videoLayers,layer];
+      await saveSongVideoLayer(id,file,{...project,voice:{...project.voice,videoLayers:nextLayers}},{recoveryId:recovery.id});
+      project.voice.videoLayers.push(layer);videoFiles.set(id,file);videoUrls.set(id,URL.createObjectURL(file));
+      renderVideoLayers();renderOverdubTimeline();
+      interruptedVideoRecordings=interruptedVideoRecordings.filter(item=>item.id!==recovery.id);
+      renderInterruptedVideoRecovery();
+      $('song-video-status').textContent=`${layer.name} recovered from ${recovery.completeChunks} locally saved chunks. Review it in the Song video tracks below.`;
+    }catch(error){
+      $('song-video-status').textContent=`Could not recover this video take: ${error.message}. Its saved chunks are still available to retry.`;
+      $('overdub-video-recover').disabled=false;
+    }
+  });
+  $('overdub-video-discard').addEventListener('click',async()=>{
+    const recovery=interruptedVideoRecording;
+    if(!recovery)return;
+    $('overdub-video-discard').disabled=true;
+    try{
+      await deleteInterruptedVideoRecording(recovery.id);
+      interruptedVideoRecordings=interruptedVideoRecordings.filter(item=>item.id!==recovery.id);
+      renderInterruptedVideoRecovery();
+      if(!interruptedVideoRecording)$('song-video-status').textContent='Interrupted video recovery discarded.';
+    }catch(error){
+      $('song-video-status').textContent=`Could not discard the interrupted video take: ${error.message}`;
+      $('overdub-video-discard').disabled=false;
+    }
+  });
   $('voice-overdub-record').addEventListener('click', async () => {
     if (project.voice.layers.length >= MAX_VOCAL_LAYERS) return updateOverdubControls();
     const currentTransport = transportState();
@@ -833,7 +902,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const usedBytes = [...getMediaFiles().values(), ...vocalFiles.values()].reduce((sum, file) => sum + (file?.size || 0), 0);
       let storageEstimate = null;
       try { storageEstimate = await navigator.storage?.estimate?.(); } catch { /* fall back to the project media limit */ }
-      const recordingBudget = localRecordingBudget(usedBytes, storageEstimate);
+      const recordingBudget = localJournaledRecordingBudget(usedBytes, storageEstimate);
       if (!recordingBudget) throw new Error('There is not enough safe local storage for another take. Export a project pack and remove unused media, or free space on this device.');
       await audio.unlock();
       stream = await navigator.mediaDevices.getUserMedia({audio:true});
@@ -989,11 +1058,11 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){$('song-video-status').textContent='This browser does not support local camera and microphone recording.';return;}
     const token=videoRecordingActivity.begin();if(token===null)return;
     $('song-video-status').textContent='Checking local storage before requesting camera and microphone access…';updateOverdubControls();
-    let stream=null;
+    let stream=null,recoveryId=null;
     try{
       const usedBytes=[...getMediaFiles().values(),...vocalFiles.values(),...videoFiles.values()].reduce((sum,file)=>sum+(file?.size||0),0);
       let estimate=null;try{estimate=await navigator.storage?.estimate?.();}catch{}
-      const budget=localRecordingBudget(usedBytes,estimate);
+      const budget=localJournaledRecordingBudget(usedBytes,estimate);
       if(!budget)throw new Error('There is not enough safe local storage for another video take. Export a project pack, remove unused media, or free space on this device.');
       await audio.unlock();if(!videoRecordingActivity.current(token))return;
       stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:true});
@@ -1008,10 +1077,20 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const mime=findRecorderMime();if(!mime)throw new Error('This browser has no supported local video recording format.');
       const capture=createBoundedRecordingCapture(budget+RECORDING_STORAGE_RESERVE_BYTES,budget);
       const recorder=new MediaRecorder(stream,{mimeType:mime});
-      const take={stream,recorder,capture,startStep,discard:false,startedAt:performance.now()};videoRecording=take;
+      recoveryId=`video-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+      await beginVideoRecordingRecovery(recoveryId,{startStep,mime:recorder.mimeType||mime});
+      const take={stream,recorder,capture,startStep,discard:false,recoveryId,journalWrite:Promise.resolve(),journalError:null,startedAt:performance.now()};videoRecording=take;
       recorder.ondataavailable=event=>{
         if(!event.data?.size)return;
         if(!capture.add(event.data)){if(recorder.state!=='inactive')recorder.stop();return;}
+        if(!take.journalError){
+          const elapsed=(performance.now()-take.startedAt)/1000;
+          take.journalWrite=take.journalWrite.then(()=>appendVideoRecordingRecoveryChunk(take.recoveryId,event.data,elapsed)).catch(error=>{
+            take.journalError=error;
+            $('song-video-status').textContent=`Local video recovery paused: ${error.message}. Saving the captured take now…`;
+            if(recorder.state!=='inactive')recorder.stop();
+          });
+        }
         if(capture.shouldStop&&recorder.state!=='inactive')recorder.stop();
       };
       recorder.onerror=event=>{$('song-video-status').textContent=`Camera recording failed: ${event.error?.message||'unknown error'}`;stopSongVideoRecording(false);};
@@ -1019,8 +1098,9 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
         stream.getTracks().forEach(track=>track.stop());
         const type=recorder.mimeType||mime,blob=new Blob(capture.chunks,{type});
         try{
-          if(take.discard){$('song-video-status').textContent='Camera take discarded. No video was saved.';return;}
-          if(!blob.size)throw new Error('The browser did not capture a video take.');
+          await take.journalWrite;
+          if(take.discard){await deleteInterruptedVideoRecording(take.recoveryId);$('song-video-status').textContent='Camera take discarded. No video was saved.';return;}
+          if(!blob.size){await deleteInterruptedVideoRecording(take.recoveryId);throw new Error('The browser did not capture a video take.');}
           const currentBytes=[...getMediaFiles().values(),...vocalFiles.values(),...videoFiles.values()].reduce((sum,file)=>sum+(file?.size||0),0);
           if(currentBytes+blob.size>MAX_MEDIA_BYTES)throw new Error('This take reached the project media limit. Export a pack and remove media before recording another.');
           const durationSec=await probeVideoDuration(blob,(performance.now()-take.startedAt)/1000);
@@ -1028,17 +1108,17 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
           const file=new File([blob],`song-video-${Date.now()}.${extensionForMime(type)}`,{type});
           const layer={id,name:`Video take ${index}`,origin:'recording',startStep:take.startStep,trimStartSec:0,trimEndSec:durationSec,durationSec,type};
           const nextLayers=[...project.voice.videoLayers,layer];
-          await saveSongVideoLayer(id,file,{...project,voice:{...project.voice,videoLayers:nextLayers}});
+          await saveSongVideoLayer(id,file,{...project,voice:{...project.voice,videoLayers:nextLayers}},{recoveryId:take.recoveryId});
           project.voice.videoLayers.push(layer);videoFiles.set(id,file);videoUrls.set(id,URL.createObjectURL(file));save();renderVideoLayers();renderOverdubTimeline();
           $('song-video-status').textContent=capture.stoppedForStorage
             ?`${layer.name} saved locally from bar ${Math.floor(layer.startStep/16)+1}. Recording stopped at the safe storage limit.`
             :`${layer.name} saved locally from bar ${Math.floor(layer.startStep/16)+1}. The raw camera take is retained.`;
-        }catch(error){$('song-video-status').textContent=`Could not save camera take: ${error.message}`;}
+        }catch(error){$('song-video-status').textContent=`Could not ${take.discard?'discard':'save'} camera take: ${error.message}`;await refreshInterruptedVideoRecordings();}
         finally{if(videoRecording===take)videoRecording=null;videoRecordingActivity.cancel();updateOverdubControls();}
       };
       if(!videoRecordingActivity.activate(token))throw new Error('Camera recording start was canceled.');
-      recorder.start(200);$('song-video-status').textContent=`Recording camera and microphone locally over the Song. Up to ${(budget/1024/1024).toFixed(1)} MB is available for this take; Stop saves it, Cancel discards it.`;updateOverdubControls();
-    }catch(error){stream?.getTracks().forEach(track=>track.stop());videoRecording=null;videoRecordingActivity.cancel();$('song-video-status').textContent=`Could not start Song camera recording: ${error.message}`;updateOverdubControls();}
+      recorder.start(1000);$('song-video-status').textContent=`Recording camera and microphone locally over the Song. Chunks save locally about once per second; up to ${(budget/1024/1024).toFixed(1)} MB is available. Stop saves it, Cancel discards it.`;updateOverdubControls();
+    }catch(error){stream?.getTracks().forEach(track=>track.stop());if(recoveryId)await deleteInterruptedVideoRecording(recoveryId).catch(()=>{});videoRecording=null;videoRecordingActivity.cancel();$('song-video-status').textContent=`Could not start Song camera recording: ${error.message}`;updateOverdubControls();}
   });
   $('overdub-video-stop').addEventListener('click',()=>stopSongVideoRecording(false));
   $('overdub-video-cancel').addEventListener('click',()=>stopSongVideoRecording(true));
@@ -1073,6 +1153,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   }
   await reloadLayers();
   await refreshInterruptedAudioRecordings();
+  await refreshInterruptedVideoRecordings();
   window.addEventListener('madladpad-media-change', render);
   $('voice-source-pad').addEventListener('change', () => {
     if (transcriptionActivity.phase!=='idle') cancelTranscription('Source changed. Previous transcription canceled.');
