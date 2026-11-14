@@ -1416,6 +1416,42 @@ try {
   await page.waitForFunction(selector=>document.querySelector(selector)?.dataset.songVideoAudioGain==='0',songVideoPlayerSelector,{timeout:3000});
   assert.equal(await page.locator(songVideoPlayerSelector).evaluate(video=>video.paused),true,'stopping Song transport should pause its video playback');
   checkpoint('Song-length camera capture saved as a local video track');
+  await openScreen('overdub');
+  await page.evaluate(()=>{
+    const prototype=IDBObjectStore.prototype,nativePut=prototype.put,aborted=new WeakSet();
+    window.__videoJournalAbort={attempts:0,restore:()=>{prototype.put=nativePut;}};
+    prototype.put=function(value,key){
+      const transaction=this.transaction;
+      if(aborted.has(transaction))return {};
+      if(window.__videoJournalAbort.attempts===0&&typeof key==='string'&&key.startsWith('recording-recovery:video:')&&key.includes(':chunk:')){
+        window.__videoJournalAbort.attempts++;
+        aborted.add(transaction);
+        transaction.abort();
+        return {};
+      }
+      return nativePut.call(this,value,key);
+    };
+  });
+  await page.locator('#studio-play').click();
+  await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='true');
+  await page.locator('#overdub-video-record').click();
+  await page.waitForFunction(()=>document.querySelector('#overdub-video-stop').hidden===false,null,{timeout:8000});
+  await page.waitForFunction(()=>document.querySelector('#song-video-status').textContent.includes('Saving the captured take now'),null,{timeout:10000});
+  await page.waitForFunction(()=>/Video take 3 saved locally|Could not save camera take/.test(document.querySelector('#song-video-status').textContent),null,{timeout:20000});
+  assert.match(await page.locator('#song-video-status').textContent(),/Video take 3 saved locally/,'the capture should be saved successfully after the synthetic journal abort');
+  assert.equal(await page.evaluate(()=>window.__videoJournalAbort.attempts),1,'the test should abort exactly one IndexedDB video-journal transaction');
+  const fallbackVideoTrack=page.locator('#song-video-layers .song-video-track').nth(2);
+  assert.equal(await fallbackVideoTrack.locator('.vocal-layer-name').inputValue(),'Video take 3','a journal write failure should still save the captured take as a normal local video track');
+  const fallbackVideoId=await fallbackVideoTrack.getAttribute('data-video-layer');
+  const fallbackVideoInfo=await page.evaluate(async id=>{const file=await (await import('/storage.js')).getValue(`video-layer:${id}`);return{type:file?.type,size:file?.size};},fallbackVideoId);
+  assert.match(fallbackVideoInfo.type,/^video\//,'the take should retain its video container after the journal failure');
+  assert.ok(fallbackVideoInfo.size>0,'the complete captured take should be saved after the journal failure');
+  assert.deepEqual(await page.evaluate(async()=>(await (await import('/storage.js')).listInterruptedVideoRecordings()).map(take=>take.id)),[],'a successfully saved fallback take should remove its incomplete journal');
+  await page.evaluate(()=>window.__videoJournalAbort.restore());
+  page.once('dialog',dialog=>dialog.accept());
+  await fallbackVideoTrack.getByRole('button',{name:/Delete video track 3 and its local source/}).click();
+  await page.waitForFunction(()=>document.querySelectorAll('#song-video-layers .song-video-track').length===2);
+  checkpoint('video take remains saveable after a synthetic journal transaction abort');
   await page.waitForTimeout(500);
   await page.reload();
   await openScreen('sounds');
