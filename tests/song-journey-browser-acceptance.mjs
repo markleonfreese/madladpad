@@ -16,7 +16,7 @@ const server=createServer(async(req,res)=>{
   catch{res.writeHead(404).end();}
 });
 const wav=()=>{
-  const rate=8000,frames=rate*8,bytes=Buffer.alloc(44+frames*2);
+  const rate=16000,frames=rate*240,bytes=Buffer.alloc(44+frames*2);
   bytes.write('RIFF',0);bytes.writeUInt32LE(bytes.length-8,4);bytes.write('WAVEfmt ',8);
   bytes.writeUInt32LE(16,16);bytes.writeUInt16LE(1,20);bytes.writeUInt16LE(1,22);
   bytes.writeUInt32LE(rate,24);bytes.writeUInt32LE(rate*2,28);bytes.writeUInt16LE(2,32);bytes.writeUInt16LE(16,34);
@@ -24,6 +24,7 @@ const wav=()=>{
   for(let i=0;i<frames;i++)bytes.writeInt16LE(Math.round(11000*Math.sin(2*Math.PI*440*i/rate)),44+i*2);
   return bytes;
 };
+const audioFixture=wav();
 let browser,temp;
 try{
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -32,7 +33,7 @@ try{
   const tonePath=join(temp,'continuous-vocal.wav');
   const videoPath=resolve('tests/fixtures/webkit-stop-boundary.mp4');
   const videoBytes=await readFile(videoPath);
-  await writeFile(tonePath,wav());
+  await writeFile(tonePath,audioFixture);
   browser=await chromium.launch({headless:true,args:['--autoplay-policy=no-user-gesture-required','--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream',`--use-file-for-audio-capture=${tonePath}`]});
   const context=await browser.newContext({acceptDownloads:true});
   await context.grantPermissions(['camera','microphone'],{origin});
@@ -79,8 +80,9 @@ try{
   }
   assert.match(await page.locator('#song-status').textContent(),/36 bars/);
   await openScreen('overdub');
-  await page.locator('#overdub-audio-input').setInputFiles({name:'continuous-vocal.wav',mimeType:'audio/wav',buffer:wav()});
+  await page.locator('#overdub-audio-input').setInputFiles({name:'continuous-vocal.wav',mimeType:'audio/wav',buffer:audioFixture});
   await page.waitForFunction(()=>document.querySelectorAll('#voice-overdub-layers .vocal-layer').length===1);
+  assert.match(await page.locator('#voice-overdub-layers .vocal-layer-meta').textContent(),/240\.00 s audible/,'the imported source must decode as a full four-minute audio track');
   await page.locator('#overdub-video-input').setInputFiles({name:'verse-visual.mp4',mimeType:'video/mp4',buffer:videoBytes});
   await page.waitForFunction(()=>document.querySelectorAll('#song-video-layers .song-video-track').length===1);
   const audioId=await page.locator('#voice-overdub-layers .vocal-layer').first().getAttribute('data-layer');
@@ -92,7 +94,7 @@ try{
     const digest=async blob=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))).map(byte=>byte.toString(16).padStart(2,'0')).join('');
     return {audioBytes:audio?.size,videoBytes:video?.size,audioHash:await digest(audio),videoHash:await digest(video)};
   },{audioId,videoId});
-  assert.equal(before.audioBytes,wav().length,'the complete raw audio source is stored locally');
+  assert.equal(before.audioBytes,audioFixture.length,'the complete four-minute raw audio source is stored locally');
   assert.equal(before.videoBytes,videoBytes.length,'the original video bytes are stored locally');
   await page.locator('#session-menu > summary').click();
   const backupDownload=page.waitForEvent('download');await page.locator('#export-button').click();
@@ -105,6 +107,7 @@ try{
   await page.locator('#project-input').setInputFiles({name:'full-song.madladpad',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(pack))});
   await page.waitForFunction(()=>document.querySelector('#toast').textContent.includes('Project restored'));
   await page.reload();await openScreen('sounds');await page.locator('.pad-hit').first().waitFor();await openScreen('overdub');
+  await page.waitForFunction(()=>document.querySelectorAll('#overdub-timeline .overdub-song-section').length===4,null,{timeout:10000});
   const after=await page.evaluate(async({audioId,videoId})=>{
     const {getValue}=await import('/storage.js');
     const audio=await getValue(`voice-layer:${audioId}`),video=await getValue(`video-layer:${videoId}`);
@@ -121,15 +124,16 @@ try{
   const audioDownload=page.waitForEvent('download',{timeout:10000});
   await openScreen('export');await page.locator('#record-audio').click();
   await page.waitForFunction(()=>document.querySelector('#record-audio').textContent.includes('STOP AUDIO TAKE'));
-  await page.waitForTimeout(1300);await page.locator('#record-audio').click();
+  await page.waitForTimeout(8300);await page.locator('#record-audio').click();
   const mix=await audioDownload;const audioBytes=await readFile(await mix.path());
   assert.ok(audioBytes.length>100,'the restored continuous Song audio produces an audio mix export');
-  const rms=await page.evaluate(async encoded=>{
+  const mixStats=await page.evaluate(async encoded=>{
     const data=Uint8Array.from(atob(encoded),ch=>ch.charCodeAt(0));const context=new AudioContext();
-    try{const buffer=await context.decodeAudioData(data.buffer);const samples=buffer.getChannelData(0);return Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length);}
+    try{const buffer=await context.decodeAudioData(data.buffer);const samples=buffer.getChannelData(0);return {rms:Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length),duration:buffer.duration};}
     finally{await context.close();}
   },audioBytes.toString('base64'));
-  assert.ok(rms>.01,`the exported audio should contain the imported vocal tone (RMS ${rms})`);
+  assert.ok(mixStats.rms>.01,`the exported audio should contain the imported vocal tone (RMS ${mixStats.rms})`);
+  assert.ok(mixStats.duration>=8,`the exported mix should continue across the first eight-bar section boundary, got ${mixStats.duration} seconds`);
   if((await page.locator('#play-seq').textContent()).includes('STOP')){await openScreen('beats');await page.locator('#play-seq').click();}
 
   await openScreen('beats');
@@ -158,7 +162,7 @@ try{
   assert.ok(decodedVideo.width>0&&decodedVideo.height>0&&decodedVideo.readyState>=2,`the audiovisual export should decode a video frame, got ${JSON.stringify(decodedVideo)}`);
   await openScreen('beats');await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='false');
-  console.log(`Song journey browser acceptance passed: 36-bar A-B-C-A, local audio/video pack recovery, decoded mix RMS ${rms.toFixed(3)}, and a decoded ${decodedVideo.width}×${decodedVideo.height} video frame.`);
+  console.log(`Song journey browser acceptance passed: 36-bar A-B-C-A, four-minute local audio/video pack recovery, decoded 8+ second mix RMS ${mixStats.rms.toFixed(3)}, and a decoded ${decodedVideo.width}×${decodedVideo.height} video frame.`);
   await context.close();
 }finally{
   if(browser)await browser.close();
