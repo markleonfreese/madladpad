@@ -133,7 +133,7 @@ function normaliseVoice(value) {
   const videoLayers = Array.isArray(source.videoLayers) ? source.videoLayers.slice(0, MAX_VOCAL_LAYERS).map((layer,index) => ({
     id:String(layer?.id || `video-${index+1}`).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,64) || `video-${index+1}`,
     name:String(layer?.name || `Video track ${index+1}`).slice(0,48),
-    origin:'import', startStep:clamp(layer?.startStep ?? 0,0,4096),
+    origin:['recording','import'].includes(layer?.origin)?layer.origin:'import', startStep:clamp(layer?.startStep ?? 0,0,4096),
     trimStartSec:clamp(layer?.trimStartSec ?? 0,0,10799.99),
     trimEndSec:layer?.trimEndSec==null?null:clamp(layer.trimEndSec,0.01,10800),
     durationSec:clamp(layer?.durationSec ?? 0,0,10800), type:String(layer?.type || 'video/webm').slice(0,80)

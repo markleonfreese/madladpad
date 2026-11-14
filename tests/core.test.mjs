@@ -13,6 +13,7 @@ test('long-form recording budget respects both project and browser storage with 
 test('Song video clips normalize stable identity, placement and source trim metadata',()=>{
   const video=normaliseProject({voice:{videoLayers:[{id:'clip_1',name:'Verse visual',startStep:384,trimStartSec:2,trimEndSec:8,durationSec:10,type:'video/mp4'}]}}).voice.videoLayers[0];
   assert.deepEqual(video,{id:'clip_1',name:'Verse visual',origin:'import',startStep:384,trimStartSec:2,trimEndSec:8,durationSec:10,type:'video/mp4'});
+  assert.equal(normaliseProject({voice:{videoLayers:[{id:'take_1',origin:'recording'}]}}).voice.videoLayers[0].origin,'recording','camera take identity should survive project and pack normalization');
   assert.deepEqual(normaliseProject({}).voice.videoLayers,[],'older project packs default to no video tracks');
 });
 
