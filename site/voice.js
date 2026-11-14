@@ -1,4 +1,4 @@
-import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, findAudioRecorderMime, extensionForAudioMime, AsyncActivity } from './core.js';
+import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, findAudioRecorderMime, extensionForAudioMime, vocalLayerClip, AsyncActivity } from './core.js';
 import { getValue, saveVoiceLayer, deleteVoiceLayer } from './storage.js';
 import { detectPitch } from './tuner.js';
 
@@ -397,6 +397,56 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     if (project.voice.layers.length >= MAX_VOCAL_LAYERS && !vocalRecording) $('voice-overdub-status').textContent = `The ${MAX_VOCAL_LAYERS} vocal-layer limit is full. Export a project pack before deleting a raw take.`;
     else if (!state.running && !vocalRecording && !$('voice-overdub-status').textContent) $('voice-overdub-status').textContent = 'Start the sequencer to record a vocal layer.';
   };
+
+  function renderOverdubTimeline(){
+    const host=$('overdub-timeline');
+    host.replaceChildren();
+    const secondsPerStep=60/clamp(project.bpm,40,240)/4;
+    const maxEnd=Math.max(16,...project.voice.layers.map(layer=>{
+      const raw=audio.vocalSources.get(layer.id)?.buffer?.duration||0;
+      return layer.startStep+vocalLayerClip(layer,raw).duration/secondsPerStep;
+    }));
+    const totalSteps=Math.max(16,Math.min(256,Math.ceil(maxEnd/16)*16));
+    const width=Math.max(680,totalSteps*24),height=64;
+    const ruler=document.createElement('div');ruler.className='overdub-ruler';ruler.style.width=width+'px';
+    for(let step=0;step<totalSteps;step+=16){
+      const mark=document.createElement('span');mark.style.width=(16/totalSteps*100)+'%';
+      mark.textContent='Bar '+(step/16+1);ruler.append(mark);
+    }
+    host.append(ruler);
+    for(const [index,layer] of project.voice.layers.entries()){
+      const row=document.createElement('div');row.className='overdub-wave-row';row.dataset.waveLayer=layer.id;row.style.width=width+'px';
+      const title=document.createElement('strong');title.textContent=(index+1)+'. '+layer.name;row.append(title);
+      const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+      svg.setAttribute('viewBox','0 0 '+width+' '+height);
+      svg.setAttribute('role','img');svg.setAttribute('height',String(height));svg.setAttribute('width',String(width));
+      const source=audio.vocalSources.get(layer.id)?.buffer,clip=vocalLayerClip(layer,source?.duration||0);
+      const endStep=layer.startStep+clip.duration/secondsPerStep;
+      svg.setAttribute('aria-label',layer.name+' from bar '+(Math.floor(layer.startStep/16)+1)+', step '+(layer.startStep%16+1)+' to bar '+(Math.floor(endStep/16)+1)+', step '+((endStep%16)+1).toFixed(1)+'; '+clip.duration.toFixed(2)+' seconds of audible audio');
+      const add=(tag,attrs)=>{const node=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [key,value] of Object.entries(attrs))node.setAttribute(key,String(value));svg.append(node);return node;};
+      for(let step=0;step<=totalSteps;step+=4){const x=step/totalSteps*width;add('line',{x1:x,x2:x,y1:0,y2:height,stroke:step%16===0?'#758a66':'#344b39','stroke-width':step%16===0?1.6:.6});}
+      if(source&&clip.duration>0&&layer.startStep<totalSteps){
+        const x=layer.startStep/totalSteps*width;
+        const audibleWidth=Math.max(1,Math.min(width-x,clip.duration/secondsPerStep/totalSteps*width));
+        add('rect',{x,y:7,width:audibleWidth,height:height-14,rx:3,fill:'#31573a',stroke:'#a9d87b','stroke-width':1});
+        const data=source.getChannelData(0),from=Math.floor(clip.start*source.sampleRate),to=Math.min(data.length,Math.ceil(clip.end*source.sampleRate));
+        const count=Math.min(160,Math.max(8,Math.floor(audibleWidth/5)));
+        for(let bin=0;bin<count;bin++){
+          const lo=from+Math.floor((to-from)*bin/count),hi=from+Math.floor((to-from)*(bin+1)/count);
+          let peak=0;
+          for(let position=lo;position<hi;position+=Math.max(1,Math.floor((hi-lo)/96)))peak=Math.max(peak,Math.abs(data[position]||0));
+          const px=x+(bin+.5)*audibleWidth/count,extent=Math.max(.7,peak*23);
+          add('line',{x1:px,x2:px,y1:height/2-extent,y2:height/2+extent,stroke:'#b9ec94','stroke-width':Math.max(.8,audibleWidth/count-1)});
+        }
+        add('line',{x1:x+audibleWidth,x2:x+audibleWidth,y1:6,y2:height-6,stroke:'#edce7c','stroke-width':2});
+      }
+      row.append(svg);host.append(row);
+    }
+    $('overdub-timeline-status').textContent=project.voice.layers.length
+      ?'Bars are shared across all recorded tracks. Green is the audible trimmed waveform; the gold line marks its end. Drag the timeline sideways on a phone. Changes to start or trim take effect on the next loop start.'
+      :'Recorded vocal waveforms will appear here, aligned with your Sequence bars. Raw files are kept locally.';
+  }
+
   function renderVocalLayers() {
     const host = $('voice-overdub-layers'); host.replaceChildren();
     project.voice.layers.forEach((layer, index) => {
@@ -415,11 +465,28 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const control = (text, label, active, action) => { const button = document.createElement('button'); button.type = 'button'; button.className = `pill-button${active ? ' active' : ''}`; button.textContent = text; button.setAttribute('aria-label', label); button.setAttribute('aria-pressed', String(active)); button.addEventListener('click', action); return button; };
       const mute = control(layer.muted ? 'UNMUTE' : 'MUTE', `${layer.muted ? 'Unmute' : 'Mute'} vocal layer ${index + 1}`, layer.muted, () => { layer.muted = !layer.muted; audio.updateVocalLayerStates(project.voice.layers); save(); renderVocalLayers(); });
       const solo = control(layer.solo ? 'SOLO ON' : 'SOLO', `${layer.solo ? 'Disable solo' : 'Solo'} vocal layer ${index + 1}`, layer.solo, () => { layer.solo = !layer.solo; audio.updateVocalLayerStates(project.voice.layers); save(); renderVocalLayers(); });
-      const preview = control('▶', `Preview vocal layer ${index + 1}`, false, async () => { await audio.unlock(); if (!audio.previewVocalLayer(layer.id, layer.gain,layer.pitch)) $('voice-overdub-status').textContent = 'Pitch processor or audio decoder unavailable for this layer.'; });
+      const preview = control('▶', `Preview vocal layer ${index + 1}`, false, async () => { await audio.unlock(); if (!audio.previewVocalLayer(layer.id, layer.gain,layer.pitch,layer)) $('voice-overdub-status').textContent = 'Pitch processor or audio decoder unavailable for this layer.'; });
       preview.disabled = !audio.vocalSources.get(layer.id)?.buffer;
       const pitch=document.createElement('label');pitch.className='vocal-layer-pitch';pitch.append(document.createTextNode('PITCH (ST)'));
       const pitchInput=document.createElement('input');pitchInput.type='number';pitchInput.min='-12';pitchInput.max='12';pitchInput.step='.1';pitchInput.value=String(layer.pitch||0);pitchInput.setAttribute('aria-label',`Pitch for vocal layer ${index+1}`);
       pitchInput.addEventListener('change',()=>{layer.pitch=clamp(pitchInput.value,-12,12);save();renderVocalLayers();});pitch.append(pitchInput);
+
+      const rawDuration=audio.vocalSources.get(layer.id)?.buffer?.duration||0;
+      const crop=vocalLayerClip(layer,rawDuration);
+      const trimField=(key,labelText,value)=>{
+        const label=document.createElement('label');label.className='vocal-layer-trim';label.append(document.createTextNode(labelText));
+        const input=document.createElement('input');input.type='number';input.min='0';input.max=String(rawDuration);input.step='.05';input.value=String(Number(value.toFixed(2)));
+        input.disabled=!rawDuration;input.setAttribute('aria-label',labelText+' for vocal layer '+(index+1)+' in seconds');
+        input.addEventListener('change',()=>{
+          const n=clamp(input.value,0,rawDuration);
+          if(key==='trimStartSec'){layer.trimStartSec=Math.min(n,Math.max(0,vocalLayerClip(layer,rawDuration).end-.01));}
+          else layer.trimEndSec=Math.max(n,Math.min(rawDuration,(layer.trimStartSec||0)+.01));
+          audio.stopVocalLayer(layer.id);save();renderVocalLayers();
+        });
+        label.append(input);return label;
+      };
+      const trimFrom=trimField('trimStartSec','TRIM START (S)',crop.start);
+      const trimTo=trimField('trimEndSec','TRIM END (S)',crop.end);
       const remove = control('DELETE', `Delete vocal layer ${index + 1} and its raw take`, false, async () => {
         if (!confirm(`Delete ${layer.name} and its saved raw recording?`)) return;
         const nextLayers = project.voice.layers.filter(item => item.id !== layer.id);
@@ -432,9 +499,11 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       });
       const meta = document.createElement('small'); meta.className = 'vocal-layer-meta';
       const bar = Math.floor(layer.startStep / 16) + 1, step = layer.startStep % 16;
-      meta.textContent = `${vocalFiles.has(layer.id) ? 'Raw take saved locally' : 'Raw take file missing'} · starts at bar ${bar}, step ${step + 1}`;
-      row.append(name, offset, gain, pitch, mute, solo, preview, remove, meta); host.append(row);
+      const audibleEnd=layer.startStep+crop.duration/(60/clamp(project.bpm,40,240)/4);
+      meta.textContent = `${vocalFiles.has(layer.id) ? 'Raw take saved locally' : 'Raw take file missing'} · starts at bar ${bar}, step ${step + 1} · ends near bar ${Math.floor(audibleEnd/16)+1}, step ${Math.floor(audibleEnd%16)+1} · ${crop.duration.toFixed(2)} s audible (original retained)`;
+      row.append(name, offset, trimFrom, trimTo, gain, pitch, mute, solo, preview, remove, meta); host.append(row);
     });
+    renderOverdubTimeline();
     updateOverdubControls();
   }
   function renderTranscriptPicker() {
