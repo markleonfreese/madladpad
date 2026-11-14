@@ -421,6 +421,7 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
 .overdub-wave-row>strong{display:block;position:sticky;left:0;padding:3px 6px;font-size:12px;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#1c2d21}
 .overdub-wave-row svg{display:block;max-width:none;background:#0e1912}
 .overdub-video-lane{position:relative;height:62px;background:repeating-linear-gradient(90deg,transparent 0,transparent calc(6.25% - 1px),#344b39 calc(6.25% - 1px),#344b39 6.25%)}.overdub-video-clip{position:absolute;top:16px;bottom:5px;display:flex;align-items:center;overflow:hidden;padding:0 8px;border:1px solid #d7a0f4;border-radius:4px;background:linear-gradient(120deg,#58336d,#38204c);color:#fff;font:10px var(--mono);white-space:nowrap}
+.song-track-move-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.song-track-move-controls .pill-button{flex:1 1 88px;min-width:88px;min-height:44px}.song-video-controls .song-track-move-controls,.vocal-layer .song-track-move-controls{grid-column:1/-1}
 .vocal-layer-trim{display:grid;gap:4px;font:11px var(--mono);color:var(--muted)}
 .vocal-layer-trim input{width:85px;max-width:100%;min-height:44px;padding:8px;background:#101710;border:1px solid var(--line);color:var(--ink);border-radius:7px}
 @media(max-width:740px){.overdub-timeline-scroll{max-height:330px}.vocal-layer-trim input{width:100%}}
