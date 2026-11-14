@@ -2,6 +2,8 @@ export const HOTKEYS = 'QWERASDFZXCVTYUI'.split('');
 export const PAD_COUNT = { '2x2': 4, '3x4': 12, '4x4': 16 };
 export const STEP_COUNT = 16;
 export const MAX_SCENES = 8;
+export const MAX_SONG_CLIPS = 64;
+export const MAX_SONG_BARS = 256;
 export const MAX_MEDIA_BYTES = 80 * 1024 * 1024;
 export const MAX_TRANSCRIPT_WORDS = 1000;
 export const MAX_VOICE_PHRASES = 8;
@@ -234,9 +236,43 @@ export function copyPadSound(source, destination) {
     start:source.start,end:source.end
   };
 }
+
+/** Each song clip points to a saved pattern/scene rather than copying its sounds.
+ * A repeated scene keeps the same identity and may appear in several places. */
+export function normaliseSong(value) {
+  let barsUsed=0;
+  const clips=[];
+  for(const [index,source] of (Array.isArray(value?.clips)?value.clips:[]).slice(0,MAX_SONG_CLIPS).entries()){
+    const sceneId=String(source?.sceneId||'').replace(/[^a-zA-Z0-9_-]/g,'').slice(0,64);
+    if(!sceneId||barsUsed>=MAX_SONG_BARS)continue;
+    const bars=Math.min(Math.round(clamp(source?.bars??4,1,64)),MAX_SONG_BARS-barsUsed);
+    const id=String(source?.id||'song-'+(index+1)).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,64)||'song-'+(index+1);
+    clips.push({id,sceneId,bars});
+    barsUsed+=bars;
+  }
+  return {clips};
+}
+export function songTotalBars(song) {
+  return (Array.isArray(song?.clips)?song.clips:[]).reduce((sum,clip)=>sum+Math.max(0,Number(clip.bars)||0),0);
+}
+export function songSectionAtStep(song,scenes,absoluteStep) {
+  if(!Number.isInteger(absoluteStep)||absoluteStep<0)return null;
+  let startStep=0;
+  for(const clip of song?.clips||[]){
+    const duration=Math.max(0,Math.round(clip.bars))*STEP_COUNT;
+    if(absoluteStep<startStep+duration) {
+      return {clip,scene:(scenes||[]).find(scene=>scene.id===clip.sceneId)||null,
+        localStep:(absoluteStep-startStep)%STEP_COUNT,startBar:startStep/STEP_COUNT+1,
+        endBar:(startStep+duration)/STEP_COUNT+1,absoluteStep};
+    }
+    startStep+=duration;
+  }
+  return null;
+}
+
 export const makeProject = () => ({
   version: 1, title: 'Untitled mixtape', layout: '3x4', bpm: 120, demoEnabled: false,
-  quantize: 'off', gridDivision:'1/16', pads: Array.from({ length: 16 }, (_, i) => makePad(i)), scenes: [], voice: makeVoiceData(), video:makeVideoDirection()
+  quantize: 'off', gridDivision:'1/16', pads: Array.from({ length: 16 }, (_, i) => makePad(i)), scenes: [], song:{clips:[]}, voice: makeVoiceData(), video:makeVideoDirection()
 });
 export function normaliseProject(value) {
   const base = makeProject();
@@ -261,6 +297,7 @@ export function normaliseProject(value) {
     };
   });
   const scenes=Array.isArray(value?.scenes)?value.scenes.slice(0,MAX_SCENES).map((scene,index)=>({
+    id:String(scene?.id||`scene-${index+1}`).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,64)||`scene-${index+1}`,
     name:String(scene?.name||`Scene ${index+1}`).slice(0,32),
     gridDivision:['1/4','1/8','1/16'].includes(scene?.gridDivision)?scene.gridDivision:'1/16',
     pads:Array.from({length:16},(_,j)=>({
@@ -275,7 +312,7 @@ export function normaliseProject(value) {
     demoEnabled: Boolean(value?.demoEnabled),
     bpm: clamp(value?.bpm ?? 120, 40, 240),
     quantize: ['off','1/4','1/8','1/16'].includes(value?.quantize) ? value.quantize : 'off',
-    gridDivision:['1/4','1/8','1/16'].includes(value?.gridDivision)?value.gridDivision:'1/16', pads, scenes,
+    gridDivision:['1/4','1/8','1/16'].includes(value?.gridDivision)?value.gridDivision:'1/16', pads, scenes,song:normaliseSong(value?.song),
     voice: normaliseVoice(value?.voice),video:normaliseVideoDirection(value?.video) };
 }
 
