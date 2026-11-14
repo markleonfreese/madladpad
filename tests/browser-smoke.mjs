@@ -1226,6 +1226,36 @@ try {
   assert.ok(recordedVideoInfo.size>0,'the locally saved camera track should contain media');
   await page.locator('#play-seq').click();
   await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('PLAY'));
+  await recordedVideoTrack.locator('[aria-label="TRIM IN (S) for video track 2"]').fill('0.10');
+  await recordedVideoTrack.locator('[aria-label="TRIM IN (S) for video track 2"]').press('Tab');
+  await recordedVideoTrack.locator('.vocal-layer-start input').first().fill('32');
+  await recordedVideoTrack.locator('.vocal-layer-start input').first().press('Tab');
+  await page.locator('#play-seq').click();
+  await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
+  await page.evaluate(()=>{
+    const prototype=CanvasRenderingContext2D.prototype,drawImage=prototype.drawImage;
+    window.__songVideoFramesDrawn=0;
+    prototype.drawImage=function(media,...args){
+      if(this.canvas?.id==='capture-canvas'&&media?.dataset?.songVideoTrack){window.__songVideoFramesDrawn++;window.__songVideoFirstSourceTime??=media.currentTime;}
+      return drawImage.call(this,media,...args);
+    };
+  });
+  await openVideoDirector();
+  const songVisualDownload=page.waitForEvent('download',{timeout:25000}).then(download=>({download}),error=>({error}));
+  await page.locator('#start-record').click();
+  await page.waitForFunction(()=>document.querySelector('#start-record').textContent.includes('STOP RECORDING'));
+  await page.waitForFunction(()=>window.__songVideoFramesDrawn>0,null,{timeout:15000});
+  assert.ok(await page.evaluate(()=>window.__songVideoFramesDrawn)>0,'the active Song video track should be drawn into the exported video composition');
+  assert.ok(await page.evaluate(()=>window.__songVideoFirstSourceTime)>=.10,'the first exported video frame should start at the selected nonzero trim-in point');
+  await page.waitForTimeout(300);
+  await page.locator('#start-record').click();
+  await page.waitForFunction(()=>document.querySelector('#start-record').textContent.includes('RECORD SET'));
+  const songVisualResult=await songVisualDownload;
+  assert.ok(songVisualResult.download,`the Song video-track composition should download: ${songVisualResult.error?.message||await page.locator('#export-record-status').textContent()}`);
+  assert.ok((await readFile(await songVisualResult.download.path())).length>100,'the Song video-track composition should produce a playable export');
+  await openScreen('voice');
+  await page.locator('#studio-play').click();
+  await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='false');
   checkpoint('Song-length camera capture saved as a local video track');
   await page.waitForTimeout(500);
   await page.reload();
@@ -1729,10 +1759,10 @@ try {
   },null,{timeout:8000});
   await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
   checkpoint('service worker ready');
-  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v25')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
-  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v25')).match('/audio.js')).text()),/pendingStarts/,'the current fallback retrigger fix should be cached before offline use');
-  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v25')).match('/voice.js')).text()),/Use rhyme idea/,'the current Rap Lab writing aid should be cached before offline use');
-  const cachedFonts=await page.evaluate(async()=>Promise.all(['/fonts/dm-sans-variable-latin.woff2','/fonts/dm-sans-variable-latin-ext.woff2','/fonts/dm-mono-400-latin.woff2','/fonts/dm-mono-400-latin-ext.woff2','/fonts/dm-mono-500-latin.woff2','/fonts/dm-mono-500-latin-ext.woff2'].map(async path=>Boolean(await (await caches.open('madladpad-shell-v25')).match(path)))));
+  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v26')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
+  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v26')).match('/audio.js')).text()),/pendingStarts/,'the current fallback retrigger fix should be cached before offline use');
+  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v26')).match('/voice.js')).text()),/Use rhyme idea/,'the current Rap Lab writing aid should be cached before offline use');
+  const cachedFonts=await page.evaluate(async()=>Promise.all(['/fonts/dm-sans-variable-latin.woff2','/fonts/dm-sans-variable-latin-ext.woff2','/fonts/dm-mono-400-latin.woff2','/fonts/dm-mono-400-latin-ext.woff2','/fonts/dm-mono-500-latin.woff2','/fonts/dm-mono-500-latin-ext.woff2'].map(async path=>Boolean(await (await caches.open('madladpad-shell-v26')).match(path)))));
   assert.ok(cachedFonts.every(Boolean),'both local UI fonts and their Latin/extended subsets should be cached for offline use');
   await page.reload();
   await page.waitForFunction(()=>Boolean(navigator.serviceWorker.controller));

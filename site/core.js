@@ -177,6 +177,17 @@ export function vocalLayerClip(layer, rawDuration) {
   return {start,end,duration:end-start};
 }
 
+export function songVideoPositionAtStep(layer, absoluteStep, bpm) {
+  if (!layer || !Number.isFinite(absoluteStep)) return null;
+  const startStep=clamp(layer.startStep ?? 0,0,4096);
+  const trimStart=clamp(layer.trimStartSec ?? 0,0,10799.99);
+  const trimEnd=clamp(layer.trimEndSec ?? layer.durationSec ?? 0,0.01,10800);
+  if(absoluteStep<startStep||trimEnd<=trimStart)return null;
+  const secondsPerStep=60/clamp(bpm,40,240)/4;
+  const sourceTime=trimStart+(absoluteStep-startStep)*secondsPerStep;
+  return sourceTime<trimEnd?sourceTime:null;
+}
+
 export const videoVisualDurationMs = (start, end, speed) => Math.max(180, (Number(end) - Number(start)) / clamp(speed ?? 1, 0.5, 2) * 1000);
 export function normaliseRegion(start, end, duration, changed = 'start') {
   const total = Number.isFinite(duration) && duration > 0 ? duration : 0;
