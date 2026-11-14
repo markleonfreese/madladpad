@@ -1074,6 +1074,7 @@ try {
     await page.waitForFunction(()=>!document.querySelector('#voice-overdub-record').disabled);
     await page.locator('#voice-overdub-record').click();
     await page.waitForFunction(()=>document.querySelector('#voice-overdub-status').textContent.includes('Recording microphone audio'));
+    assert.match(await page.locator('#voice-overdub-status').textContent(),/up to [\d.]+ MB is available.*safety margin/i,'long-form recording should disclose its local storage estimate before capturing');
     await page.waitForTimeout(650);
     await page.locator('#voice-overdub-stop').click();
     await page.waitForFunction(()=>document.querySelectorAll('#voice-overdub-layers .vocal-layer').length===1,null,{timeout:8000});

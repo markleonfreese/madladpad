@@ -1,4 +1,4 @@
-import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, findAudioRecorderMime, extensionForAudioMime, vocalLayerClip, songTotalBars, AsyncActivity } from './core.js';
+import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, extensionForAudioMime, vocalLayerClip, songTotalBars, AsyncActivity, localRecordingBudget, createBoundedRecordingCapture } from './core.js';
 import { getValue, saveVoiceLayer, deleteVoiceLayer } from './storage.js';
 import { detectPitch } from './tuner.js';
 
@@ -558,12 +558,17 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     $('voice-overdub-record').disabled = true; $('voice-overdub-status').textContent = 'Requesting microphone access…';
     let stream;
     try {
+      const usedBytes = [...getMediaFiles().values(), ...vocalFiles.values()].reduce((sum, file) => sum + (file?.size || 0), 0);
+      let storageEstimate = null;
+      try { storageEstimate = await navigator.storage?.estimate?.(); } catch { /* fall back to the project media limit */ }
+      const recordingBudget = localRecordingBudget(usedBytes, storageEstimate);
+      if (!recordingBudget) throw new Error('There is not enough safe local storage for another take. Export a project pack and remove unused media, or free space on this device.');
       await audio.unlock();
       stream = await navigator.mediaDevices.getUserMedia({audio:true});
       const transport = transportState();
       if (!transport.running) throw new Error('The sequencer stopped before recording could start.');
       const mime = findAudioRecorderMime();
-      const recorder = new MediaRecorder(stream, mime ? {mimeType:mime} : undefined), chunks = [];
+      const recorder = new MediaRecorder(stream, mime ? {mimeType:mime} : undefined);
       const secondsPerStep = 60 / clamp(transport.bpm, 40, 240) / 4;
       const startStep = Math.max(0, Math.ceil((audio.context.currentTime - transport.epoch - .001) / secondsPerStep));
       const targetTime = transport.epoch + startStep * secondsPerStep;
@@ -573,13 +578,25 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       }
       const alignedTransport = transportState();
       if (!alignedTransport.running || alignedTransport.epoch !== transport.epoch) throw new Error('The sequencer changed before the aligned recording could start.');
-      const take = {stream, recorder, startStep, chunks}; vocalRecording = take;
-      recorder.ondataavailable = event => { if (event.data?.size) chunks.push(event.data); };
+      const capture = createBoundedRecordingCapture(recordingBudget + RECORDING_STORAGE_RESERVE_BYTES, recordingBudget);
+      const take = {stream, recorder, startStep, capture}; vocalRecording = take;
+      recorder.ondataavailable = event => {
+        if (!event.data?.size) return;
+        if (!capture.add(event.data)) {
+          $('voice-overdub-status').textContent = 'Pausing at the safe local-storage limit and saving the captured audio…';
+          if (recorder.state !== 'inactive') recorder.stop();
+          return;
+        }
+        if (capture.shouldStop && recorder.state !== 'inactive') {
+          $('voice-overdub-status').textContent = 'Pausing at the safe local-storage limit and saving the captured audio…';
+          recorder.stop();
+        }
+      };
       recorder.onerror = event => { $('voice-overdub-status').textContent = `Microphone recording failed: ${event.error?.message || 'unknown error'}`; stopOverdub(); };
       recorder.onstop = async () => {
         stream.getTracks().forEach(track => track.stop());
         const type = recorder.mimeType || mime || 'audio/webm';
-        const blob = new Blob(chunks, {type});
+        const blob = new Blob(capture.chunks, {type});
         try {
           if (!blob.size) throw new Error('The browser did not capture any microphone audio.');
           const usedBytes = [...getMediaFiles().values(), ...vocalFiles.values()].reduce((sum, file) => sum + (file?.size || 0), 0);
@@ -592,15 +609,19 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
           project.voice.layers.push(layer); vocalFiles.set(id, file);
           const playable = await audio.loadVocalLayer(id, file);
           save(); renderVocalLayers();
-          $('voice-overdub-status').textContent = playable
+          const savedMessage = playable
             ? `${layer.name} saved locally as a separate raw take. It starts at bar ${Math.floor(layer.startStep / 16) + 1}, step ${layer.startStep % 16 + 1}.`
             : `${layer.name} raw take is saved locally, but this browser cannot decode it for playback.`;
+          $('voice-overdub-status').textContent = capture.stoppedForStorage
+            ? `${savedMessage} Recording stopped at the safe local-storage limit; export a pack and remove unused media before the next take.`
+            : savedMessage;
         } catch (error) { $('voice-overdub-status').textContent = `Could not save vocal take: ${error.message}`; }
         finally { if (vocalRecording === take) vocalRecording = null; updateOverdubControls(); }
       };
       recorder.start(200);
       $('voice-overdub-stop').hidden = false;
-      $('voice-overdub-status').textContent = 'Recording microphone audio over the playing sequence. The raw take stays local.';
+      const availableMb = (recordingBudget / 1024 / 1024).toFixed(1);
+      $('voice-overdub-status').textContent = `Recording microphone audio over the playing sequence. Raw audio stays on this device; up to ${availableMb} MB is available for this take, with a small safety margin.`;
     } catch (error) {
       stream?.getTracks().forEach(track => track.stop());
       vocalRecording = null; updateOverdubControls();

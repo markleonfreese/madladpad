@@ -5,6 +5,7 @@ export const MAX_SCENES = 8;
 export const MAX_SONG_CLIPS = 64;
 export const MAX_SONG_BARS = 256;
 export const MAX_MEDIA_BYTES = 80 * 1024 * 1024;
+export const RECORDING_STORAGE_RESERVE_BYTES = 256 * 1024;
 export const MAX_TRANSCRIPT_WORDS = 1000;
 export const MAX_VOICE_PHRASES = 8;
 export const MAX_VOCAL_LAYERS = 16;
@@ -17,6 +18,41 @@ export const MELODY_SCALES = Object.freeze({
   'major-pentatonic': Object.freeze([0,2,4,7,9]),
   'minor-pentatonic': Object.freeze([0,3,5,7,10])
 });
+
+// Keep a small headroom for IndexedDB/container overhead and the final
+// MediaRecorder chunk, which may arrive after stop() is requested.
+export function localRecordingBudget(usedBytes, estimate = null, maxBytes = MAX_MEDIA_BYTES) {
+  const used = Number.isFinite(usedBytes) ? Math.max(0, usedBytes) : maxBytes;
+  let remaining = Math.max(0, maxBytes - used);
+  if (Number.isFinite(estimate?.quota) && Number.isFinite(estimate?.usage)) {
+    remaining = Math.min(remaining, Math.max(0, estimate.quota - estimate.usage));
+  }
+  return Math.max(0, remaining - Math.min(RECORDING_STORAGE_RESERVE_BYTES, remaining));
+}
+
+export function createBoundedRecordingCapture(byteLimit, stopAtBytes = byteLimit) {
+  const chunks = [];
+  let bytes = 0;
+  let stoppedForStorage = false;
+  let truncated = false;
+  return {
+    add(chunk) {
+      if (truncated || !chunk?.size || bytes + chunk.size > byteLimit) {
+        truncated = true;
+        stoppedForStorage = true;
+        return false;
+      }
+      chunks.push(chunk);
+      bytes += chunk.size;
+      if (bytes >= stopAtBytes) stoppedForStorage = true;
+      return true;
+    },
+    get shouldStop() { return stoppedForStorage; },
+    get chunks() { return chunks; },
+    get bytes() { return bytes; },
+    get stoppedForStorage() { return stoppedForStorage; }
+  };
+}
 export const RAP_BAR_COUNT = 16;
 export const VIDEO_ASPECTS = { '4:3':[960,720], '16:9':[960,540], '9:16':[540,960], '1:1':[720,720] };
 export const DEMO_SOUNDS = Object.freeze([
