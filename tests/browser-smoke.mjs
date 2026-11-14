@@ -1826,6 +1826,21 @@ try {
   assert.equal(await page.locator('#sequence-pattern-content').isVisible(),true,'switching back restores the old pattern editor');
   checkpoint('long A-B-C-A song arrangement retained alongside drum and melodic patterns');
 
+  if(!await page.locator('#session-menu').evaluate(element=>element.open))await page.locator('#session-menu > summary').click();
+  const songPackDownload=page.waitForEvent('download');
+  await page.locator('#export-button').click();
+  const songPack=JSON.parse(await readFile(await (await songPackDownload).path(),'utf8'));
+  assert.deepEqual(songPack.project.song.clips.map(clip=>clip.bars),[8,16,4,8],'portable project packs should preserve all Song section lengths');
+  assert.deepEqual(songPack.project.song.clips.map(clip=>clip.sceneId),[songSceneIds[0],songSceneIds[1],songSceneIds[2],songSceneIds[0]],'portable project packs should preserve stable links when a pattern is reused');
+  page.once('dialog',dialog=>dialog.accept());
+  await page.locator('#project-input').setInputFiles({name:'song-roundtrip.madladpad',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(songPack))});
+  await page.waitForFunction(()=>document.querySelector('#toast').textContent.includes('Project restored'),null,{timeout:10000});
+  await page.reload();
+  await openScreen('beats');
+  await page.locator('#song-view').click();
+  assert.equal(await page.locator('#song-timeline .song-section-clip').count(),4,'restored project packs should reopen the full A-B-C-A song');
+  assert.match(await page.locator('#song-status').textContent(),/36 bars/,'restored Song duration should remain intact');
+
   assert.deepEqual(errors, []);
   assert.deepEqual(blockedFontProviderRequests,[],'the UI must not request Google Fonts or gstatic at any point');
   console.log('Browser smoke passed: layouts, demo/keyboard, live patterns/scenes, integrated Pitch/Speed audio exports, audio/video recording, adaptive one-to-three-clip composition, local media, pack round-trip, offline reopen and mobile overflow.');
