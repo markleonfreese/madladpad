@@ -78,6 +78,7 @@ Run `npm run test:speech-model` to generate local macOS synthetic speech, exerci
 - In the note-name pitch picker, choose pitches across low, middle and high octaves, check that the displayed tuning reference agrees, and confirm the selected notes survive reload and MIDI export.
 - Draft a short ABAB rap. Assess whether the rhyme and syllable hints help or mislead; edit flow steps, audition the flow, export lyrics, and verify the text file.
 - Record a short vocal overdub against a beat. Preview it and the resulting mix; listen for clipping, doubled monitoring, latency, and timing drift. Reload and confirm the take remains available.
+- **Interrupted audio take recovery:** while recording a multi-minute vocal track, force-close the tab or browser after several seconds, reopen MadLadPad with its site data intact, and confirm the interrupted take appears under Audio tracks. Recover it, inspect its waveform/start bar, preview and export the mix, then reload again. Repeat immediately before and after a recorder chunk is committed and under low-storage conditions. Recovery contains only chunks already saved locally (written about once per second); the in-flight chunk and later audio can be lost. This browser test does not establish recovery after origin data eviction, OS process termination behavior on phones, video-track recovery, or quota-exhaustion safety.
 
 ## 5. Touch and assistive technology
 
