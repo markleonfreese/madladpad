@@ -198,7 +198,8 @@
           <button type="button" class="accent-button" id="song-add-section">ADD SECTION</button>
           <button type="button" class="quiet-button" id="song-back-to-patterns">Edit patterns</button>
         </div>
-        <div class="song-timeline-scroll" tabindex="0" aria-label="Song timeline, scroll horizontally to view all bars"><div id="song-timeline" role="group" aria-label="Saved pattern sections in song order"></div></div>
+        <p class="song-drag-help">Select a section to edit it. Drag its move handle to rearrange; drag its right edge to change length. Keyboard users can use the arrow handles and the controls underneath. For short sections, use the bar-length input.</p>
+        <div class="song-timeline-scroll" tabindex="0" aria-label="Song timeline, scroll horizontally to view all bars"><div id="song-bar-ruler" class="song-bar-ruler" aria-hidden="true"></div><div id="song-timeline" role="group" aria-label="Saved pattern sections in song order"></div></div>
         <div id="song-clip-editor" class="song-clip-editor" role="group" aria-label="Edit or reorder song sections"></div>
         <p id="song-status" class="pattern-record-status" role="status" aria-live="polite"></p>
       </section>
