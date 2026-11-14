@@ -1,4 +1,4 @@
-import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, DEMO_SOUNDS, directedPads, makeProject, normaliseProject, normaliseRegion, copyPadSound, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, AsyncActivity, suggestActiveRegion, captureRegionStatus, cameraTakeTargetSeconds, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, nextBarTime, videoVisualDurationMs } from './core.js';
+import { HOTKEYS, PAD_COUNT, MAX_MEDIA_BYTES, MAX_SCENES, VIDEO_ASPECTS, DEMO_SOUNDS, directedPads, makeProject, normaliseProject, normaliseRegion, copyPadSound, clamp, supportedMediaFile, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, CaptureSession, AsyncActivity, suggestActiveRegion, captureRegionStatus, cameraTakeTargetSeconds, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, nextBarTime, videoVisualDurationMs } from './core.js';
 import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, collectVoiceMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
 import { isGooglePickerConfigured, pickFromDrive, pickFromPhotos } from './google.js';
@@ -11,6 +11,8 @@ let project = makeProject();
 let selected = 0;
 let sampleEditorTrigger = null;
 let trackGridVisible = true;
+let selectedSampleNote = null;
+let notePointer = null;
 let audio;
 let voiceLab = null;
 let transportTimer = null;
@@ -82,6 +84,7 @@ function showStudioScreen() {
   // Menus opened on a previous screen must never cover the current controls.
   $('session-menu').open = false;
   if(screen!=='beats' && $('sequence-focus-dialog')?.open)closeSequenceFocus();
+  if(screen!=='beats' && $('sample-note-dialog')?.open)$('sample-note-dialog').close();
   if(screen!=='sounds'&&padEditMode)setPadEditMode(false);
   if(screen!=='sounds' && $('sample-editor-dialog')?.open)closeSampleEditor();
   if (screen !== 'voice') voiceLab?.stopTuner?.('Voice Lab closed. Microphone is off.');
@@ -888,7 +891,7 @@ function showDirectorPlayingStep(step){
 }
 
 function sceneSnapshot(name){
-  return {name,gridDivision:project.gridDivision,pads:project.pads.map(pad=>({steps:[...pad.steps],stepOffsets:[...pad.stepOffsets],stepPlaybackMode:pad.stepPlaybackMode})),videoShots:project.video.shots.map(shot=>({mode:shot.mode,pads:[...shot.pads]}))};
+  return {name,gridDivision:project.gridDivision,pads:project.pads.map(pad=>({steps:[...pad.steps],stepOffsets:[...pad.stepOffsets],stepPlaybackMode:pad.stepPlaybackMode,sequenceMode:pad.sequenceMode,sampleNotes:pad.sampleNotes.map(note=>({...note}))})),videoShots:project.video.shots.map(shot=>({mode:shot.mode,pads:[...shot.pads]}))};
 }
 
 function renderScenes(){
@@ -916,6 +919,8 @@ function applyScene(scene,atTime=audio.context.currentTime){
     pad.steps=Array.from({length:16},(_,step)=>Boolean(lane.steps?.[step]));
     pad.stepOffsets=Array.from({length:16},(_,step)=>clamp(lane.stepOffsets?.[step]??0,0,.9999));
     pad.stepPlaybackMode=['one-step','loop'].includes(lane.stepPlaybackMode)?lane.stepPlaybackMode:'full';
+    pad.sequenceMode=lane.sequenceMode==='notes'?'notes':'steps';
+    pad.sampleNotes=normaliseSampleNotes(lane.sampleNotes);
   });
   if(Array.isArray(scene.videoShots))project.video.shots=scene.videoShots.map(shot=>({mode:shot.mode,pads:[...shot.pads]}));
   renderSteps();renderVideoDirector();queueSave();
@@ -1143,7 +1148,23 @@ function startSequencer() {
         const absoluteStep=nextStep,step=absoluteStep%16;
         const stride=gridStride();
         project.pads.slice(0,PAD_COUNT[project.layout]).forEach(pad => {
-          if(step%stride!==0||!pad.steps[step]||!padIsAudible(pad.id))return;
+          if(!padIsAudible(pad.id))return;
+          if(pad.sequenceMode==='notes'){
+            const note=sampleNoteAtStep(pad.sampleNotes,step);
+            if(!note)return;
+            const gate=note.length*secondsPerStep;
+            const canLoop=audio.supportsSampleLoop(pad.id);
+            // One drawn note gets one attack; adjacent separate notes get two.
+            // A transient pitch override must not mutate the underlying sample.
+            const pitched={...pad,pitch:clamp(pad.pitch+note.semitones,-12,12)};
+            audio.trigger(pad.id,pitched,flashPad,time,{maxDuration:gate,loop:canLoop});
+            if(!canLoop&&!loopFallbackNotified.has(pad.id)){
+              loopFallbackNotified.add(pad.id);
+              notify('This pad can stop at the note end but cannot repeat this media seamlessly.');
+            }
+            return;
+          }
+          if(step%stride!==0||!pad.steps[step])return;
           const offset=pad.stepOffsets?.[step]||0,triggerAt=stepTriggerTime(time,project.bpm,offset);
           let maxDuration=pad.stepPlaybackMode==='one-step'?stepGateDuration(project.bpm,offset):null,loop=false;
           if(pad.stepPlaybackMode==='loop'){
@@ -1875,7 +1896,7 @@ function bindControls() {
     if(!confirm(hasMedia?'Remove this sample from local storage?':'Clear this demo sound from the pad?'))return;
     if(hasMedia){audio.unload(selected);mediaFiles.delete(selected);durations.delete(selected);}
     const previous=project.pads[selected],original=makeProject().pads[selected];
-    project.pads[selected]={...original,steps:previous.steps,stepOffsets:previous.stepOffsets,muted:previous.muted,solo:previous.solo};
+    project.pads[selected]={...original,steps:previous.steps,stepOffsets:previous.stepOffsets,stepPlaybackMode:previous.stepPlaybackMode,sequenceMode:previous.sequenceMode,sampleNotes:previous.sampleNotes,muted:previous.muted,solo:previous.solo};
     if(hasMedia)await deleteValue(`media:${selected}`);renderPad(selected);renderTrackGrid();renderControls();syncRegionPreview();queueSave();
   });
   $('demo-button').addEventListener('click',()=>{
