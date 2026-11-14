@@ -192,7 +192,7 @@ test('voice projects add bounded transcripts, phrases, vocal layers, melody, tun
   assert.equal(harmony.harmonyInterval,7);
   assert.equal(harmony.notes[0].layer,'harmony');
   const vocal=normaliseProject({voice:{layers:[{id:'vocal/one',name:'Lead',startStep:-2,gain:2,muted:true}]}}).voice.layers[0];
-  assert.deepEqual(vocal,{id:'vocalone',name:'Lead',startStep:0,gain:1.5,muted:true,solo:false,sourceId:'vocalone',pitch:0});
+  assert.deepEqual(vocal,{id:'vocalone',name:'Lead',startStep:0,trimStartSec:0,trimEndSec:null,gain:1.5,muted:true,solo:false,sourceId:'vocalone',pitch:0});
   assert.equal(voice.rap.scheme,'AABB');
   assert.equal(voice.rap.bars[0].length,500);
   assert.equal(voice.rap.flow.length,RAP_BAR_COUNT);
