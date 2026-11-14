@@ -1469,12 +1469,14 @@ function chooseCaptureTarget(target){
   return new Promise(resolve=>{captureTargetResolve=resolve;});
 }
 
-async function openCamera(target=selected) {
+async function openCamera(target=selected,{autoStart=false}={}) {
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return notify('Camera capture needs HTTPS and a supported browser.');
   const destination=await chooseCaptureTarget(target);
   if(destination===null)return;
   const token=cameraSession.begin(destination);
   if(token===null)return;
+  $('camera-take-length').value='manual';
+  $('camera-timing-options').open=false;
   $('camera-title').textContent=`Record on pad ${destination+1}`;
   updateCameraLengthHelp();
   $('camera-status').textContent='Requesting camera and microphone access…';
@@ -1487,6 +1489,7 @@ async function openCamera(target=selected) {
     if(!cameraSession.current(token)){stream.getTracks().forEach(track=>track.stop());return;}
     if(!stream.getVideoTracks().length || !stream.getAudioTracks().length){stream.getTracks().forEach(track=>track.stop());throw new Error('Both camera and microphone are required.');}
     cameraStream=stream;cameraReady();
+    if(autoStart){$('camera-status').textContent='Starting recording…';void captureCamera();}
   } catch(error) {if(cameraSession.current(token)){closeCamera();notify(`Camera unavailable: ${error.message}`);}}
 }
 
@@ -1845,7 +1848,7 @@ function bindControls() {
   $('import-project-button').addEventListener('click',()=>$('project-input').click());
   $('export-button').addEventListener('click',exportPack);
   $('camera-button').addEventListener('click',()=>openCamera(selected));
-  $('pad-record').addEventListener('click',()=>{const target=sourcePad;$('pad-source-dialog').close();if(target!==null)openCamera(target);});
+  $('pad-record').addEventListener('click',()=>{const target=sourcePad;$('pad-source-dialog').close();if(target!==null){void audio.unlock().catch(()=>{});void openCamera(target,{autoStart:true});}});
   $('pad-files').addEventListener('click',()=>{fileTarget=sourcePad;$('pad-source-dialog').close();$('media-input').click();});
   $('pad-demo-bank').addEventListener('click',()=>openDemoSoundBank(sourcePad??selected));
   $('demo-category').addEventListener('change',renderDemoSoundBank);
