@@ -1758,7 +1758,8 @@ try {
   assert.equal(await page.evaluate(()=>window.quickRecordOpened),true,'quick record should invoke the existing camera/microphone path');
   await openScreen('beats');
   if(await page.locator('#track-view').getAttribute('aria-pressed')!=='true')await page.locator('#track-view').click();
-  await page.locator('.track-row[data-pad="0"] .track-note-edit').click();
+  await page.locator('.track-row[data-pad="0"] .track-name').click();
+  await page.locator('#open-focused-notes').click();
   await page.locator('#sample-note-dialog').waitFor({state:'visible'});
   assert.equal(await page.locator('#note-lane-mode').inputValue(),'steps','legacy pad patterns stay in step mode');
   await page.locator('[data-note-pitch="7"][data-note-step="2"]').press('Enter');
