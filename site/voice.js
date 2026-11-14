@@ -517,10 +517,12 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     });
   }
 
-  function probeVideoDuration(file){
+  function probeVideoDuration(file,fallbackDurationSec=null){
     return new Promise((resolve,reject)=>{
-      const video=document.createElement('video'),url=URL.createObjectURL(file),timer=setTimeout(()=>finish(new Error('This video did not report a readable duration.')),10000);
-      const finish=error=>{const duration=video.duration;clearTimeout(timer);video.removeAttribute('src');video.load();URL.revokeObjectURL(url);error?reject(error):resolve(duration);};
+      const fallback=Number.isFinite(fallbackDurationSec)&&fallbackDurationSec>0?clamp(fallbackDurationSec,.05,10800):null;
+      const video=document.createElement('video'),url=URL.createObjectURL(file),timer=setTimeout(()=>finish(new Error('This video did not report a readable duration.')),fallback?1500:10000);
+      let settled=false;
+      const finish=error=>{if(settled)return;settled=true;const duration=video.duration;clearTimeout(timer);video.removeAttribute('src');video.load();URL.revokeObjectURL(url);if(error&&fallback)resolve(fallback);else if(error)reject(error);else resolve(duration);};
       video.preload='metadata';video.onloadedmetadata=()=>Number.isFinite(video.duration)&&video.duration>0?finish():finish(new Error('This video has no readable duration.'));
       video.onerror=()=>finish(new Error('This browser cannot read the selected video format.'));video.src=url;
     });
@@ -785,7 +787,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const mime=findRecorderMime();if(!mime)throw new Error('This browser has no supported local video recording format.');
       const capture=createBoundedRecordingCapture(budget+RECORDING_STORAGE_RESERVE_BYTES,budget);
       const recorder=new MediaRecorder(stream,{mimeType:mime});
-      const take={stream,recorder,capture,startStep,discard:false};videoRecording=take;
+      const take={stream,recorder,capture,startStep,discard:false,startedAt:performance.now()};videoRecording=take;
       recorder.ondataavailable=event=>{
         if(!event.data?.size)return;
         if(!capture.add(event.data)){if(recorder.state!=='inactive')recorder.stop();return;}
@@ -800,7 +802,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
           if(!blob.size)throw new Error('The browser did not capture a video take.');
           const currentBytes=[...getMediaFiles().values(),...vocalFiles.values(),...videoFiles.values()].reduce((sum,file)=>sum+(file?.size||0),0);
           if(currentBytes+blob.size>MAX_MEDIA_BYTES)throw new Error('This take reached the project media limit. Export a pack and remove media before recording another.');
-          const durationSec=await probeVideoDuration(blob);
+          const durationSec=await probeVideoDuration(blob,(performance.now()-take.startedAt)/1000);
           const index=project.voice.videoLayers.length+1,id=`video-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
           const file=new File([blob],`song-video-${Date.now()}.${extensionForMime(type)}`,{type});
           const layer={id,name:`Video take ${index}`,origin:'recording',startStep:take.startStep,trimStartSec:0,trimEndSec:durationSec,durationSec,type};
