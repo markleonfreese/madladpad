@@ -492,6 +492,13 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       :'Recorded and imported audio waveforms will appear here, aligned with your Song bars. Original files stay local.';
   }
 
+  function restoreTrackMoveFocus(type,index,delta){
+    const label=(direction)=>`Move ${type} track ${index+1} ${direction} by one bar`;
+    const preferred=document.querySelector(`[aria-label="${label(delta<0?'earlier':'later')}"]`);
+    const fallback=document.querySelector(`[aria-label="${label(delta<0?'later':'earlier')}"]`);
+    (preferred&&!preferred.disabled?preferred:fallback)?.focus();
+  }
+
   function renderVideoLayers(){
     const host=$('song-video-layers');host.replaceChildren();
     project.voice.videoLayers.forEach((layer,index)=>{
@@ -509,7 +516,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       field('startStep','START STEP',layer.startStep,4096);field('trimStartSec','TRIM IN (S)',layer.trimStartSec,layer.durationSec);
       field('trimEndSec','TRIM OUT (S)',layer.trimEndSec??layer.durationSec,layer.durationSec);
       const moveControls=document.createElement('div');moveControls.className='song-track-move-controls';
-      const moveVideoBar=(delta)=>{layer.startStep=clamp(layer.startStep+delta*16,0,4095);save();renderVideoLayers();renderOverdubTimeline();};
+      const moveVideoBar=(delta)=>{layer.startStep=clamp(layer.startStep+delta*16,0,4095);save();renderVideoLayers();renderOverdubTimeline();restoreTrackMoveFocus('video',index,delta);};
       const moveEarlier=document.createElement('button');moveEarlier.type='button';moveEarlier.className='pill-button';moveEarlier.textContent='− 1 BAR';moveEarlier.disabled=layer.startStep<16;moveEarlier.setAttribute('aria-label',`Move video track ${index+1} earlier by one bar`);moveEarlier.addEventListener('click',()=>moveVideoBar(-1));
       const moveLater=document.createElement('button');moveLater.type='button';moveLater.className='pill-button';moveLater.textContent='+ 1 BAR';moveLater.disabled=layer.startStep>=4080;moveLater.setAttribute('aria-label',`Move video track ${index+1} later by one bar`);moveLater.addEventListener('click',()=>moveVideoBar(1));
       moveControls.append(moveEarlier,moveLater);controls.append(moveControls);
@@ -703,7 +710,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
         } catch (error) { $('voice-overdub-status').textContent = `Could not delete this take: ${error.message}`; }
       });
       const moveControls=document.createElement('div');moveControls.className='song-track-move-controls';
-      const moveAudioBar=(delta)=>{layer.startStep=clamp(layer.startStep+delta*16,0,4095);audio.stopVocalLayer(layer.id);save();renderVocalLayers();};
+      const moveAudioBar=(delta)=>{layer.startStep=clamp(layer.startStep+delta*16,0,4095);audio.stopVocalLayer(layer.id);save();renderVocalLayers();restoreTrackMoveFocus('audio',index,delta);};
       const moveEarlier=document.createElement('button');moveEarlier.type='button';moveEarlier.className='pill-button';moveEarlier.textContent='− 1 BAR';moveEarlier.disabled=layer.startStep<16;moveEarlier.setAttribute('aria-label',`Move audio track ${index+1} earlier by one bar`);moveEarlier.addEventListener('click',()=>moveAudioBar(-1));
       const moveLater=document.createElement('button');moveLater.type='button';moveLater.className='pill-button';moveLater.textContent='+ 1 BAR';moveLater.disabled=layer.startStep>=4080;moveLater.setAttribute('aria-label',`Move audio track ${index+1} later by one bar`);moveLater.addEventListener('click',()=>moveAudioBar(1));
       moveControls.append(moveEarlier,moveLater);
