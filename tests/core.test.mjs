@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withModelReferrerPolicy } from '../site/voice-model-fetch.js';
-import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, normaliseSampleNotes, setSampleNote, sampleNoteAtStep } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, normaliseSampleNotes, setSampleNote, sampleNoteAtStep } from '../site/core.js';
 
 test('Whisper model fetch omits the app referrer only for Hugging Face assets', async () => {
   const calls = [];
@@ -323,4 +323,15 @@ test('melodic notes normalise safely and survive projects and named scenes witho
   assert.deepEqual(project.pads[0].sampleNotes,[{step:1,length:4,semitones:5}]);
   assert.deepEqual(project.scenes[0].pads[0].sampleNotes,project.pads[0].sampleNotes);
   assert.deepEqual(project.pads[0].steps.slice(0,3),[true,false,false],'old step pattern remains intact when using notes');
+});
+
+test('overdub trimming is non-destructive, bounded to the raw audio and independent of transport start', () => {
+  const old=normaliseProject({voice:{layers:[{id:'lead',startStep:18}]}}).voice.layers[0];
+  assert.equal(old.startStep,18);
+  assert.deepEqual(vocalLayerClip(old,3.2),{start:0,end:3.2,duration:3.2});
+  const edited=normaliseProject({voice:{layers:[{id:'lead',startStep:18,trimStartSec:.4,trimEndSec:2.1}]}}).voice.layers[0];
+  assert.equal(edited.startStep,18,'moving the audible crop must not shift its placement');
+  assert.deepEqual(vocalLayerClip(edited,3.2),{start:.4,end:2.1,duration:1.7000000000000002});
+  assert.deepEqual(vocalLayerClip({trimStartSec:-12,trimEndSec:100},2),{start:0,end:2,duration:2});
+  assert.deepEqual(vocalLayerClip({trimStartSec:10,trimEndSec:-4},2),{start:1.99,end:2,duration:.010000000000000009});
 });
