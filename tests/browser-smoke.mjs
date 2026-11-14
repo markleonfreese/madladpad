@@ -1796,14 +1796,17 @@ try {
 
   // Three reusable named beat patterns form a longer Serato-style song.
   if(!(await page.locator('#beat-advanced').evaluate(element=>element.open)))await page.locator('#beat-advanced > summary').click();
+  const songSceneIds=[];
   for(const name of ['A','B','C']){
     await page.locator('#scene-name').fill(name);
     await page.locator('#save-scene').click();
+    songSceneIds.push(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.scenes?.at(-1)?.id));
   }
+  assert.ok(songSceneIds.every(Boolean),'each newly saved song pattern should receive a stable scene id');
   await page.locator('#song-view').click();
   assert.equal(await page.locator('#song-arranger').isVisible(),true,'Song view should expose the arrangement instead of drum-step grid');
-  for(const [scene,bars] of [['A','8'],['B','16'],['C','4'],['A','8']]){
-    await page.locator('#song-scene-select').selectOption({label:scene});
+  for(const [sceneId,bars] of [[songSceneIds[0],'8'],[songSceneIds[1],'16'],[songSceneIds[2],'4'],[songSceneIds[0],'8']]){
+    await page.locator('#song-scene-select').selectOption(sceneId);
     await page.locator('#song-bars').selectOption(bars);
     await page.locator('#song-add-section').click();
   }
@@ -1812,7 +1815,7 @@ try {
   const savedSong=await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1')));
   assert.deepEqual(savedSong.song.clips.map(clip=>clip.bars),[8,16,4,8]);
   assert.deepEqual(savedSong.song.clips.map(clip=>savedSong.scenes.find(scene=>scene.id===clip.sceneId).name),['A','B','C','A']);
-  const firstSceneId=savedSong.scenes[0].id;
+  const firstSceneId=songSceneIds[0];
   assert.equal(savedSong.song.clips[0].sceneId,firstSceneId);
   assert.equal(savedSong.song.clips[3].sceneId,firstSceneId,'returning to A should reuse the saved pattern, not clone its sounds');
   await page.locator('#play-seq').click();
