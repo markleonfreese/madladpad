@@ -1,11 +1,13 @@
 const DATABASE = 'madladpad-local-v1';
 const STORE = 'items';
 const BLOB_RECORD = '__madladpadBlobRecord';
-const RECORDING_RECOVERY_PREFIX = 'recording-recovery:audio:';
+const RECORDING_RECOVERY_PREFIX = 'recording-recovery:';
 
-const recoveryManifestKey = id => `${RECORDING_RECOVERY_PREFIX}${id}:manifest`;
-const recoveryChunkKey = (id, index) => `${RECORDING_RECOVERY_PREFIX}${id}:chunk:${index}`;
+const recoveryPrefix = (kind,id) => `${RECORDING_RECOVERY_PREFIX}${kind}:${id}:`;
+const recoveryManifestKey = (kind,id) => `${recoveryPrefix(kind,id)}manifest`;
+const recoveryChunkKey = (kind,id,index) => `${recoveryPrefix(kind,id)}chunk:${index}`;
 const validRecoveryId = id => /^[a-zA-Z0-9_-]{1,64}$/.test(id);
+const validRecoveryKind = kind => kind==='audio'||kind==='video';
 
 // WebKit can abort IndexedDB writes for Blob/File values with an UnknownError.
 // Store their bytes as a structured-cloneable typed array and restore the
@@ -77,20 +79,24 @@ export const deleteValue = key => transaction('readwrite', store => store.delete
 // Persist microphone chunks as they arrive so an interrupted tab can offer a
 // recoverable partial take. Chunks and the sequence counter are committed
 // together; a reload never mistakes a missing chunk for a complete take.
-export async function beginAudioRecordingRecovery(id, metadata) {
-  if (!validRecoveryId(id)) throw new Error('Invalid recording recovery id');
+async function beginRecordingRecovery(kind,id,metadata) {
+  if (!validRecoveryKind(kind)||!validRecoveryId(id)) throw new Error('Invalid recording recovery id');
+  const mediaType=kind==='audio'?'audio/':'video/';
   const manifest = {
-    id, kind:'audio', version:1, createdAt:Date.now(),
+    id, kind, version:1, createdAt:Date.now(),
     startStep:Number.isInteger(metadata?.startStep)?Math.max(0,metadata.startStep):0,
-    mime:typeof metadata?.mime==='string'&&metadata.mime.startsWith('audio/')?metadata.mime:'audio/webm',
-    chunks:0, bytes:0
+    mime:typeof metadata?.mime==='string'&&metadata.mime.startsWith(mediaType)?metadata.mime:`${mediaType}webm`,
+    chunks:0, bytes:0, durationSec:0
   };
-  await putValue(recoveryManifestKey(id), manifest);
+  await putValue(recoveryManifestKey(kind,id), manifest);
   return manifest;
 }
 
-export async function appendAudioRecordingRecoveryChunk(id, chunk) {
-  if (!validRecoveryId(id) || !chunk?.size) throw new Error('Invalid audio recovery chunk');
+export const beginAudioRecordingRecovery=(id,metadata)=>beginRecordingRecovery('audio',id,metadata);
+export const beginVideoRecordingRecovery=(id,metadata)=>beginRecordingRecovery('video',id,metadata);
+
+async function appendRecordingRecoveryChunk(kind,id,chunk,durationSec=null) {
+  if (!validRecoveryKind(kind)||!validRecoveryId(id)||!chunk?.size) throw new Error(`Invalid ${kind} recovery chunk`);
   const encoded = await encodeStoredValue(chunk);
   const db = await openDb();
   try {
@@ -101,23 +107,29 @@ export async function appendAudioRecordingRecoveryChunk(id, chunk) {
       tx.oncomplete = () => resolve();
       tx.onerror = event => reject(tx.error || storageError(event, 'Audio recovery chunk save failed.'));
       tx.onabort = event => reject(failure || tx.error || storageError(event, 'Audio recovery chunk save aborted.'));
-      const request = store.get(recoveryManifestKey(id));
-      request.onerror = () => { failure = request.error || new Error('Audio recovery record is missing.'); };
+      const request = store.get(recoveryManifestKey(kind,id));
+      request.onerror = () => { failure = request.error || new Error(`${kind} recovery record is missing.`); };
       request.onsuccess = () => {
         const manifest = request.result;
-        if (!manifest || manifest.kind!=='audio' || manifest.version!==1) {
-          failure = new Error('Audio recovery record is missing.');
+        if (!manifest || manifest.kind!==kind || manifest.version!==1) {
+          failure = new Error(`${kind} recovery record is missing.`);
           tx.abort();
           return;
         }
-        store.put(encoded, recoveryChunkKey(id, manifest.chunks));
-        store.put({...manifest,chunks:manifest.chunks+1,bytes:manifest.bytes+chunk.size}, recoveryManifestKey(id));
+        const duration=Number.isFinite(durationSec)&&durationSec>0?Math.max(manifest.durationSec||0,durationSec):manifest.durationSec||0;
+        store.put(encoded, recoveryChunkKey(kind,id,manifest.chunks));
+        store.put({...manifest,chunks:manifest.chunks+1,bytes:manifest.bytes+chunk.size,durationSec:duration}, recoveryManifestKey(kind,id));
       };
     });
   } finally { db.close(); }
 }
 
-export async function listInterruptedAudioRecordings() {
+export const appendAudioRecordingRecoveryChunk=(id,chunk)=>appendRecordingRecoveryChunk('audio',id,chunk);
+export const appendVideoRecordingRecoveryChunk=(id,chunk,durationSec)=>appendRecordingRecoveryChunk('video',id,chunk,durationSec);
+
+async function listInterruptedRecordings(kind) {
+  if(!validRecoveryKind(kind))throw new Error('Invalid recording recovery kind');
+  const prefix=`${RECORDING_RECOVERY_PREFIX}${kind}:`;
   const entries=await new Promise((resolve,reject)=>{
     openDb().then(db=>{
       const values=new Map();
@@ -128,16 +140,16 @@ export async function listInterruptedAudioRecordings() {
       const store=tx.objectStore(STORE),keys=store.getAllKeys();
       keys.onerror=()=>tx.abort();
       keys.onsuccess=()=>{
-        const ids=keys.result.filter(key=>typeof key==='string'&&key.startsWith(RECORDING_RECOVERY_PREFIX)&&key.endsWith(':manifest'))
-          .map(key=>key.slice(RECORDING_RECOVERY_PREFIX.length,-':manifest'.length)).filter(validRecoveryId);
+        const ids=keys.result.filter(key=>typeof key==='string'&&key.startsWith(prefix)&&key.endsWith(':manifest'))
+          .map(key=>key.slice(prefix.length,-':manifest'.length)).filter(validRecoveryId);
         for(const id of ids){
-          const manifestKey=recoveryManifestKey(id),manifestRequest=store.get(manifestKey);
+          const manifestKey=recoveryManifestKey(kind,id),manifestRequest=store.get(manifestKey);
           manifestRequest.onsuccess=()=>{
             const manifest=manifestRequest.result;
-            if(!manifest||manifest.kind!=='audio'||manifest.version!==1)return;
+            if(!manifest||manifest.kind!==kind||manifest.version!==1)return;
             values.set(manifestKey,manifest);
             for(let index=0;index<manifest.chunks;index++){
-              const key=recoveryChunkKey(id,index),chunkRequest=store.get(key);
+              const key=recoveryChunkKey(kind,id,index),chunkRequest=store.get(key);
               chunkRequest.onsuccess=()=>{if(chunkRequest.result)values.set(key,chunkRequest.result);};
             }
           };
@@ -145,15 +157,15 @@ export async function listInterruptedAudioRecordings() {
       };
     }).catch(reject);
   });
-  const ids=[...entries.keys()].filter(key=>key.endsWith(':manifest')).map(key=>key.slice(RECORDING_RECOVERY_PREFIX.length,-':manifest'.length));
+  const ids=[...entries.keys()].filter(key=>key.startsWith(prefix)&&key.endsWith(':manifest')).map(key=>key.slice(prefix.length,-':manifest'.length));
   const recoveries = [];
   for (const id of ids) {
     if (!validRecoveryId(id)) continue;
-    const manifest = decodeStoredValue(entries.get(recoveryManifestKey(id)));
-    if (!manifest || manifest.kind!=='audio' || manifest.version!==1) continue;
+    const manifest = decodeStoredValue(entries.get(recoveryManifestKey(kind,id)));
+    if (!manifest || manifest.kind!==kind || manifest.version!==1) continue;
     const chunks=[];
     for (let index=0;index<manifest.chunks;index++) {
-      const chunk=decodeStoredValue(entries.get(recoveryChunkKey(id,index)));
+      const chunk=decodeStoredValue(entries.get(recoveryChunkKey(kind,id,index)));
       if (chunk?.size) chunks.push(chunk);
     }
     const blob=new Blob(chunks,{type:manifest.mime});
@@ -162,27 +174,33 @@ export async function listInterruptedAudioRecordings() {
   return recoveries.sort((a,b)=>b.createdAt-a.createdAt);
 }
 
-async function removeAudioRecordingRecoveryInStore(store, id) {
-  const prefix = `${RECORDING_RECOVERY_PREFIX}${id}:`;
+export const listInterruptedAudioRecordings=()=>listInterruptedRecordings('audio');
+export const listInterruptedVideoRecordings=()=>listInterruptedRecordings('video');
+
+async function removeRecordingRecoveryInStore(store, kind, id) {
+  const prefix = recoveryPrefix(kind,id);
   const request = store.getAllKeys();
   request.onsuccess = () => {
     for (const key of request.result) if (typeof key==='string'&&key.startsWith(prefix)) store.delete(key);
   };
 }
 
-export async function deleteInterruptedAudioRecording(id) {
-  if (!validRecoveryId(id)) throw new Error('Invalid recording recovery id');
+async function deleteInterruptedRecording(kind,id) {
+  if (!validRecoveryKind(kind)||!validRecoveryId(id)) throw new Error('Invalid recording recovery id');
   const db = await openDb();
   try {
     await new Promise((resolve,reject)=>{
       const tx=db.transaction(STORE,'readwrite');
       tx.oncomplete=()=>resolve();
-      tx.onerror=event=>reject(tx.error||storageError(event,'Audio recovery delete failed.'));
-      tx.onabort=event=>reject(tx.error||storageError(event,'Audio recovery delete aborted.'));
-      removeAudioRecordingRecoveryInStore(tx.objectStore(STORE),id);
+      tx.onerror=event=>reject(tx.error||storageError(event,`${kind} recovery delete failed.`));
+      tx.onabort=event=>reject(tx.error||storageError(event,`${kind} recovery delete aborted.`));
+      removeRecordingRecoveryInStore(tx.objectStore(STORE),kind,id);
     });
   } finally { db.close(); }
 }
+
+export const deleteInterruptedAudioRecording=id=>deleteInterruptedRecording('audio',id);
+export const deleteInterruptedVideoRecording=id=>deleteInterruptedRecording('video',id);
 
 // Commit project metadata and all 16 media slots together, or preserve the old pack.
 export async function replaceProjectMedia(project, media, voiceMedia = null, videoMedia = null) {
@@ -262,7 +280,7 @@ export async function saveVoiceLayer(id, file, project, {recoveryId=null}={}) {
         else {
           const keys=store.getAllKeys();
           keys.onsuccess=()=>{
-            const prefix=`${RECORDING_RECOVERY_PREFIX}${recoveryId}:`;
+            const prefix=recoveryPrefix('audio',recoveryId);
             keys.result.filter(key=>typeof key==='string'&&key.startsWith(prefix)).forEach(key=>store.delete(key));
             save();
           };
@@ -288,8 +306,9 @@ export async function deleteVoiceLayer(id, project) {
   } finally { db.close(); }
 }
 
-export async function saveSongVideoLayer(id, file, project) {
+export async function saveSongVideoLayer(id, file, project, {recoveryId=null}={}) {
   if (!/^[a-zA-Z0-9_-]{1,64}$/.test(id) || !file?.type?.startsWith('video/')) throw new Error('Invalid Song video track');
+  if (recoveryId!==null&&!validRecoveryId(recoveryId)) throw new Error('Invalid recording recovery id');
   const encodedFile = await encodeStoredValue(file);
   const db = await openDb();
   try {
@@ -298,7 +317,19 @@ export async function saveSongVideoLayer(id, file, project) {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error || new Error('Video track save failed'));
       tx.onabort = () => reject(tx.error || new Error('Video track save aborted'));
-      try { const store = tx.objectStore(STORE); store.put(encodedFile, `video-layer:${id}`); store.put(project, 'project'); }
+      try {
+        const store=tx.objectStore(STORE);
+        const save=()=>{store.put(encodedFile,`video-layer:${id}`);store.put(project,'project');};
+        if(recoveryId===null)save();
+        else{
+          const keys=store.getAllKeys();
+          keys.onsuccess=()=>{
+            const prefix=recoveryPrefix('video',recoveryId);
+            keys.result.filter(key=>typeof key==='string'&&key.startsWith(prefix)).forEach(key=>store.delete(key));
+            save();
+          };
+        }
+      }
       catch (error) { tx.abort(); reject(error); }
     });
   } finally { db.close(); }
