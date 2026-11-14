@@ -1051,6 +1051,7 @@ function renderScenes(){
   $('launch-scene').disabled=selectedSceneIndex<0;
   $('launch-scene').textContent=transportTimer?'QUEUE NEXT BAR':'LOAD SCENE';
   $('delete-scene').disabled=selectedSceneIndex<0;
+  renderSong();
 }
 
 function applyScene(scene,atTime=audio.context.currentTime){
@@ -1085,6 +1086,7 @@ function updateScene(){
 function deleteScene(){
   if(selectedSceneIndex<0)return;
   const scene=project.scenes[selectedSceneIndex];
+  if(project.song.clips.some(clip=>clip.sceneId===scene.id))return notify(`“${scene.name}” is used in the song. Remove its sections before deleting the pattern.`);
   if(!confirm(`Delete the saved scene “${scene.name}”?`))return;
   project.scenes.splice(selectedSceneIndex,1);
   if(pendingScene?.scene.name===scene.name)pendingScene=null;
@@ -1093,6 +1095,7 @@ function deleteScene(){
 
 function launchScene(){
   if(selectedSceneIndex<0)return;
+  if(transportTimer&&sequenceView==='song')return notify('Stop song playback before launching a standalone scene.');
   const scene=JSON.parse(JSON.stringify(project.scenes[selectedSceneIndex]));
   if(transportTimer){
     const earliest=Math.max(audio.context.currentTime+.14,nextStepTime);
@@ -2062,6 +2065,16 @@ function bindControls() {
   $('update-scene').addEventListener('click',updateScene);
   $('launch-scene').addEventListener('click',launchScene);
   $('delete-scene').addEventListener('click',deleteScene);
+  $('pattern-view').addEventListener('click',()=>setSequenceView('patterns'));
+  $('song-view').addEventListener('click',()=>setSequenceView('song'));
+  $('song-back-to-patterns').addEventListener('click',()=>{setSequenceView('patterns');$('beat-advanced').open=true;});
+  $('song-add-section').addEventListener('click',()=>{
+    const sceneId=$('song-scene-select').value,scene=project.scenes.find(item=>item.id===sceneId);
+    if(!scene)return notify('Save a pattern first, then add it to the song.');
+    const bars=Math.round(clamp($('song-bars').value,1,64));
+    if(project.song.clips.length>=MAX_SONG_CLIPS||songTotalBars(project.song)+bars>MAX_SONG_BARS)return notify('Song capacity reached. Reduce bar lengths before adding another section.');
+    editSong(clips=>clips.push({id:'song-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),sceneId,bars}));
+  });
   $('track-view').addEventListener('click',()=>{if(compactSequenceOverview()&&trackGridVisible){openSequenceFocus(selected);return;}setTrackView(!trackGridVisible);});
   $('sequence-focus-close').addEventListener('click',closeSequenceFocus);
   $('open-focused-notes').addEventListener('click',()=>openSampleNoteEditor(selected));
