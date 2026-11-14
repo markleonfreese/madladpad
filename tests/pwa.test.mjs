@@ -38,10 +38,10 @@ test('offline shell and all locally referenced ES modules exist', () => {
   assert.match(css,/font-family:'DM Mono'.*url\('\/fonts\/dm-mono-400-latin\.woff2'\)/,'DM Mono must use its self-hosted Latin font');
   assert.ok(sw.includes("caches.match('/')"),
     'offline navigation must fall back to the canonical root route used by Workers Static Assets');
-  assert.match(sw,/const CACHE = 'madladpad-shell-v22'/,'the write-through cache fix must activate a fresh offline shell');
+  assert.match(sw,/const CACHE = 'madladpad-shell-v23'/,'new track and editor code must activate a fresh offline shell');
 });
 
-test('v20 install precaches the updated modules, local fonts and licenses before taking control', async () => {
+test('v23 install precaches the updated modules, local fonts and licenses before taking control', async () => {
   const sw=readFileSync(join(site,'sw.js'),'utf8');
   const handlers=new Map();let cacheName=null,precache=[],skipped=false;
   const context={
@@ -53,7 +53,7 @@ test('v20 install precaches the updated modules, local fonts and licenses before
   let installation;
   handlers.get('install')({waitUntil:promise=>{installation=promise;}});
   await installation;
-  assert.equal(cacheName,'madladpad-shell-v22');
+  assert.equal(cacheName,'madladpad-shell-v23');
   assert.ok(precache.includes('/audio.js'),'the replacement offline shell must include the fixed audio module');
   assert.ok(precache.includes('/fonts/dm-sans-variable-latin.woff2')&&precache.includes('/fonts/dm-mono-400-latin.woff2'),'the offline shell should include self-hosted UI fonts');
   assert.ok(precache.includes('/licenses/OFL-DM-Sans.txt')&&precache.includes('/licenses/OFL-DM-Mono.txt'),'the offline shell should include font license texts');
@@ -101,7 +101,7 @@ test('network-first asset response waits for durable cache update and tolerates 
 test('service worker activation removes stale app shells without deleting the Whisper model cache', async () => {
   const sw = readFileSync(join(site, 'sw.js'), 'utf8');
   const handlers = new Map();
-  const cacheNames = ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13', 'madladpad-shell-v14', 'madladpad-shell-v15', 'madladpad-shell-v16', 'madladpad-shell-v17', 'madladpad-shell-v18', 'madladpad-shell-v19', 'madladpad-shell-v20', 'madladpad-shell-v21', 'madladpad-shell-v22', 'transformers-cache', 'another-app-cache'];
+  const cacheNames = ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13', 'madladpad-shell-v14', 'madladpad-shell-v15', 'madladpad-shell-v16', 'madladpad-shell-v17', 'madladpad-shell-v18', 'madladpad-shell-v19', 'madladpad-shell-v20', 'madladpad-shell-v21', 'madladpad-shell-v22', 'madladpad-shell-v23', 'transformers-cache', 'another-app-cache'];
   const deleted = [];
   const context = {
     self: {
@@ -120,7 +120,7 @@ test('service worker activation removes stale app shells without deleting the Wh
   let activation;
   handlers.get('activate')({ waitUntil: promise => { activation = promise; } });
   await activation;
-  assert.deepEqual(deleted, ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13', 'madladpad-shell-v14', 'madladpad-shell-v15', 'madladpad-shell-v16', 'madladpad-shell-v17', 'madladpad-shell-v18', 'madladpad-shell-v19', 'madladpad-shell-v20', 'madladpad-shell-v21']);
+  assert.deepEqual(deleted, ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13', 'madladpad-shell-v14', 'madladpad-shell-v15', 'madladpad-shell-v16', 'madladpad-shell-v17', 'madladpad-shell-v18', 'madladpad-shell-v19', 'madladpad-shell-v20', 'madladpad-shell-v21', 'madladpad-shell-v22']);
 });
 
 test('Pitch loading copy does not claim the implemented processor is unavailable', () => {

@@ -130,16 +130,18 @@ function renderWords(project, save, transcript = project.voice.transcripts.at(-1
   const updateSelectionTools = () => {
     const selected = transcript.words.filter(word => word.selected).length;
     $('voice-selection-status').textContent = selected ? `${selected} of ${transcript.words.length} words selected.` : 'No words selected.';
-    $('voice-select-all').disabled = selected === transcript.words.length;
-    $('voice-clear-selection').disabled = selected === 0;
+    $('voice-select-all').setAttribute('aria-disabled', String(selected === transcript.words.length));
+    $('voice-clear-selection').setAttribute('aria-disabled', String(selected === 0));
     updatePhraseButton();
   };
   $('voice-select-all').onclick = () => {
+    if ($('voice-select-all').getAttribute('aria-disabled') === 'true') return;
     transcript.words.forEach(word => { word.selected = true; });
     host.querySelectorAll('input[type="checkbox"]').forEach(checkbox => { checkbox.checked = true; });
     save(); updateSelectionTools();
   };
   $('voice-clear-selection').onclick = () => {
+    if ($('voice-clear-selection').getAttribute('aria-disabled') === 'true') return;
     transcript.words.forEach(word => { word.selected = false; });
     host.querySelectorAll('input[type="checkbox"]').forEach(checkbox => { checkbox.checked = false; });
     save(); updateSelectionTools();
@@ -394,8 +396,8 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     const state = transportState();
     $('voice-overdub-record').disabled = !state.running || Boolean(vocalRecording) || project.voice.layers.length >= MAX_VOCAL_LAYERS;
     $('voice-overdub-stop').hidden = !vocalRecording;
-    if (project.voice.layers.length >= MAX_VOCAL_LAYERS && !vocalRecording) $('voice-overdub-status').textContent = `The ${MAX_VOCAL_LAYERS} vocal-layer limit is full. Export a project pack before deleting a raw take.`;
-    else if (!state.running && !vocalRecording && !$('voice-overdub-status').textContent) $('voice-overdub-status').textContent = 'Start the sequencer to record a vocal layer.';
+    if (project.voice.layers.length >= MAX_VOCAL_LAYERS && !vocalRecording) $('voice-overdub-status').textContent = `The ${MAX_VOCAL_LAYERS} audio-track limit is full. Export a project pack before deleting a local track.`;
+    else if (!state.running && !vocalRecording && !$('voice-overdub-status').textContent) $('voice-overdub-status').textContent = 'Start the sequencer to record an audio track.';
   };
 
   function renderOverdubTimeline(){
@@ -461,31 +463,31 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     }
     $('overdub-timeline-status').textContent=project.voice.layers.length
       ?'Bars align with the Song arrangement when one is present. Green is the audible trimmed waveform; the gold line marks its end. Drag the timeline sideways on a phone. Changes to start or trim take effect on the next loop start.'
-      :'Recorded vocal waveforms will appear here, aligned with your Sequence bars. Raw files are kept locally.';
+      :'Recorded and imported audio waveforms will appear here, aligned with your Song bars. Original files stay local.';
   }
 
   function renderVocalLayers() {
     const host = $('voice-overdub-layers'); host.replaceChildren();
     project.voice.layers.forEach((layer, index) => {
       const row = document.createElement('div'); row.className = 'vocal-layer'; row.dataset.layer = layer.id;
-      const name = document.createElement('input'); name.className = 'vocal-layer-name'; name.value = layer.name; name.maxLength = 48; name.setAttribute('aria-label', `Vocal layer ${index + 1} name`);
+      const name = document.createElement('input'); name.className = 'vocal-layer-name'; name.value = layer.name; name.maxLength = 48; name.setAttribute('aria-label', `Audio track ${index + 1} name`);
       name.addEventListener('change', () => { layer.name = name.value.trim() || `Vocal take ${index + 1}`; save(); });
       const offset = document.createElement('label'); offset.className = 'vocal-layer-start'; offset.append(document.createTextNode('START STEP'));
-      const offsetInput = document.createElement('input'); offsetInput.type = 'number'; offsetInput.min = '0'; offsetInput.max = '4096'; offsetInput.step = '1'; offsetInput.value = String(layer.startStep); offsetInput.setAttribute('aria-label', `Vocal layer ${index + 1} start step`);
+      const offsetInput = document.createElement('input'); offsetInput.type = 'number'; offsetInput.min = '0'; offsetInput.max = '4096'; offsetInput.step = '1'; offsetInput.value = String(layer.startStep); offsetInput.setAttribute('aria-label', `Audio track ${index + 1} start step`);
       offsetInput.addEventListener('change', () => { layer.startStep = Math.round(clamp(offsetInput.value, 0, 4096)); save(); renderVocalLayers(); });
       offset.append(offsetInput);
       const gain = document.createElement('label'); gain.className = 'vocal-layer-gain'; gain.append(document.createTextNode('GAIN'));
-      const slider = document.createElement('input'); slider.type = 'range'; slider.min = '0'; slider.max = '1.5'; slider.step = '.01'; slider.value = String(layer.gain); slider.setAttribute('aria-label', `Vocal layer ${index + 1} gain`);
+      const slider = document.createElement('input'); slider.type = 'range'; slider.min = '0'; slider.max = '1.5'; slider.step = '.01'; slider.value = String(layer.gain); slider.setAttribute('aria-label', `Audio track ${index + 1} gain`);
       const output = document.createElement('output'); output.textContent = `${Math.round(layer.gain * 100)}%`;
       slider.addEventListener('input', () => { layer.gain = clamp(slider.value, 0, 1.5); output.textContent = `${Math.round(layer.gain * 100)}%`; audio.updateVocalLayerStates(project.voice.layers); save(); });
       gain.append(slider, output);
       const control = (text, label, active, action) => { const button = document.createElement('button'); button.type = 'button'; button.className = `pill-button${active ? ' active' : ''}`; button.textContent = text; button.setAttribute('aria-label', label); button.setAttribute('aria-pressed', String(active)); button.addEventListener('click', action); return button; };
-      const mute = control(layer.muted ? 'UNMUTE' : 'MUTE', `${layer.muted ? 'Unmute' : 'Mute'} vocal layer ${index + 1}`, layer.muted, () => { layer.muted = !layer.muted; audio.updateVocalLayerStates(project.voice.layers); save(); renderVocalLayers(); });
-      const solo = control(layer.solo ? 'SOLO ON' : 'SOLO', `${layer.solo ? 'Disable solo' : 'Solo'} vocal layer ${index + 1}`, layer.solo, () => { layer.solo = !layer.solo; audio.updateVocalLayerStates(project.voice.layers); save(); renderVocalLayers(); });
-      const preview = control('▶', `Preview vocal layer ${index + 1}`, false, async () => { await audio.unlock(); if (!audio.previewVocalLayer(layer.id, layer.gain,layer.pitch,layer)) $('voice-overdub-status').textContent = 'Pitch processor or audio decoder unavailable for this layer.'; });
+      const mute = control(layer.muted ? 'UNMUTE' : 'MUTE', `${layer.muted ? 'Unmute' : 'Mute'} audio track ${index + 1}`, layer.muted, () => { layer.muted = !layer.muted; audio.updateVocalLayerStates(project.voice.layers); save(); renderVocalLayers(); });
+      const solo = control(layer.solo ? 'SOLO ON' : 'SOLO', `${layer.solo ? 'Disable solo' : 'Solo'} audio track ${index + 1}`, layer.solo, () => { layer.solo = !layer.solo; audio.updateVocalLayerStates(project.voice.layers); save(); renderVocalLayers(); });
+      const preview = control('▶', `Preview audio track ${index + 1}`, false, async () => { await audio.unlock(); if (!audio.previewVocalLayer(layer.id, layer.gain,layer.pitch,layer)) $('voice-overdub-status').textContent = 'Pitch processor or audio decoder unavailable for this track.'; });
       preview.disabled = !audio.vocalSources.get(layer.id)?.buffer;
       const pitch=document.createElement('label');pitch.className='vocal-layer-pitch';pitch.append(document.createTextNode('PITCH (ST)'));
-      const pitchInput=document.createElement('input');pitchInput.type='number';pitchInput.min='-12';pitchInput.max='12';pitchInput.step='.1';pitchInput.value=String(layer.pitch||0);pitchInput.setAttribute('aria-label',`Pitch for vocal layer ${index+1}`);
+      const pitchInput=document.createElement('input');pitchInput.type='number';pitchInput.min='-12';pitchInput.max='12';pitchInput.step='.1';pitchInput.value=String(layer.pitch||0);pitchInput.setAttribute('aria-label',`Pitch for audio track ${index+1}`);
       pitchInput.addEventListener('change',()=>{layer.pitch=clamp(pitchInput.value,-12,12);save();renderVocalLayers();});pitch.append(pitchInput);
 
       const rawDuration=audio.vocalSources.get(layer.id)?.buffer?.duration||0;
@@ -493,7 +495,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const trimField=(key,labelText,value)=>{
         const label=document.createElement('label');label.className='vocal-layer-trim';label.append(document.createTextNode(labelText));
         const input=document.createElement('input');input.type='number';input.min='0';input.max=String(rawDuration);input.step='.05';input.value=String(Number(value.toFixed(2)));
-        input.disabled=!rawDuration;input.setAttribute('aria-label',labelText+' for vocal layer '+(index+1)+' in seconds');
+        input.disabled=!rawDuration;input.setAttribute('aria-label',labelText+' for audio track '+(index+1)+' in seconds');
         input.addEventListener('change',()=>{
           const n=clamp(input.value,0,rawDuration);
           if(key==='trimStartSec'){layer.trimStartSec=Math.min(n,Math.max(0,vocalLayerClip(layer,rawDuration).end-.01));}
@@ -504,20 +506,21 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       };
       const trimFrom=trimField('trimStartSec','TRIM START (S)',crop.start);
       const trimTo=trimField('trimEndSec','TRIM END (S)',crop.end);
-      const remove = control('DELETE', `Delete vocal layer ${index + 1} and its raw take`, false, async () => {
-        if (!confirm(`Delete ${layer.name} and its saved raw recording?`)) return;
+      const remove = control('DELETE', `Delete audio track ${index + 1} and its saved local audio file`, false, async () => {
+        if (!confirm(`Delete ${layer.name} and its saved local audio file?`)) return;
         const nextLayers = project.voice.layers.filter(item => item.id !== layer.id);
         try {
           await deleteVoiceLayer(layer.id, {...project, voice:{...project.voice, layers:nextLayers}});
           audio.stopVocalLayer(layer.id); audio.vocalSources.delete(layer.id); vocalFiles.delete(layer.id);
           project.voice.layers = nextLayers; save(); renderVocalLayers(); updateOverdubControls();
-          $('voice-overdub-status').textContent = 'Vocal layer and local raw take deleted.';
+          $('voice-overdub-status').textContent = 'Audio track and its local source file deleted.';
         } catch (error) { $('voice-overdub-status').textContent = `Could not delete this take: ${error.message}`; }
       });
       const meta = document.createElement('small'); meta.className = 'vocal-layer-meta';
       const bar = Math.floor(layer.startStep / 16) + 1, step = layer.startStep % 16;
       const audibleEnd=layer.startStep+crop.duration/(60/clamp(project.bpm,40,240)/4);
-      meta.textContent = `${vocalFiles.has(layer.id) ? 'Raw take saved locally' : 'Raw take file missing'} · starts at bar ${bar}, step ${step + 1} · ends near bar ${Math.floor(audibleEnd/16)+1}, step ${Math.floor(audibleEnd%16)+1} · ${crop.duration.toFixed(2)} s audible (original retained)`;
+      const sourceLabel = layer.origin === 'import' ? 'Imported audio saved locally' : layer.origin === 'harmony' ? 'Harmony source retained locally' : 'Raw take saved locally';
+      meta.textContent = `${vocalFiles.has(layer.id) ? sourceLabel : 'Local audio file missing'} · starts at bar ${bar}, step ${step + 1} · ends near bar ${Math.floor(audibleEnd/16)+1}, step ${Math.floor(audibleEnd%16)+1} · ${crop.duration.toFixed(2)} s audible (original retained)`;
       row.append(name, offset, trimFrom, trimTo, gain, pitch, mute, solo, preview, remove, meta); host.append(row);
     });
     renderOverdubTimeline();
@@ -603,7 +606,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
           if (usedBytes + blob.size > MAX_MEDIA_BYTES) throw new Error('This take would exceed the 80 MB local project media limit. Export a pack and remove unused media before recording more.');
           const index = project.voice.layers.length + 1, id = `vocal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
           const file = new File([blob], `vocal-take-${Date.now()}.${extensionForAudioMime(type)}`, {type});
-          const layer = {id, name:`Vocal take ${index}`, startStep:take.startStep, gain:1, muted:false, solo:false};
+          const layer = {id, name:`Vocal take ${index}`, origin:'recording', startStep:take.startStep, gain:1, muted:false, solo:false};
           const nextLayers = [...project.voice.layers, layer];
           await saveVoiceLayer(id, file, {...project, voice:{...project.voice, layers:nextLayers}});
           project.voice.layers.push(layer); vocalFiles.set(id, file);
@@ -628,17 +631,49 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       $('voice-overdub-status').textContent = `Could not start local vocal recording: ${error.message}`;
     }
   });
+  $('overdub-import-audio').addEventListener('click', () => {
+    if (project.voice.layers.length >= MAX_VOCAL_LAYERS) { updateOverdubControls(); return; }
+    $('overdub-audio-input').click();
+  });
+  $('overdub-audio-input').addEventListener('change', async event => {
+    const input = event.currentTarget, file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('audio/')) { $('voice-overdub-status').textContent = 'Choose an audio file for a Song track.'; return; }
+    if (project.voice.layers.length >= MAX_VOCAL_LAYERS) { updateOverdubControls(); return; }
+    $('overdub-import-audio').disabled = true;
+    $('voice-overdub-status').textContent = 'Checking local storage and decoding the audio track…';
+    let id = null;
+    try {
+      const usedBytes = [...getMediaFiles().values(), ...vocalFiles.values()].reduce((sum, item) => sum + (item?.size || 0), 0);
+      let storageEstimate = null;
+      try { storageEstimate = await navigator.storage?.estimate?.(); } catch { /* the app media limit remains a fallback */ }
+      if (file.size > localRecordingBudget(usedBytes, storageEstimate)) throw new Error('This file is larger than the safe local storage available. Export a project pack and remove unused media, or free space on this device.');
+      id = `audio-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+      const playable = await audio.loadVocalLayer(id, file);
+      if (!playable) throw new Error('This browser could not decode the selected audio. Choose a supported audio file.');
+      const baseName = file.name.replace(/\.[^.]+$/, '').trim().slice(0,48) || `Audio track ${project.voice.layers.length + 1}`;
+      const layer = {id,name:baseName,origin:'import',startStep:0,gain:1,muted:false,solo:false};
+      const nextLayers = [...project.voice.layers,layer];
+      await saveVoiceLayer(id,file,{...project,voice:{...project.voice,layers:nextLayers}});
+      project.voice.layers.push(layer);vocalFiles.set(id,file);save();renderVocalLayers();
+      $('voice-overdub-status').textContent = `Imported “${baseName}” as a local audio track at bar 1. Change START STEP to place it elsewhere in the Song.`;
+    } catch (error) {
+      if (id) audio.vocalSources.delete(id);
+      $('voice-overdub-status').textContent = `Could not import audio track: ${error.message}`;
+    } finally { $('overdub-import-audio').disabled = false; }
+  });
   $('voice-overdub-stop').addEventListener('click', stopOverdub);
   $('vocal-add-harmony').addEventListener('click',async()=>{
     if(!audio.pitchReady)return notify('The local pitch processor is unavailable; a harmony would not stay in tune and time on this device.');
-    if(project.voice.layers.length>=MAX_VOCAL_LAYERS)return notify('The vocal layer limit is full.');
+    if(project.voice.layers.length>=MAX_VOCAL_LAYERS)return notify('The audio-track limit is full.');
     const source=project.voice.layers.slice().reverse().find(layer=>layer.sourceId===layer.id||!layer.sourceId);
     const raw=source&&vocalFiles.get(source.id);
     if(!raw)return notify('Record and save a raw microphone take before adding an automatic harmony.');
     const usedBytes=[...getMediaFiles().values(),...vocalFiles.values()].reduce((sum,file)=>sum+(file?.size||0),0);
     if(usedBytes+raw.size>MAX_MEDIA_BYTES)return notify('Not enough local project media space to preserve another editable harmony layer.');
     const interval=Number($('vocal-harmony-interval').value),id=`harmony-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
-    const layer={id,name:`${source.name} · harmony ${interval>0?'+':''}${interval}`,sourceId:source.id,startStep:source.startStep,gain:.6,muted:false,solo:false,pitch:interval};
+    const layer={id,name:`${source.name} · harmony ${interval>0?'+':''}${interval}`,origin:'harmony',sourceId:source.id,startStep:source.startStep,gain:.6,muted:false,solo:false,pitch:interval};
     const file=new File([raw],`harmony-source-${Date.now()}.${extensionForAudioMime(raw.type)}`,{type:raw.type});
     try{
       await saveVoiceLayer(id,file,{...project,voice:{...project.voice,layers:[...project.voice.layers,layer]}});

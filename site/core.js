@@ -121,6 +121,7 @@ function normaliseVoice(value) {
   const layers = Array.isArray(source.layers) ? source.layers.slice(0, MAX_VOCAL_LAYERS).map((layer, index) => ({
     id: String(layer?.id || `vocal-${index + 1}`).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || `vocal-${index + 1}`,
     name: String(layer?.name || `Vocal take ${index + 1}`).slice(0, 48),
+    origin: ['recording','import','harmony'].includes(layer?.origin) ? layer.origin : (layer?.sourceId && layer.sourceId !== layer.id ? 'harmony' : 'recording'),
     startStep: clamp(layer?.startStep ?? 0, 0, 4096),
     trimStartSec: clamp(layer?.trimStartSec ?? 0, 0, 3599.99),
     trimEndSec: layer?.trimEndSec==null?null:clamp(layer.trimEndSec, 0.01, 3600),

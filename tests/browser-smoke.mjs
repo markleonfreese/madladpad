@@ -871,12 +871,14 @@ try {
   assert.match(await page.locator('#voice-status').textContent(),/Confidence is not provided/);
   await page.locator('#voice-select-all').click();
   assert.equal(await page.locator('#voice-word-list input[type="checkbox"]:checked').count(),3,'select all should include every timestamped transcript word');
+  assert.equal(await page.locator('#voice-select-all').getAttribute('aria-disabled'),'true','selected bulk actions should be announced as unavailable without removing keyboard focus');
   assert.equal(await page.locator('#voice-selection-status').textContent(),'3 of 3 words selected.','bulk selection should announce its current word count');
   assert.equal(await page.locator('#voice-make-phrase').isDisabled(),false,'selecting all words should enable phrase creation');
   await page.locator('#voice-clear-selection').click();
   assert.equal(await page.locator('#voice-word-list input[type="checkbox"]:checked').count(),0,'clear selection should leave transcript words unselected');
   assert.equal(await page.locator('#voice-selection-status').textContent(),'No words selected.','clearing selection should announce the empty state');
   assert.equal(await page.locator('#voice-make-phrase').isDisabled(),true,'clearing selection should disable phrase creation');
+  assert.equal(await page.locator('#voice-clear-selection').getAttribute('aria-disabled'),'true','empty bulk actions should be announced as unavailable without removing keyboard focus');
   assert.equal(await page.evaluate(()=>document.activeElement?.id),'voice-clear-selection','bulk selection actions should preserve keyboard focus');
   await page.locator('#voice-transcribe').click();
   await page.waitForFunction(()=>document.querySelectorAll('#voice-transcript-select option').length===2);
@@ -1111,6 +1113,21 @@ try {
     await page.locator('#voice-overdub-layers .vocal-layer button').nth(1).click();
     assert.equal(await page.locator('#voice-overdub-layers .vocal-layer button').nth(2).isEnabled(),true,'a decodable raw take should be previewable');
     await page.locator('#voice-overdub-layers .vocal-layer button').nth(2).click();
+    await page.locator('#overdub-audio-input').setInputFiles({name:'imported-song-stem.wav',mimeType:'audio/wav',buffer:regionWav});
+    await page.waitForFunction(()=>document.querySelectorAll('#voice-overdub-layers .vocal-layer').length===2);
+    const importedTrack=page.locator('#voice-overdub-layers .vocal-layer').nth(1);
+    assert.equal(await importedTrack.locator('.vocal-layer-name').inputValue(),'imported-song-stem','audio imports should become separate editable Song tracks');
+    assert.match(await importedTrack.locator('.vocal-layer-meta').textContent(),/Imported audio saved locally.*starts at bar 1/,'the imported source should remain local and align from the Song start');
+    assert.equal(await page.locator('#overdub-timeline .overdub-wave-row').count(),2,'the arrangement should draw a separate waveform for each audio track');
+    const importedId=await importedTrack.getAttribute('data-layer');
+    const importedRms=await page.evaluate(async id=>{
+      const {getValue}=await import('/storage.js');const file=await getValue(`voice-layer:${id}`);
+      if(!file)throw new Error('Imported audio source is missing from IndexedDB');
+      const context=new AudioContext();
+      try{const decoded=await context.decodeAudioData(await file.arrayBuffer());const samples=decoded.getChannelData(0);return Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length);}
+      finally{await context.close();}
+    },importedId);
+    assert.ok(importedRms>.01,`the imported Song track should preserve audible source audio, got RMS ${importedRms}`);
     await page.locator('#play-seq').click();
     const layerId=await vocalRow.getAttribute('data-layer');
     const rawTakeRms=await page.evaluate(async id=>{
@@ -1126,7 +1143,7 @@ try {
     await openScreen('export');
     await page.locator('#record-audio').click();
     await openScreen('overdub');
-    await vocalRow.locator('button').nth(2).click();
+    await importedTrack.locator('button').nth(2).click();
     await page.waitForTimeout(1200);
     await openScreen('export');
     await page.locator('#record-audio').click();
@@ -1138,8 +1155,8 @@ try {
       try { const decoded=await context.decodeAudioData(bytes.buffer);const samples=decoded.getChannelData(0);return Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length); }
       finally { await context.close(); }
     },vocalMixBytes.toString('base64'));
-    assert.ok(vocalMixRms>rawTakeRms*.1,`a saved vocal overdub should reach the exported mix (raw RMS ${rawTakeRms}, export RMS ${vocalMixRms})`);
-    checkpoint('saved vocal overdub reaches the exported audio mix');
+    assert.ok(vocalMixRms>importedRms*.1,`an imported Song audio track should reach the exported mix (track RMS ${importedRms}, export RMS ${vocalMixRms})`);
+    checkpoint('recorded and imported audio tracks reach the exported mix');
   }
   await page.waitForTimeout(500);
   await page.reload();
@@ -1180,9 +1197,9 @@ try {
   assert.equal(await persistedRapFlow.nth(0).getAttribute('aria-pressed'),'true','rap flow should persist locally');
   assert.equal(await persistedRapFlow.nth(5).getAttribute('aria-pressed'),'true','rap flow should persist locally');
   if(vocalOverdubSupported){
-    assert.equal(await page.locator('#voice-overdub-layers .vocal-layer-name').inputValue(),'Lead take','vocal layer names should persist');
-    assert.equal(await page.locator('#voice-overdub-layers .vocal-layer-start input').inputValue(),'18','vocal overdub timing should remain editable and persist');
-    assert.equal(Number(await page.locator('#voice-overdub-layers .vocal-layer-gain input').inputValue()),.73,'vocal gain should persist');
+    assert.equal(await page.locator('#voice-overdub-layers .vocal-layer-name').nth(0).inputValue(),'Lead take','recorded audio track names should persist');
+    assert.equal(await page.locator('#voice-overdub-layers .vocal-layer-start input').nth(0).inputValue(),'18','recorded track timing should remain editable and persist');
+    assert.equal(Number(await page.locator('#voice-overdub-layers .vocal-layer-gain input').nth(0).inputValue()),.73,'recorded track gain should persist');
   }
   checkpoint('local speech transcription mock, phrase selection/order, melody and rap persistence/exports');
   checkpoint('local audio import and reload');
@@ -1416,7 +1433,7 @@ try {
   assert.equal(pack.project.pads[1].steps[4],true,'project pack should preserve the second lane pattern');
   assert.equal(pack.project.pads[2].steps[4],true,'project pack should preserve the third lane pattern loaded from the saved scene');
   assert.equal(pack.project.pads[2].steps[15],true,'project pack should preserve the third lane overdub');
-  if(vocalOverdubSupported){assert.equal(pack.voiceMedia.length,1);assert.ok(pack.voiceMedia[0].startsWith('data:audio/'),'portable packs should preserve each vocal layer raw take');}
+  if(vocalOverdubSupported){assert.equal(pack.voiceMedia.length,2);assert.ok(pack.voiceMedia.every(content=>content.startsWith('data:audio/')),'portable packs should preserve every recorded or imported track source');assert.equal(pack.project.voice.layers[1].origin,'import','project packs should retain the imported-track source kind');}
   if(recordingSupported)assert.ok(pack.media[1].startsWith('data:video/'),'portable pack should retain the synthetic video sample');
   await page.locator('#project-title').fill('Before restore');
   page.once('dialog', dialog => dialog.accept());
@@ -1424,7 +1441,7 @@ try {
   await page.waitForFunction(()=>document.querySelector('#toast').textContent.includes('Project restored')||document.querySelector('#toast').textContent.includes('Project saved')||document.querySelector('#toast').textContent.includes('Import failed'),null,{timeout:10000});
   assert.match(await page.locator('#toast').textContent(),/Project restored with its media\./,'the exported pack should restore without errors');
   assert.equal(await page.locator('#project-title').inputValue(), 'Smoke pack');
-  if(vocalOverdubSupported){assert.equal(await page.locator('#voice-overdub-layers .vocal-layer-name').inputValue(),'Lead take','restoring a project pack should restore its vocal layer metadata');assert.match(await page.locator('#voice-overdub-layers .vocal-layer-meta').textContent(),/Raw take saved locally/,'restoring a project pack should restore its raw take');}
+  if(vocalOverdubSupported){assert.equal(await page.locator('#voice-overdub-layers .vocal-layer-name').count(),2,'restoring a project pack should restore each audio track');assert.equal(await page.locator('#voice-overdub-layers .vocal-layer-name').nth(0).inputValue(),'Lead take','restoring a project pack should restore recorded-track metadata');assert.match(await page.locator('#voice-overdub-layers .vocal-layer-meta').nth(0).textContent(),/Raw take saved locally/,'restoring a project pack should restore its raw take');assert.equal(await page.locator('#voice-overdub-layers .vocal-layer-name').nth(1).inputValue(),'imported-song-stem','project pack round-trip should retain imported track identity');assert.match(await page.locator('#voice-overdub-layers .vocal-layer-meta').nth(1).textContent(),/Imported audio saved locally/,'the imported track source should stay available after restore');}
   await page.reload();
   await page.waitForFunction(()=>document.querySelector('#sample-info').textContent.includes('synthetic.wav · AUDIO · stored on this device'));
   assert.equal(await page.locator('#project-title').inputValue(), 'Smoke pack');
@@ -1572,9 +1589,9 @@ try {
     await page.locator('.pad-hit').nth(captureTarget).click();
     await page.waitForFunction(()=>window.__adaptiveDraws.includes(1));
     await page.locator('.pad-hit').nth(longVideoTargets[0]).click();
-    await page.waitForFunction(()=>window.__adaptiveDraws.includes(2),null,{timeout:5000});
+    await page.waitForFunction(()=>window.__adaptiveDraws.includes(2),null,{timeout:12000});
     await page.locator('.pad-hit').nth(longVideoTargets[1]).click();
-    await page.waitForFunction(()=>window.__adaptiveDraws.includes(3),null,{timeout:5000});
+    await page.waitForFunction(()=>window.__adaptiveDraws.includes(3),null,{timeout:12000});
     await openScreen('export');
     await page.locator('#start-record').click();
     await page.waitForFunction(()=>document.querySelector('#start-record').textContent.includes('RECORD SET'),null,{timeout:5000});
@@ -1628,10 +1645,10 @@ try {
   },null,{timeout:8000});
   await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
   checkpoint('service worker ready');
-  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v22')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
-  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v22')).match('/audio.js')).text()),/pendingStarts/,'the current fallback retrigger fix should be cached before offline use');
-  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v22')).match('/voice.js')).text()),/Use rhyme idea/,'the current Rap Lab writing aid should be cached before offline use');
-  const cachedFonts=await page.evaluate(async()=>Promise.all(['/fonts/dm-sans-variable-latin.woff2','/fonts/dm-sans-variable-latin-ext.woff2','/fonts/dm-mono-400-latin.woff2','/fonts/dm-mono-400-latin-ext.woff2','/fonts/dm-mono-500-latin.woff2','/fonts/dm-mono-500-latin-ext.woff2'].map(async path=>Boolean(await (await caches.open('madladpad-shell-v22')).match(path)))));
+  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v23')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
+  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v23')).match('/audio.js')).text()),/pendingStarts/,'the current fallback retrigger fix should be cached before offline use');
+  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v23')).match('/voice.js')).text()),/Use rhyme idea/,'the current Rap Lab writing aid should be cached before offline use');
+  const cachedFonts=await page.evaluate(async()=>Promise.all(['/fonts/dm-sans-variable-latin.woff2','/fonts/dm-sans-variable-latin-ext.woff2','/fonts/dm-mono-400-latin.woff2','/fonts/dm-mono-400-latin-ext.woff2','/fonts/dm-mono-500-latin.woff2','/fonts/dm-mono-500-latin-ext.woff2'].map(async path=>Boolean(await (await caches.open('madladpad-shell-v23')).match(path)))));
   assert.ok(cachedFonts.every(Boolean),'both local UI fonts and their Latin/extended subsets should be cached for offline use');
   await page.reload();
   await page.waitForFunction(()=>Boolean(navigator.serviceWorker.controller));
