@@ -402,7 +402,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     $('voice-overdub-stop').hidden = !vocalRecording;
     if (project.voice.layers.length >= MAX_VOCAL_LAYERS && !vocalRecording) $('voice-overdub-status').textContent = `The ${MAX_VOCAL_LAYERS} audio-track limit is full. Export a project pack before deleting a local track.`;
     else if (!state.running && !vocalRecording && !$('voice-overdub-status').textContent) $('voice-overdub-status').textContent = 'Start the sequencer to record an audio track.';
-    $('overdub-video-record').disabled=!state.running||Boolean(vocalRecording)||Boolean(videoRecording)||videoStarting||project.voice.videoLayers.length>=MAX_VOCAL_LAYERS;
+    $('overdub-video-record').disabled=!state.running||Boolean(vocalRecording)||Boolean(videoRecording)||project.voice.videoLayers.length>=MAX_VOCAL_LAYERS;
     $('overdub-video-record').textContent=videoStarting?'× CANCEL CAMERA START':'● RECORD VIDEO TRACK';
     $('overdub-video-record').setAttribute('aria-label',videoStarting?'Cancel Song camera start':'Record a video track over the Song');
     $('overdub-video-stop').hidden=!videoRecording;

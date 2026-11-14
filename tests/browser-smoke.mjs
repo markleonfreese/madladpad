@@ -1185,6 +1185,32 @@ try {
   checkpoint('local Song video track import, placement and trim');
   await page.locator('#play-seq').click();
   await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
+    await page.evaluate(()=>{
+      const getUserMedia=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      window.__baseSongGetUserMedia=getUserMedia;
+      window.__songCameraPermission={pending:false,stream:null};
+      window.__songCameraResolvePermission=null;
+      Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,value:(...args)=>new Promise((resolve,reject)=>{
+        window.__songCameraPermission.pending=true;
+        window.__songCameraResolvePermission=async()=>{
+          try{const stream=await getUserMedia(...args);window.__songCameraPermission.stream=stream;resolve(stream);}
+          catch(error){reject(error);}
+        };
+      })});
+    });
+    await page.locator('#overdub-video-record').click();
+    await page.waitForFunction(()=>window.__songCameraPermission?.pending===true);
+    assert.equal(await page.locator('#overdub-video-record').isDisabled(),false,'pending camera permission must keep an enabled cancel control');
+    assert.equal(await page.locator('#overdub-video-record').getAttribute('aria-label'),'Cancel Song camera start','the pending control should describe its cancel action');
+    await page.locator('#overdub-video-record').click();
+    await page.waitForFunction(()=>document.querySelector('#song-video-status').textContent.includes('Camera start canceled'));
+    await page.evaluate(()=>window.__songCameraResolvePermission());
+    await page.waitForFunction(()=>window.__songCameraPermission.stream?.getTracks().length===2&&window.__songCameraPermission.stream.getTracks().every(track=>track.readyState==='ended'));
+    await page.evaluate(()=>{
+      Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,value:window.__baseSongGetUserMedia});
+      window.__baseSongGetUserMedia=null;
+      window.__songCameraResolvePermission=null;
+    });
   await page.locator('#overdub-video-record').click();
   await page.locator('#overdub-video-stop').waitFor({state:'visible',timeout:8000});
   assert.match(await page.locator('#song-video-status').textContent(),/Recording camera and microphone locally.*up to [\d.]+ MB is available/i,'camera take should disclose local-only capture and its storage budget');
