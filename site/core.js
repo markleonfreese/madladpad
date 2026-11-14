@@ -84,6 +84,8 @@ function normaliseVoice(value) {
     id: String(layer?.id || `vocal-${index + 1}`).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || `vocal-${index + 1}`,
     name: String(layer?.name || `Vocal take ${index + 1}`).slice(0, 48),
     startStep: clamp(layer?.startStep ?? 0, 0, 4096),
+    trimStartSec: clamp(layer?.trimStartSec ?? 0, 0, 3599.99),
+    trimEndSec: layer?.trimEndSec==null?null:clamp(layer.trimEndSec, 0.01, 3600),
     gain: clamp(layer?.gain ?? 1, 0, 1.5),
     muted: Boolean(layer?.muted), solo: Boolean(layer?.solo),
     sourceId: String(layer?.sourceId || layer?.id || `vocal-${index+1}`).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,64),
@@ -117,6 +119,17 @@ function normaliseVoice(value) {
 }
 
 export const clamp = (value, min, max) => Math.min(max, Math.max(min, Number(value) || 0));
+
+// The raw take is immutable. Crops are source-relative seconds while startStep
+// positions the audible portion on the sequencer timeline.
+export function vocalLayerClip(layer, rawDuration) {
+  const duration=Number.isFinite(rawDuration)?Math.max(0,rawDuration):0;
+  if(!duration)return {start:0,end:0,duration:0};
+  const start=clamp(layer?.trimStartSec??0,0,Math.max(0,duration-.01));
+  const end=layer?.trimEndSec==null?duration:clamp(layer.trimEndSec,Math.min(duration,start+.01),duration);
+  return {start,end,duration:end-start};
+}
+
 export const videoVisualDurationMs = (start, end, speed) => Math.max(180, (Number(end) - Number(start)) / clamp(speed ?? 1, 0.5, 2) * 1000);
 export function normaliseRegion(start, end, duration, changed = 'start') {
   const total = Number.isFinite(duration) && duration > 0 ? duration : 0;
