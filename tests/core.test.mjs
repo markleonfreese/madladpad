@@ -12,7 +12,8 @@ test('long-form recording budget respects both project and browser storage with 
 
 test('Song video clips normalize stable identity, placement and source trim metadata',()=>{
   const video=normaliseProject({voice:{videoLayers:[{id:'clip_1',name:'Verse visual',startStep:384,trimStartSec:2,trimEndSec:8,durationSec:10,type:'video/mp4'}]}}).voice.videoLayers[0];
-  assert.deepEqual(video,{id:'clip_1',name:'Verse visual',origin:'import',startStep:384,trimStartSec:2,trimEndSec:8,durationSec:10,type:'video/mp4'});
+  assert.deepEqual(video,{id:'clip_1',name:'Verse visual',origin:'import',startStep:384,trimStartSec:2,trimEndSec:8,durationSec:10,type:'video/mp4',includeAudio:false,audioGain:1},'video source sound is muted by default while its independent audio gain stays editable');
+  assert.deepEqual(normaliseProject({voice:{videoLayers:[{id:'mix',includeAudio:true,audioGain:3}]}}).voice.videoLayers[0],{id:'mix',name:'Video track 1',origin:'import',startStep:0,trimStartSec:0,trimEndSec:null,durationSec:0,type:'video/webm',includeAudio:true,audioGain:1.5},'video audio inclusion and gain should persist within safe bounds');
   assert.equal(normaliseProject({voice:{videoLayers:[{id:'take_1',origin:'recording'}]}}).voice.videoLayers[0].origin,'recording','camera take identity should survive project and pack normalization');
   assert.deepEqual(normaliseProject({}).voice.videoLayers,[],'older project packs default to no video tracks');
 });

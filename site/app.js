@@ -1552,7 +1552,6 @@ async function toggleSetRecording() {
     recorder.onerror=event=>notify(`Recording failed: ${event.error?.message||'unknown error'}`);
     recorder.onstop=()=>{
       drawing=false;
-      voiceLab?.stopSongVideoPlayback?.();
       stream.getVideoTracks().forEach(track=>track.stop());
       const type=recorder.mimeType||mime||'video/webm';
       const blob=new Blob(chunks,{type});
@@ -1574,7 +1573,6 @@ async function toggleSetRecording() {
   } catch(error) {
     if(!takeActivity.current(token))return;
     takeActivity.cancel();takeKind=null;
-    voiceLab?.stopSongVideoPlayback?.();
     canvasStream?.getTracks().forEach(track=>track.stop());
     drawing=false;recording=null;$('capture-canvas').hidden=true;
     $('start-record').classList.remove('recording');$('start-record').innerHTML='<span class="record-dot"></span> RECORD SET';

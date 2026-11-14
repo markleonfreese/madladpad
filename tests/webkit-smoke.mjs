@@ -201,9 +201,11 @@ try{
       assert.equal(result.paused,true,`WebKit should pause the 50 ms selected region at Speed ${speed}×`);
       assert.ok(result.playingPosition>=.35&&result.playingPosition<=.50,`WebKit should start the selected region at 0.40 s at Speed ${speed}×, got ${JSON.stringify(result)}`);
       assert.ok(result.currentTime>=.40&&result.currentTime<result.duration-.05,`WebKit should stop the short trim before natural playback ends at Speed ${speed}×, got ${JSON.stringify(result)}`);
-      // WebKit can report a jumped media position after pause; elapsed playback
-      // still verifies the short trim stops before the old one-second grace.
-      assert.ok(result.playedForMs>=10&&result.playedForMs<900,`WebKit should stop the short trim before the old one-second grace at Speed ${speed}×, got ${JSON.stringify(result)}`);
+      // Use WebKit's media position rather than wall-clock timers, which can be
+      // delayed by CI load. The one-second grace would advance well beyond this
+      // 300 ms media-time window at both playback rates.
+      const mediaAdvance=(result.currentTime-result.playingPosition)/speed;
+      assert.ok(mediaAdvance>=.01&&mediaAdvance<.30,`WebKit should stop the short trim within 300 ms of media time at Speed ${speed}×, got ${JSON.stringify(result)}`);
       trimmedPlayback.push({speed,...result});
     }
     console.log(`WebKit short-trim boundary passed: ${JSON.stringify(trimmedPlayback)}.`);

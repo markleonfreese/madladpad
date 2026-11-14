@@ -374,6 +374,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   const vocalFiles = new Map();
   const videoFiles = new Map(), videoUrls = new Map();
   const videoPlaybackElements = new Map();
+  const videoAudioRoutes = new Map();
   const updateConsentState = () => { $('voice-transcribe').disabled = transcriptionActivity.phase!=='idle' || !$('voice-source-pad').value || !$('voice-consent').checked; };
   const cancelTranscription = (message = null) => {
     transcriptionActivity.cancel();
@@ -506,14 +507,23 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       };
       field('startStep','START STEP',layer.startStep,4096);field('trimStartSec','TRIM IN (S)',layer.trimStartSec,layer.durationSec);
       field('trimEndSec','TRIM OUT (S)',layer.trimEndSec??layer.durationSec,layer.durationSec);
+      const sourceAudio=document.createElement('label');sourceAudio.className='song-video-audio-control';
+      const includeAudio=document.createElement('input');includeAudio.type='checkbox';includeAudio.checked=Boolean(layer.includeAudio);includeAudio.setAttribute('aria-label',`Mix source audio for video track ${index+1}`);
+      const includeLabel=document.createElement('span');includeLabel.textContent='MIX SOURCE AUDIO';
+      const audioGain=document.createElement('input');audioGain.type='range';audioGain.min='0';audioGain.max='150';audioGain.step='1';audioGain.value=String(Math.round(clamp(layer.audioGain??1,0,1.5)*100));audioGain.disabled=!includeAudio.checked;audioGain.setAttribute('aria-label',`Source audio volume for video track ${index+1}`);
+      const audioGainValue=document.createElement('output');audioGainValue.textContent=`${audioGain.value}%`;
+      includeAudio.addEventListener('change',()=>{layer.includeAudio=includeAudio.checked;audioGain.disabled=!layer.includeAudio;save();updateSongVideoAudio(layer);renderVideoLayers();});
+      audioGain.addEventListener('input',()=>{layer.audioGain=clamp(Number(audioGain.value)/100,0,1.5);audioGainValue.textContent=`${audioGain.value}%`;updateSongVideoAudio(layer);});
+      audioGain.addEventListener('change',()=>{layer.audioGain=clamp(Number(audioGain.value)/100,0,1.5);save();});
+      sourceAudio.append(includeAudio,includeLabel,audioGain,audioGainValue);controls.append(sourceAudio);
       const remove=document.createElement('button');remove.type='button';remove.className='pill-button';remove.textContent='DELETE VIDEO';remove.setAttribute('aria-label',`Delete video track ${index+1} and its local source`);
       remove.addEventListener('click',async()=>{
         if(!confirm(`Delete ${layer.name} and its saved local video file?`))return;
         const nextLayers=project.voice.videoLayers.filter(item=>item.id!==layer.id);
-        try{await deleteSongVideoLayer(layer.id,{...project,voice:{...project.voice,videoLayers:nextLayers}});project.voice.videoLayers=nextLayers;videoFiles.delete(layer.id);const player=videoPlaybackElements.get(layer.id);if(player){player.pause();player.removeAttribute('src');player.load();player.remove();videoPlaybackElements.delete(layer.id);}const url=videoUrls.get(layer.id);if(url)URL.revokeObjectURL(url);videoUrls.delete(layer.id);save();renderVideoLayers();renderOverdubTimeline();$('song-video-status').textContent='Video track and its local source file deleted.';}
+        try{await deleteSongVideoLayer(layer.id,{...project,voice:{...project.voice,videoLayers:nextLayers}});project.voice.videoLayers=nextLayers;videoFiles.delete(layer.id);const player=videoPlaybackElements.get(layer.id);if(player){player.pause();player.removeAttribute('src');player.load();player.remove();videoPlaybackElements.delete(layer.id);}const route=videoAudioRoutes.get(layer.id);if(route){route.source.disconnect();route.gain.disconnect();videoAudioRoutes.delete(layer.id);}const url=videoUrls.get(layer.id);if(url)URL.revokeObjectURL(url);videoUrls.delete(layer.id);save();renderVideoLayers();renderOverdubTimeline();$('song-video-status').textContent='Video track and its local source file deleted.';}
         catch(error){$('song-video-status').textContent=`Could not delete the video track: ${error.message}`;}
       });controls.append(remove);
-      const meta=document.createElement('small');meta.className='song-video-meta';const clipStart=layer.trimStartSec||0,clipEnd=layer.trimEndSec??layer.durationSec;const sourceKind=layer.origin==='recording'?'Raw camera take saved locally':'Original video saved on this device';meta.textContent=`${videoFiles.has(layer.id)?sourceKind:'Local video file missing'} · bar ${Math.floor(layer.startStep/16)+1}, step ${layer.startStep%16+1} · ${Math.max(0,clipEnd-clipStart).toFixed(2)} s visible · muted preview`;
+      const meta=document.createElement('small');meta.className='song-video-meta';const clipStart=layer.trimStartSec||0,clipEnd=layer.trimEndSec??layer.durationSec;const sourceKind=layer.origin==='recording'?'Raw camera take saved locally':'Original video saved on this device';meta.textContent=`${videoFiles.has(layer.id)?sourceKind:'Local video file missing'} · bar ${Math.floor(layer.startStep/16)+1}, step ${layer.startStep%16+1} · ${Math.max(0,clipEnd-clipStart).toFixed(2)} s visible · source audio ${layer.includeAudio?'included':'muted by default'}`;
       row.append(name,preview,controls,meta);host.append(row);
     });
   }
@@ -523,9 +533,47 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       video.pause();video.removeAttribute('src');video.load();video.remove();
     }
     videoPlaybackElements.clear();
+    for(const route of videoAudioRoutes.values()){route.source.disconnect();route.gain.disconnect();}
+    videoAudioRoutes.clear();
   }
 
-  function pauseSongVideoPlayers(){for(const video of videoPlaybackElements.values()){video.pause();video.dataset.songVideoActive='false';}}
+  function songVideoAudioRoute(layer,video,allowAudio=true){
+    let route=videoAudioRoutes.get(layer.id);
+    if(!route){
+      if(video.dataset.songVideoAudioRoute==='unavailable')return null;
+      try{
+        const source=audio.context.createMediaElementSource(video),gain=audio.context.createGain();
+        gain.gain.value=0;
+        source.connect(gain);gain.connect(audio.master);
+        route={source,gain};videoAudioRoutes.set(layer.id,route);video.muted=false;video.dataset.songVideoAudioRoute='connected';
+      }catch(error){
+        video.dataset.songVideoAudioRoute='unavailable';video.muted=true;
+        if(layer.includeAudio)notify(`Video source audio could not be mixed in this browser: ${error.message}`);
+        return null;
+      }
+    }
+    const desired=layer.includeAudio&&allowAudio?clamp(layer.audioGain??1,0,1.5):0;
+    if(Number(video.dataset.songVideoAudioGain)!==desired){
+      const now=audio.context.currentTime,parameter=route.gain.gain;
+      parameter.cancelScheduledValues(now);parameter.setTargetAtTime(desired,now,.012);
+      video.dataset.songVideoAudioGain=String(desired);
+    }
+    video.dataset.songVideoAudioEnabled=String(Boolean(layer.includeAudio));
+    return route;
+  }
+
+  function updateSongVideoAudio(layer){
+    const video=videoPlaybackElements.get(layer.id);
+    if(video){const allowAudio=video.dataset.songVideoActive==='true'&&video.readyState>=2&&!video.seeking&&!video.paused;songVideoAudioRoute(layer,video,allowAudio);if(layer.includeAudio&&!videoAudioRoutes.has(layer.id)&&video.dataset.songVideoAudioRoute==='unavailable')$('song-video-status').textContent='This browser could not route the video track source audio into the Song mix.';}
+  }
+
+  function pauseSongVideoPlayers(){
+    for(const [id,video] of videoPlaybackElements){
+      video.pause();video.dataset.songVideoActive='false';
+      const route=videoAudioRoutes.get(id);
+      if(route){const now=audio.context.currentTime;route.gain.gain.cancelScheduledValues(now);route.gain.gain.setTargetAtTime(0,now,.012);video.dataset.songVideoAudioGain='0';}
+    }
+  }
 
   function songVideoFramesAtStep(absoluteStep){
     const transport=transportState();
@@ -533,7 +581,12 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     const activeIds=new Set(),frames=[];
     for(const layer of project.voice.videoLayers){
       const url=videoUrls.get(layer.id),sourceSec=songVideoPositionAtStep(layer,absoluteStep,transport.bpm);
-      if(!url||!videoFiles.has(layer.id)||sourceSec===null){const inactive=videoPlaybackElements.get(layer.id);if(inactive){inactive.pause();inactive.dataset.songVideoActive='false';}continue;}
+      if(!url||!videoFiles.has(layer.id)||sourceSec===null){
+        const inactive=videoPlaybackElements.get(layer.id),route=videoAudioRoutes.get(layer.id);
+        if(inactive){inactive.pause();inactive.dataset.songVideoActive='false';}
+        if(route){const now=audio.context.currentTime;route.gain.gain.cancelScheduledValues(now);route.gain.gain.setTargetAtTime(0,now,.012);if(inactive)inactive.dataset.songVideoAudioGain='0';}
+        continue;
+      }
       activeIds.add(layer.id);
       let video=videoPlaybackElements.get(layer.id);
       if(!video){
@@ -543,6 +596,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       }
       const firstActiveFrame=video.dataset.songVideoActive!=='true';
       try{if(video.readyState>=1&&(firstActiveFrame||(!video.seeking&&Math.abs(video.currentTime-sourceSec)>.20))){video.currentTime=sourceSec;video.dataset.songVideoActive='true';}}catch{}
+      songVideoAudioRoute(layer,video,video.dataset.songVideoActive==='true'&&video.readyState>=2&&!video.seeking);
       if(video.dataset.songVideoActive==='true'&&video.paused)video.play().catch(()=>{});
       if(video.readyState>=2)frames.push({id:layer.id,name:layer.name,video});
     }
@@ -1100,7 +1154,6 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     transportStarted(epoch, bpm) { audio.playVocalLayers(project.voice.layers, epoch, bpm); updateOverdubControls(); },
     transportStopped() { audio.stopVocalLayers();pauseSongVideoPlayers(); if (vocalRecording) stopOverdub(); if(videoRecordingActivity.phase==='starting')stopSongVideoRecording(true);else if(videoRecording)stopSongVideoRecording(false);updateOverdubControls(); },
     songVideoFramesAtStep,
-    stopSongVideoPlayback:pauseSongVideoPlayers,
     stopTuner,
     refreshTimeline() { renderOverdubTimeline(); },
     transportChanged() { updateOverdubControls(); },

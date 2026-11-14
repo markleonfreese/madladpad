@@ -136,7 +136,8 @@ function normaliseVoice(value) {
     origin:['recording','import'].includes(layer?.origin)?layer.origin:'import', startStep:clamp(layer?.startStep ?? 0,0,4096),
     trimStartSec:clamp(layer?.trimStartSec ?? 0,0,10799.99),
     trimEndSec:layer?.trimEndSec==null?null:clamp(layer.trimEndSec,0.01,10800),
-    durationSec:clamp(layer?.durationSec ?? 0,0,10800), type:String(layer?.type || 'video/webm').slice(0,80)
+    durationSec:clamp(layer?.durationSec ?? 0,0,10800), type:String(layer?.type || 'video/webm').slice(0,80),
+    includeAudio:Boolean(layer?.includeAudio),audioGain:clamp(layer?.audioGain ?? 1,0,1.5)
   })) : [];
   const melodySource = source.melody && typeof source.melody === 'object' ? source.melody : {};
   const notes = Array.isArray(melodySource.notes) ? melodySource.notes.slice(0, MAX_MELODY_NOTES).map(note => ({
