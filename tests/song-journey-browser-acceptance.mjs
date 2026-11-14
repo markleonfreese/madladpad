@@ -146,18 +146,19 @@ try{
   assert.ok(videoResult.download,`the restored Song video should export: ${videoResult.error?.message||'no download'}`);
   const videoExport=await readFile(await videoResult.download.path());
   assert.ok(videoExport.length>100,'the restored Song video produces an audiovisual export');
-  const videoDuration=await page.evaluate(encoded=>new Promise((resolve,reject)=>{
+  const decodedVideo=await page.evaluate(encoded=>new Promise((resolve,reject)=>{
     const bytes=Uint8Array.from(atob(encoded),character=>character.charCodeAt(0));
     const element=document.createElement('video'),url=URL.createObjectURL(new Blob([bytes],{type:'video/webm'}));
     const timer=setTimeout(()=>reject(new Error('video export metadata timed out')),5000);
-    element.onloadedmetadata=()=>{clearTimeout(timer);URL.revokeObjectURL(url);resolve(element.duration);};
+    element.muted=true;
+    element.onloadeddata=()=>{clearTimeout(timer);URL.revokeObjectURL(url);resolve({duration:element.duration,width:element.videoWidth,height:element.videoHeight,readyState:element.readyState});};
     element.onerror=()=>{clearTimeout(timer);URL.revokeObjectURL(url);reject(new Error('video export could not be decoded'));};
     element.src=url;
   }),videoExport.toString('base64'));
-  assert.ok(Number.isFinite(videoDuration)&&videoDuration>0,`the audiovisual export should have a readable duration, got ${videoDuration}`);
+  assert.ok(decodedVideo.width>0&&decodedVideo.height>0&&decodedVideo.readyState>=2,`the audiovisual export should decode a video frame, got ${JSON.stringify(decodedVideo)}`);
   await openScreen('beats');await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='false');
-  console.log(`Song journey browser acceptance passed: 36-bar A-B-C-A, local audio/video pack recovery, decoded mix RMS ${rms.toFixed(3)}, and audiovisual export.`);
+  console.log(`Song journey browser acceptance passed: 36-bar A-B-C-A, local audio/video pack recovery, decoded mix RMS ${rms.toFixed(3)}, and a decoded ${decodedVideo.width}×${decodedVideo.height} video frame.`);
   await context.close();
 }finally{
   if(browser)await browser.close();
