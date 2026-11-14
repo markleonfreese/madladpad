@@ -1119,6 +1119,16 @@ try {
     assert.equal(await importedTrack.locator('.vocal-layer-name').inputValue(),'imported-song-stem','audio imports should become separate editable Song tracks');
     assert.match(await importedTrack.locator('.vocal-layer-meta').textContent(),/Imported audio saved locally.*starts at bar 1/,'the imported source should remain local and align from the Song start');
     assert.equal(await page.locator('#overdub-timeline .overdub-wave-row').count(),2,'the arrangement should draw a separate waveform for each audio track');
+    await page.locator('[aria-label="Move audio track 2 later by one bar"]').focus();
+    await page.keyboard.press('Enter');
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.[1]?.startStep),16,'the accessible one-bar move control should advance an audio clip on the shared Song ruler');
+    assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Move audio track 2 later by one bar','moving an audio clip should retain keyboard focus on its active move control');
+    await page.keyboard.press('Enter');
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.[1]?.startStep),32,'a focused audio move control should support repeated keyboard moves');
+    await page.locator('[aria-label="Move audio track 2 earlier by one bar"]').click();
+    await page.locator('[aria-label="Move audio track 2 earlier by one bar"]').click();
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.[1]?.startStep),0,'the accessible one-bar move control should return an audio clip to its original placement');
+    assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Move audio track 2 later by one bar','when the audio track reaches its start, keyboard focus should move to the available direction');
     const importedId=await importedTrack.getAttribute('data-layer');
     const importedRms=await page.evaluate(async id=>{
       const {getValue}=await import('/storage.js');const file=await getValue(`voice-layer:${id}`);
@@ -1179,6 +1189,15 @@ try {
   assert.equal(videoTrackBytes,songVideoSource.length,'video source should be stored locally in IndexedDB');
   const videoStart=page.locator('#song-video-layers .song-video-track .vocal-layer-start input').nth(0);
   await videoStart.fill('32');await videoStart.press('Tab');
+  await page.locator('[aria-label="Move video track 1 later by one bar"]').focus();
+  await page.keyboard.press('Enter');
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.videoLayers?.[0]?.startStep),48,'the accessible one-bar move control should advance a video clip on the shared Song ruler');
+  assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Move video track 1 later by one bar','moving a video clip should retain keyboard focus on its active move control');
+  await page.keyboard.press('Enter');
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.videoLayers?.[0]?.startStep),64,'a focused video move control should support repeated keyboard moves');
+  await page.locator('[aria-label="Move video track 1 earlier by one bar"]').click();
+  await page.locator('[aria-label="Move video track 1 earlier by one bar"]').click();
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.videoLayers?.[0]?.startStep),32,'the accessible one-bar move control should return a video clip to its original placement');
   const videoTrim=page.locator('#song-video-layers .song-video-track .vocal-layer-start input').nth(1);
   const videoTrimSeconds=Number(await videoTrim.getAttribute('max'))/2;
   await videoTrim.fill(String(videoTrimSeconds));await videoTrim.press('Tab');
