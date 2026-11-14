@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withModelReferrerPolicy } from '../site/voice-model-fetch.js';
-import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, songVideoPositionAtStep, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars, localRecordingBudget, MAX_MEDIA_BYTES, RECORDING_STORAGE_RESERVE_BYTES, createBoundedRecordingCapture } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, songVideoPositionAtStep, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars, reorderSongClips, resizeSongClipBars, localRecordingBudget, MAX_MEDIA_BYTES, RECORDING_STORAGE_RESERVE_BYTES, createBoundedRecordingCapture } from '../site/core.js';
 
 test('long-form recording budget respects both project and browser storage with headroom', () => {
   assert.equal(localRecordingBudget(10 * 1024 * 1024, {usage:90 * 1024 * 1024,quota:100 * 1024 * 1024}), 10 * 1024 * 1024 - RECORDING_STORAGE_RESERVE_BYTES);
@@ -396,4 +396,30 @@ test('song clips retain missing references for repair and respect finite bar and
   assert.equal(p.song.clips[1].bars,64);
   assert.equal(songSectionAtStep(p.song,p.scenes,64*16).scene,null,'missing scene must remain visible for repair');
   assert.deepEqual(normaliseSong({clips:[{sceneId:'a',bars:-1},{sceneId:'a',bars:3}]}).clips.map(x=>x.bars),[1,3]);
+});
+
+test('Song timeline reorder moves the same saved section instance without cloning its scene or media', () => {
+  const clips=[
+    {id:'a-1',sceneId:'A',bars:8},{id:'b-1',sceneId:'B',bars:16},
+    {id:'c-1',sceneId:'C',bars:4},{id:'a-2',sceneId:'A',bars:8}
+  ];
+  const reordered=reorderSongClips(clips,'a-1',4);
+  assert.deepEqual(reordered.map(clip=>clip.id),['b-1','c-1','a-2','a-1']);
+  assert.deepEqual(reordered.map(clip=>clip.sceneId),['B','C','A','A']);
+  assert.equal(songTotalBars({clips:reordered}),36);
+  assert.deepEqual(clips.map(clip=>clip.id),['a-1','b-1','c-1','a-2'],'edits must not mutate the saved source array');
+  assert.deepEqual(reorderSongClips(reordered,'a-1',0).map(clip=>clip.id),['a-1','b-1','c-1','a-2']);
+  assert.deepEqual(reorderSongClips(clips,'missing',2),clips,'unknown clip IDs are ignored');
+  assert.deepEqual(reorderSongClips(clips,'a-1',1),clips,'dropping at original boundary is a no-op');
+});
+test('Song clip resizing respects whole bars, 64 bars per clip and 256 total', () => {
+  const clips=[{id:'a',sceneId:'A',bars:8},{id:'b',sceneId:'B',bars:16}];
+  assert.deepEqual(resizeSongClipBars(clips,'a',11).map(clip=>clip.bars),[11,16]);
+  assert.deepEqual(resizeSongClipBars(clips,'a',0).map(clip=>clip.bars),[1,16]);
+  assert.deepEqual(resizeSongClipBars(clips,'a',500).map(clip=>clip.bars),[64,16]);
+  assert.deepEqual(clips.map(clip=>clip.bars),[8,16],'resizing must preserve the incoming arrangement');
+  const almostFull=[{id:'a',sceneId:'A',bars:60},{id:'b',sceneId:'B',bars:64},{id:'c',sceneId:'C',bars:64},{id:'d',sceneId:'D',bars:64}];
+  assert.deepEqual(resizeSongClipBars(almostFull,'a',64).map(clip=>clip.bars),[64,64,64,64]);
+  assert.equal(songTotalBars({clips:resizeSongClipBars(almostFull,'a',64)}),256);
+  assert.deepEqual(resizeSongClipBars(almostFull,'a',-3).map(clip=>clip.bars),[1,64,64,64]);
 });
