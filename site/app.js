@@ -741,6 +741,7 @@ function updateSequenceFocusMixer(){
 }
 
 function openSequenceFocus(id){
+  if(project.pads[id].sequenceMode==='notes'){openSampleNoteEditor(id);return;}
   if(!compactSequenceOverview()){selectPad(id);return;}
   selectPad(id);
   $('sequence-focus-title').textContent=`Pad ${id+1} · edit steps`;
@@ -756,6 +757,72 @@ function closeSequenceFocus(){
   $('track-grid').before($('steps'));
   $('steps').hidden=trackGridVisible;
   document.querySelector(`.track-row[data-pad="${selected}"] .track-name`)?.focus();
+}
+
+
+function openSampleNoteEditor(id=selected){
+  if($('sequence-focus-dialog').open)closeSequenceFocus();
+  selectPad(id);
+  selectedSampleNote=null;notePointer=null;
+  $('sample-note-title').textContent='Pad '+(id+1)+' · draw sample notes';
+  $('sample-note-dialog').showModal();
+  renderSampleNoteEditor();
+  $('note-grid').querySelector('[data-note-pitch="0"][data-note-step="0"]')?.scrollIntoView({block:'center',inline:'nearest'});
+}
+function renderSampleNoteEditor(){
+  const pad=project.pads[selected],host=$('note-grid');
+  host.replaceChildren();
+  $('note-lane-mode').value=pad.sequenceMode;
+  for(let pitch=12;pitch>=-12;pitch--){
+    const row=document.createElement('div');row.className='sample-note-row';row.setAttribute('role','row');
+    const label=document.createElement('span');label.className='sample-note-pitch';label.textContent=(pitch>0?'+':'')+pitch+' st';row.append(label);
+    for(let step=0;step<16;step++){
+      const held=pad.sampleNotes.find(note=>note.semitones===pitch&&note.step<=step&&step<note.step+note.length);
+      const cell=document.createElement('button');cell.type='button';
+      cell.className='sample-note-cell'+(held?' note-held':'')+(held?.step===step?' note-start':'')+(held?.step===selectedSampleNote?' selected':'');
+      cell.dataset.noteStep=String(step);cell.dataset.notePitch=String(pitch);
+      cell.textContent=held?.step===step?String(held.length):'';
+      cell.setAttribute('aria-label',(pitch>0?'+':'')+pitch+' semitones, step '+(step+1)+(held?', note starts at step '+(held.step+1)+' and lasts '+held.length+' steps':', empty'));
+      cell.addEventListener('pointerdown',event=>{
+        if(event.button!==0)return;
+        notePointer={pointerId:event.pointerId,start:step,end:step,pitch};
+      });
+      cell.addEventListener('click',event=>{
+        if(event.detail!==0)return;
+        if(held){selectedSampleNote=held.step;renderSampleNoteEditor();}
+        else commitSampleNote(step,step,pitch);
+      });
+      row.append(cell);
+    }
+    host.append(row);
+  }
+  const active=pad.sampleNotes.find(note=>note.step===selectedSampleNote);
+  $('note-length').disabled=!active;$('note-delete').disabled=!active;
+  $('note-length').max=String(active?16-active.step:16);
+  $('note-length').value=String(active?.length||1);
+  $('note-status').textContent=pad.sampleNotes.length+' notes · '+(pad.sequenceMode==='notes'?'Notes playing':'Steps playing')+'. Tap a cell for one note, or drag right to join steps. Overlapping notes are replaced.';
+}
+function commitSampleNote(start,end,pitch){
+  const pad=project.pads[selected];
+  pad.sampleNotes=setSampleNote(pad.sampleNotes,{step:start,length:end-start+1,semitones:pitch});
+  pad.sequenceMode='notes';selectedSampleNote=start;
+  renderSampleNoteEditor();renderTrackGrid();queueSave();
+}
+function finishSampleNoteDrag(event){
+  if(!notePointer||event.pointerId!==notePointer.pointerId)return;
+  const {start,end,pitch}=notePointer;notePointer=null;
+  const existing=project.pads[selected].sampleNotes.find(note=>note.semitones===pitch&&note.step<=start&&start<note.step+note.length);
+  if(existing&&end===start){selectedSampleNote=existing.step;renderSampleNoteEditor();}
+  else commitSampleNote(start,end,pitch);
+}
+function updateSampleNoteDrag(event){
+  if(!notePointer||notePointer.pointerId!==event.pointerId)return;
+  const el=document.elementFromPoint(event.clientX,event.clientY)?.closest('.sample-note-cell');
+  if(!el||Number(el.dataset.notePitch)!==notePointer.pitch)return;
+  notePointer.end=Math.max(notePointer.start,Number(el.dataset.noteStep));
+  $('note-grid').querySelectorAll('.sample-note-cell').forEach(cell=>{
+    cell.classList.toggle('drawing',Number(cell.dataset.notePitch)===notePointer.pitch&&Number(cell.dataset.noteStep)>=notePointer.start&&Number(cell.dataset.noteStep)<=notePointer.end);
+  });
 }
 
 function setTrackView(allTracks){
@@ -807,9 +874,10 @@ function renderTrackGrid(){
     const head=document.createElement('div');head.className='track-head';
     const demo=DEMO_SOUNDS.find(sound=>sound.id===pad.demoSound);
     const trackLabel=mediaFiles.has(id)?pad.name:demo?.name||(audio.demoEnabled?`Demo synth ${String(id+1).padStart(2,'0')}`:'Empty pad');
-    const enabledCount=positions.filter(step=>pad.steps[step]).length;
+    const enabledCount=pad.sequenceMode==='notes'?pad.sampleNotes.length:positions.filter(step=>pad.steps[step]).length;
     row.setAttribute('aria-label',compact?`Pattern lane ${id+1}: ${trackLabel}; ${enabledCount} of ${positions.length} steps active. Select lane name to edit.`:`Pattern lane ${id+1}: ${trackLabel}`);
     const name=document.createElement('button');name.type='button';name.dataset.control='name';name.className='track-name';name.textContent=`${String(id+1).padStart(2,'0')} · ${trackLabel}`;name.setAttribute('aria-label',compact?`Edit pattern for pad ${id+1}, ${trackLabel}`:`Select pad ${id+1}, ${trackLabel}`);name.addEventListener('click',()=>compact?openSequenceFocus(id):selectPad(id));head.append(name);
+    const notesButton=document.createElement('button');notesButton.type='button';notesButton.dataset.control='notes';notesButton.className='track-edit track-note-edit';notesButton.textContent=pad.sequenceMode==='notes'?'NOTES ✓':'NOTES';notesButton.setAttribute('aria-label','Draw melodic notes for pad '+(id+1));notesButton.addEventListener('click',()=>openSampleNoteEditor(id));head.append(notesButton);
     const edit=document.createElement('button');edit.type='button';edit.dataset.control='edit';edit.className='track-edit';edit.textContent='EDIT';edit.setAttribute('aria-label',`Edit pad ${id+1}`);edit.addEventListener('click',()=>openSampleEditor(id));head.append(edit);
     for(const [key,label] of [['muted','M'],['solo','S']]){const button=document.createElement('button');button.type='button';button.dataset.control=key;button.className=`track-toggle${pad[key]?' active':''}`;button.textContent=label;button.setAttribute('aria-label',`${pad[key]?'Disable':'Enable'} ${key} for pad ${id+1}`);button.setAttribute('aria-pressed',String(pad[key]));button.addEventListener('click',()=>{pad[key]=!pad[key];stopInaudiblePadVoices();renderTrackGrid();queueSave();});head.append(button);}
     const gain=document.createElement('input');gain.type='range';gain.min='0';gain.max='150';gain.value=String(Math.round(pad.volume*100));gain.className='track-gain';gain.setAttribute('aria-label',`Volume for pad ${id+1}`);gain.addEventListener('input',()=>{pad.volume=Number(gain.value)/100;if(selected===id){$('volume').value=gain.value;$('volume-out').textContent=`${gain.value}%`;}queueSave();});head.append(gain);
@@ -818,14 +886,15 @@ function renderTrackGrid(){
     const cells=document.createElement('div');cells.className=compact?'track-steps compact-overview':'track-steps';cells.style.setProperty('--track-step-count',String(positions.length));
     if(!compact)cells.addEventListener('scroll',()=>{for(const other of holder.querySelectorAll('.track-steps'))if(other!==cells&&other.scrollLeft!==cells.scrollLeft)other.scrollLeft=cells.scrollLeft;},{passive:true});
     positions.forEach(index=>{
-      const enabled=pad.steps[index],step=document.createElement(compact?'span':'button');
+      const note=pad.sequenceMode==='notes'?pad.sampleNotes.find(item=>item.step<=index&&index<item.step+item.length):null;
+      const enabled=pad.sequenceMode==='notes'?Boolean(note):pad.steps[index],step=document.createElement(compact?'span':'button');
       step.dataset.step=String(index);
-      step.className=`${compact?'step-overview':'step'}${enabled?' on':''}`;
+      step.className=`${compact?'step-overview':'step'}${enabled?' on':''}${note&&note.step!==index?' note-held':''}${note&&note.step===index?' note-start':''}`;
       if(compact){step.setAttribute('aria-hidden','true');}
       else {
-        step.type='button';step.textContent=String(index+1).padStart(2,'0');
-        step.setAttribute('aria-label',`Pad ${id+1}, step ${index+1} ${enabled?'on':'off'} at ${project.gridDivision} grid`);
-        step.setAttribute('aria-pressed',String(enabled));step.disabled=Boolean(patternRecording);
+        step.type='button';step.textContent=note&&note.step===index?((note.semitones>0?'+':'')+note.semitones):String(index+1).padStart(2,'0');
+        step.setAttribute('aria-label',pad.sequenceMode==='notes'?`Pad ${id+1}, melodic note ${note?'held':'empty'} at step ${index+1}; open Notes to edit`:`Pad ${id+1}, step ${index+1} ${enabled?'on':'off'} at ${project.gridDivision} grid`);
+        step.setAttribute('aria-pressed',String(enabled));step.disabled=Boolean(patternRecording)||pad.sequenceMode==='notes';
         step.addEventListener('click',()=>{if(patternRecording)return;releasePad(id);patternUndoSnapshot=null;renderPatternRecordingState();pad.steps[index]=!pad.steps[index];pad.stepOffsets[index]=0;renderSteps();queueSave();});
       }
       cells.append(step);
@@ -1921,6 +1990,31 @@ function bindControls() {
   $('delete-scene').addEventListener('click',deleteScene);
   $('track-view').addEventListener('click',()=>{if(compactSequenceOverview()&&trackGridVisible){openSequenceFocus(selected);return;}setTrackView(!trackGridVisible);});
   $('sequence-focus-close').addEventListener('click',closeSequenceFocus);
+  $('sample-note-close').addEventListener('click',()=>$('sample-note-dialog').close());
+  $('sample-note-dialog').addEventListener('close',()=>{notePointer=null;});
+  $('sample-note-dialog').addEventListener('cancel',()=>{notePointer=null;});
+  $('note-grid').addEventListener('pointermove',updateSampleNoteDrag);
+  window.addEventListener('pointerup',finishSampleNoteDrag);
+  window.addEventListener('pointercancel',()=>{if(notePointer){notePointer=null;renderSampleNoteEditor();}});
+  $('note-lane-mode').addEventListener('change',event=>{
+    project.pads[selected].sequenceMode=event.target.value==='notes'?'notes':'steps';
+    releasePad(selected);renderSteps();renderSampleNoteEditor();queueSave();
+  });
+  $('note-length').addEventListener('change',event=>{
+    const pad=project.pads[selected],old=pad.sampleNotes.find(note=>note.step===selectedSampleNote);
+    if(!old)return;
+    pad.sampleNotes=setSampleNote(pad.sampleNotes.filter(note=>note!==old),{...old,length:Math.round(clamp(event.target.value,1,16-old.step))});
+    renderSampleNoteEditor();renderTrackGrid();queueSave();
+  });
+  $('note-delete').addEventListener('click',()=>{
+    const pad=project.pads[selected];pad.sampleNotes=pad.sampleNotes.filter(note=>note.step!==selectedSampleNote);
+    selectedSampleNote=null;renderSampleNoteEditor();renderTrackGrid();queueSave();
+  });
+  $('note-clear').addEventListener('click',()=>{
+    if(!confirm('Remove all melodic notes from this pad? The old step pattern will remain saved.'))return;
+    project.pads[selected].sampleNotes=[];selectedSampleNote=null;renderSampleNoteEditor();renderTrackGrid();queueSave();
+  });
+
   $('sequence-focus-dialog').addEventListener('cancel',event=>{event.preventDefault();closeSequenceFocus();});
   for(const [key,id] of [['muted','sequence-focus-mute'],['solo','sequence-focus-solo']]){
     $(id).addEventListener('click',()=>{project.pads[selected][key]=!project.pads[selected][key];stopInaudiblePadVoices();renderTrackGrid();updateSequenceFocusMixer();queueSave();});
