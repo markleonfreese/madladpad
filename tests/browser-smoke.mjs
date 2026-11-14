@@ -1793,6 +1793,36 @@ try {
   await page.locator('#sample-note-close').click();
   assert.equal(await page.locator('.track-row[data-pad="0"] .track-steps .note-held').count()>0,true,'all-track overview shows extended note blocks');
   checkpoint('melodic sample notes with distinct joined and adjacent boundaries');
+
+  // Three reusable named beat patterns form a longer Serato-style song.
+  if(!(await page.locator('#beat-advanced').evaluate(element=>element.open)))await page.locator('#beat-advanced > summary').click();
+  for(const name of ['A','B','C']){
+    await page.locator('#scene-name').fill(name);
+    await page.locator('#save-scene').click();
+  }
+  await page.locator('#song-view').click();
+  assert.equal(await page.locator('#song-arranger').isVisible(),true,'Song view should expose the arrangement instead of drum-step grid');
+  for(const [scene,bars] of [['A','8'],['B','16'],['C','4'],['A','8']]){
+    await page.locator('#song-scene-select').selectOption({label:scene});
+    await page.locator('#song-bars').selectOption(bars);
+    await page.locator('#song-add-section').click();
+  }
+  assert.equal(await page.locator('#song-timeline .song-section-clip').count(),4,'A-B-C-A must create four timeline blocks');
+  assert.match(await page.locator('#song-status').textContent(),/36 bars/,'Song must exceed the single 16-step loop');
+  const savedSong=await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1')));
+  assert.deepEqual(savedSong.song.clips.map(clip=>clip.bars),[8,16,4,8]);
+  assert.deepEqual(savedSong.song.clips.map(clip=>savedSong.scenes.find(scene=>scene.id===clip.sceneId).name),['A','B','C','A']);
+  const firstSceneId=savedSong.scenes[0].id;
+  assert.equal(savedSong.song.clips[0].sceneId,firstSceneId);
+  assert.equal(savedSong.song.clips[3].sceneId,firstSceneId,'returning to A should reuse the saved pattern, not clone its sounds');
+  await page.locator('#play-seq').click();
+  await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
+  await page.locator('#play-seq').click();
+  assert.equal(await page.locator('#play-seq').textContent().then(x=>x.includes('PLAY SONG')),true,'Song mode should remain selected after stopping playback');
+  await page.locator('#pattern-view').click();
+  assert.equal(await page.locator('#sequence-pattern-content').isVisible(),true,'switching back restores the old pattern editor');
+  checkpoint('long A-B-C-A song arrangement retained alongside drum and melodic patterns');
+
   assert.deepEqual(errors, []);
   assert.deepEqual(blockedFontProviderRequests,[],'the UI must not request Google Fonts or gstatic at any point');
   console.log('Browser smoke passed: layouts, demo/keyboard, live patterns/scenes, integrated Pitch/Speed audio exports, audio/video recording, adaptive one-to-three-clip composition, local media, pack round-trip, offline reopen and mobile overflow.');
