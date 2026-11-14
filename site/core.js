@@ -177,11 +177,38 @@ export function isPadAudible(pads,id){
   const pad=pads[id];
   return Boolean(pad)&&!pad.muted&&(!pads.some(item=>item.solo)||pad.solo);
 }
+
+/** Adjacent separate notes restart a sample; a longer drawn note gates/loops
+ * one start. One pad is monophonic, so overlapping note spans are not retained. */
+export function normaliseSampleNotes(value) {
+  const notes = (Array.isArray(value) ? value : []).slice(0,32)
+    .filter(note => Number.isFinite(Number(note?.step)) && Number.isFinite(Number(note?.length)))
+    .map(note => {
+      const step = Math.round(clamp(note.step,0,STEP_COUNT-1));
+      return {step,length:Math.round(clamp(note.length,1,STEP_COUNT-step)),semitones:Math.round(clamp(note.semitones??0,-12,12))};
+    }).sort((a,b)=>a.step-b.step);
+  const result=[];
+  for(const note of notes) {
+    if(result.some(other=>other.step<note.step+note.length && note.step<other.step+other.length))continue;
+    result.push(note);
+  }
+  return result;
+}
+export function setSampleNote(notes, note) {
+  const next=normaliseSampleNotes([note])[0];
+  if(!next)return normaliseSampleNotes(notes);
+  return normaliseSampleNotes([...normaliseSampleNotes(notes).filter(other=>
+    other.step+other.length<=next.step || other.step>=next.step+next.length), next]);
+}
+export function sampleNoteAtStep(notes,step) {
+  return (Array.isArray(notes)?notes:[]).find(note=>note.step===step)||null;
+}
+
 export const makePad = id => ({
   id, name: `Pad ${String(id + 1).padStart(2, '0')}`, fileName: '', kind: '',
   demoSound:'',
   volume: 0.9, pitch: 0, speed: 1, start: 0, end: 2, muted:false, solo:false,
-  stepPlaybackMode:'full',
+  stepPlaybackMode:'full', sequenceMode:'steps',sampleNotes:[],
   steps: Array(STEP_COUNT).fill(false), stepOffsets: Array(STEP_COUNT).fill(0)
 });
 // Reuse the same raw clip with independent trims, without copying patterns,
@@ -212,6 +239,7 @@ export function normaliseProject(value) {
       pitch: clamp(source.pitch ?? 0, -12, 12),
       speed: clamp(source.speed ?? 1, 0.5, 2),
       stepPlaybackMode: ['one-step','loop'].includes(source.stepPlaybackMode) ? source.stepPlaybackMode : 'full',
+      sequenceMode:source.sequenceMode==='notes'?'notes':'steps',sampleNotes:normaliseSampleNotes(source.sampleNotes),
       start: clamp(source.start ?? 0, 0, 3599.99),
       end: clamp(source.end ?? 2, 0.01, 3600),
       muted: Boolean(source.muted), solo: Boolean(source.solo),
@@ -225,7 +253,8 @@ export function normaliseProject(value) {
     pads:Array.from({length:16},(_,j)=>({
       steps:Array.from({length:STEP_COUNT},(_,k)=>Boolean(scene?.pads?.[j]?.steps?.[k])),
       stepOffsets:Array.from({length:STEP_COUNT},(_,k)=>clamp(scene?.pads?.[j]?.stepOffsets?.[k]??0,0,.9999)),
-      stepPlaybackMode:['one-step','loop'].includes(scene?.pads?.[j]?.stepPlaybackMode)?scene.pads[j].stepPlaybackMode:'full'
+      stepPlaybackMode:['one-step','loop'].includes(scene?.pads?.[j]?.stepPlaybackMode)?scene.pads[j].stepPlaybackMode:'full',
+      sequenceMode:scene?.pads?.[j]?.sequenceMode==='notes'?'notes':'steps',sampleNotes:normaliseSampleNotes(scene?.pads?.[j]?.sampleNotes)
     })),
     videoShots:Array.isArray(scene?.videoShots)?normaliseVideoDirection({shots:scene.videoShots}).shots:null
   })):[];
