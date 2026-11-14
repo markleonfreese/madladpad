@@ -375,6 +375,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   const videoFiles = new Map(), videoUrls = new Map();
   const videoPlaybackElements = new Map();
   const videoAudioRoutes = new Map();
+  let songVideoAudioFrameId=null;
   const updateConsentState = () => { $('voice-transcribe').disabled = transcriptionActivity.phase!=='idle' || !$('voice-source-pad').value || !$('voice-consent').checked; };
   const cancelTranscription = (message = null) => {
     transcriptionActivity.cancel();
@@ -512,7 +513,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const includeLabel=document.createElement('span');includeLabel.textContent='MIX SOURCE AUDIO';
       const audioGain=document.createElement('input');audioGain.type='range';audioGain.min='0';audioGain.max='150';audioGain.step='1';audioGain.value=String(Math.round(clamp(layer.audioGain??1,0,1.5)*100));audioGain.disabled=!includeAudio.checked;audioGain.setAttribute('aria-label',`Source audio volume for video track ${index+1}`);
       const audioGainValue=document.createElement('output');audioGainValue.textContent=`${audioGain.value}%`;
-      includeAudio.addEventListener('change',()=>{layer.includeAudio=includeAudio.checked;audioGain.disabled=!layer.includeAudio;save();updateSongVideoAudio(layer);renderVideoLayers();});
+      includeAudio.addEventListener('change',()=>{layer.includeAudio=includeAudio.checked;audioGain.disabled=!layer.includeAudio;save();updateSongVideoAudio(layer);startSongVideoAudioPlayback();renderVideoLayers();});
       audioGain.addEventListener('input',()=>{layer.audioGain=clamp(Number(audioGain.value)/100,0,1.5);audioGainValue.textContent=`${audioGain.value}%`;updateSongVideoAudio(layer);});
       audioGain.addEventListener('change',()=>{layer.audioGain=clamp(Number(audioGain.value)/100,0,1.5);save();});
       sourceAudio.append(includeAudio,includeLabel,audioGain,audioGainValue);controls.append(sourceAudio);
@@ -575,11 +576,12 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     }
   }
 
-  function songVideoFramesAtStep(absoluteStep){
+  function updateSongVideoTracksAtStep(absoluteStep,{audioOnly=false}={}){
     const transport=transportState();
-    if(!transport.running||!Number.isFinite(absoluteStep)){pauseSongVideoPlayers();return [];}
+    if(!transport.running||!Number.isFinite(absoluteStep)){if(!audioOnly)pauseSongVideoPlayers();return [];}
     const activeIds=new Set(),frames=[];
     for(const layer of project.voice.videoLayers){
+      if(audioOnly&&!layer.includeAudio)continue;
       const url=videoUrls.get(layer.id),sourceSec=songVideoPositionAtStep(layer,absoluteStep,transport.bpm);
       if(!url||!videoFiles.has(layer.id)||sourceSec===null){
         const inactive=videoPlaybackElements.get(layer.id),route=videoAudioRoutes.get(layer.id);
@@ -598,10 +600,40 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       try{if(video.readyState>=1&&(firstActiveFrame||(!video.seeking&&Math.abs(video.currentTime-sourceSec)>.20))){video.currentTime=sourceSec;video.dataset.songVideoActive='true';}}catch{}
       songVideoAudioRoute(layer,video,video.dataset.songVideoActive==='true'&&video.readyState>=2&&!video.seeking);
       if(video.dataset.songVideoActive==='true'&&video.paused)video.play().catch(()=>{});
-      if(video.readyState>=2)frames.push({id:layer.id,name:layer.name,video});
+      if(!audioOnly&&video.readyState>=2)frames.push({id:layer.id,name:layer.name,video});
     }
-    for(const [id,video] of videoPlaybackElements)if(!activeIds.has(id))video.pause();
+    for(const [id,video] of videoPlaybackElements)if(!activeIds.has(id)&&(!audioOnly||project.voice.videoLayers.find(layer=>layer.id===id)?.includeAudio)){video.pause();video.dataset.songVideoActive='false';}
     return frames;
+  }
+
+  function songVideoFramesAtStep(absoluteStep){return updateSongVideoTracksAtStep(absoluteStep);}
+
+  function songVideoAudioPlaybackFrame(){
+    songVideoAudioFrameId=null;
+    const transport=transportState();
+    if(!transport.running){pauseSongVideoPlayers();return;}
+    if(!project.voice.videoLayers.some(layer=>layer.includeAudio))return;
+    const secondsPerStep=60/clamp(transport.bpm,40,240)/4;
+    const absoluteStep=(audio.context.currentTime-transport.epoch)/secondsPerStep;
+    updateSongVideoTracksAtStep(absoluteStep,{audioOnly:true});
+    songVideoAudioFrameId=requestAnimationFrame(songVideoAudioPlaybackFrame);
+  }
+
+  function startSongVideoAudioPlayback(){
+    if(!transportState().running||!project.voice.videoLayers.some(layer=>layer.includeAudio)||songVideoAudioFrameId!==null)return;
+    songVideoAudioFrameId=requestAnimationFrame(songVideoAudioPlaybackFrame);
+  }
+
+  function stopSongVideoAudioPlayback(){
+    if(songVideoAudioFrameId!==null)cancelAnimationFrame(songVideoAudioFrameId);
+    songVideoAudioFrameId=null;pauseSongVideoPlayers();
+  }
+
+  function stopSongVideoVisualPlayback(){
+    for(const [id,video] of videoPlaybackElements){
+      if(project.voice.videoLayers.find(layer=>layer.id===id)?.includeAudio)continue;
+      video.pause();video.dataset.songVideoActive='false';
+    }
   }
 
   function probeVideoDuration(file,fallbackDurationSec=null){
@@ -1151,9 +1183,10 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const bar=Math.floor(absoluteStep/16)%16;
       for(const row of $('rap-bars').children)row.classList.toggle('current',Number(row.dataset.bar)===bar);
     },
-    transportStarted(epoch, bpm) { audio.playVocalLayers(project.voice.layers, epoch, bpm); updateOverdubControls(); },
-    transportStopped() { audio.stopVocalLayers();pauseSongVideoPlayers(); if (vocalRecording) stopOverdub(); if(videoRecordingActivity.phase==='starting')stopSongVideoRecording(true);else if(videoRecording)stopSongVideoRecording(false);updateOverdubControls(); },
+    transportStarted(epoch, bpm) { audio.playVocalLayers(project.voice.layers, epoch, bpm); startSongVideoAudioPlayback();updateOverdubControls(); },
+    transportStopped() { audio.stopVocalLayers();stopSongVideoAudioPlayback(); if (vocalRecording) stopOverdub(); if(videoRecordingActivity.phase==='starting')stopSongVideoRecording(true);else if(videoRecording)stopSongVideoRecording(false);updateOverdubControls(); },
     songVideoFramesAtStep,
+    stopSongVideoVisualPlayback,
     stopTuner,
     refreshTimeline() { renderOverdubTimeline(); },
     transportChanged() { updateOverdubControls(); },
