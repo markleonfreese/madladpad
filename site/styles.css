@@ -405,3 +405,15 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
 .track-steps .step.note-start,.track-steps .step-overview.note-start{border-left:3px solid #c6ee97}
 .track-note-edit{min-width:50px}
 @media(max-width:740px){.sample-note-dialog{padding:12px}.sample-note-controls label{flex:1 1 130px}.sample-note-controls select,.sample-note-controls input{width:100%}.sample-note-scroll{max-height:50vh}}
+/* Overdub arrangement: one scrollable shared beat ruler with independent wave rows. */
+.overdub-timeline-section{min-width:0;margin:14px 0 24px}
+.overdub-timeline-section h4{font-size:14px;margin:0 0 7px;color:var(--ink)}
+.overdub-timeline-scroll{overflow:auto;max-width:100%;max-height:380px;border:1px solid #456148;border-radius:10px;background:#132018;overscroll-behavior:contain}
+.overdub-ruler{display:flex;position:sticky;top:0;z-index:2;background:#26372b;min-height:32px;font:11px var(--mono);color:#e7f5d6}
+.overdub-ruler>span{padding:8px 7px;border-left:1px solid #698365;flex:none;box-sizing:border-box}
+.overdub-wave-row{padding:4px 0 8px;border-bottom:1px solid #3a503b}
+.overdub-wave-row>strong{display:block;position:sticky;left:0;padding:3px 6px;font-size:12px;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#1c2d21}
+.overdub-wave-row svg{display:block;max-width:none;background:#0e1912}
+.vocal-layer-trim{display:grid;gap:4px;font:11px var(--mono);color:var(--muted)}
+.vocal-layer-trim input{width:85px;max-width:100%;min-height:44px;padding:8px;background:#101710;border:1px solid var(--line);color:var(--ink);border-radius:7px}
+@media(max-width:740px){.overdub-timeline-scroll{max-height:330px}.vocal-layer-trim input{width:100%}}

@@ -1,4 +1,4 @@
-import { clamp, nextQuantizedTime } from './core.js';
+import { clamp, nextQuantizedTime, vocalLayerClip } from './core.js';
 import { effectivePitchSemitones } from './pitch-dsp.js';
 
 export class SamplerAudio {
@@ -174,13 +174,14 @@ export class SamplerAudio {
       const source = this.vocalSources.get(layer.id);
       if (!source?.buffer || layer.muted || (hasSolo && !layer.solo)) continue;
       const intended = epoch + clamp(layer.startStep, 0, 4096) * secondsPerStep;
-      const now = this.context.currentTime, offset = Math.max(0, now - intended);
-      if (offset >= source.buffer.duration) continue;
-      this.startVocalLayer(layer.id,source.buffer,Math.max(now+.005,intended),offset,layer.gain,layer.pitch);
+      const crop=vocalLayerClip(layer,source.buffer.duration);
+      const now = this.context.currentTime, late = Math.max(0, now - intended);
+      if (late >= crop.duration) continue;
+      this.startVocalLayer(layer.id,source.buffer,Math.max(now+.005,intended),crop.start+late,layer.gain,layer.pitch,crop.duration-late);
     }
   }
 
-  startVocalLayer(id,buffer,start,offset=0,gainValue=1,pitch=0){
+  startVocalLayer(id,buffer,start,offset=0,gainValue=1,pitch=0,playDuration=null){
     if(Math.abs(pitch)>.01&&!this.pitchReady)return false;
     const node=this.context.createBufferSource(),gain=this.context.createGain();
     const pitchNode=Math.abs(pitch)>.01?this.createPitchNode():null;
@@ -196,15 +197,19 @@ export class SamplerAudio {
       node.disconnect();pitchNode?.disconnect();gain.disconnect();
       if(this.vocalPlayback.get(id)===playback)this.vocalPlayback.delete(id);
     };
-    node.start(start,offset);
+    const available=Math.max(0,buffer.duration-offset);
+    const duration=playDuration==null?available:Math.min(available,playDuration);
+    if(duration<=0){node.disconnect();pitchNode?.disconnect();gain.disconnect();this.vocalPlayback.delete(id);return false;}
+    node.start(start,offset,duration);
     return true;
   }
 
-  previewVocalLayer(id, gainValue = 1, pitch = 0) {
+  previewVocalLayer(id, gainValue = 1, pitch = 0, layer = null) {
     const source = this.vocalSources.get(id);
     if (!source?.buffer) return false;
+    const crop=vocalLayerClip(layer,source.buffer.duration);
     this.stopVocalLayer(id);
-    return this.startVocalLayer(id,source.buffer,this.context.currentTime+.005,0,gainValue,pitch);
+    return this.startVocalLayer(id,source.buffer,this.context.currentTime+.005,crop.start,gainValue,pitch,crop.duration);
   }
 
   updateVocalLayerStates(layers) {

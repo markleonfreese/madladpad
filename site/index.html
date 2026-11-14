@@ -289,6 +289,14 @@
         <p id="voice-overdub-status" class="voice-status" role="status" aria-live="polite">Start the sequencer to record a vocal layer.</p>
         <div class="voice-actions"><label class="voice-label">VOCAL HARMONY<select id="vocal-harmony-interval"><option value="4">+4 · major third</option><option value="3">+3 · minor third</option><option value="7">+7 · fifth</option><option value="-3">−3 · minor third</option><option value="-4">−4 · major third</option><option value="-7">−7 · fifth</option><option value="12">+12 · octave</option><option value="-12">−12 · octave</option></select></label><button id="vocal-add-harmony" class="pill-button">ADD PITCHED HARMONY TO LATEST RAW TAKE</button></div>
         <p class="voice-note">Generated harmony layers reference the original local take; no raw recording is overwritten. A pitch processor is required to keep timing aligned. Edit harmony pitch, gain, mute and solo independently.</p>
+        <div class="overdub-timeline-section">
+          <h4>Track arrangement · bars and waveforms</h4>
+          <p class="voice-note">See where each take sits over the loop. Adjust its start step and trim range below without changing the raw recording.</p>
+          <div class="overdub-timeline-scroll" tabindex="0" aria-label="Scrollable overdub arrangement showing bar markers and audible waveforms">
+            <div id="overdub-timeline" role="group" aria-label="Overdub tracks aligned with Sequence"></div>
+          </div>
+          <p id="overdub-timeline-status" class="voice-note" role="status" aria-live="polite">Recorded waveforms will appear here.</p>
+        </div>
         <div id="voice-overdub-layers" class="vocal-layers" role="group" aria-label="Vocal take layers"></div>
       </section>
     </section>
