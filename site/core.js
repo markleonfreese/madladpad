@@ -309,6 +309,27 @@ export function normaliseSong(value) {
   }
   return {clips};
 }
+/** Move an existing Song clip to a boundary between clips, keeping source scene links intact. */
+export function reorderSongClips(clips, clipId, insertionSlot) {
+  const next=Array.isArray(clips)?[...clips]:[];
+  const index=next.findIndex(clip=>clip?.id===clipId);
+  if(index<0)return next;
+  const slot=Math.round(clamp(insertionSlot,0,next.length));
+  if(slot===index||slot===index+1)return next;
+  const [clip]=next.splice(index,1);
+  next.splice(slot>index?slot-1:slot,0,clip);
+  return next;
+}
+/** Change only one clip's bar length, never exceeding the saved Song limits. */
+export function resizeSongClipBars(clips,clipId,requestedBars){
+  const next=Array.isArray(clips)?[...clips]:[];
+  const index=next.findIndex(clip=>clip?.id===clipId);
+  if(index<0)return next;
+  const others=next.reduce((total,clip,i)=>total+(i===index?0:Math.max(0,Number(clip.bars)||0)),0);
+  const maximum=Math.max(1,Math.min(64,MAX_SONG_BARS-others));
+  next[index]={...next[index],bars:Math.round(clamp(requestedBars,1,maximum))};
+  return next;
+}
 export function songTotalBars(song) {
   return (Array.isArray(song?.clips)?song.clips:[]).reduce((sum,clip)=>sum+Math.max(0,Number(clip.bars)||0),0);
 }
