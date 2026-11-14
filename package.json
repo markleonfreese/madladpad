@@ -14,6 +14,7 @@
     "deploy:pages": "node scripts/deploy-pages.mjs",
     "test": "node --test tests/*.test.mjs",
     "test:browser": "node tests/browser-smoke.mjs",
+    "test:song-browser": "node tests/song-journey-browser-acceptance.mjs",
     "test:webkit": "node tests/webkit-smoke.mjs",
     "test:workers-runtime": "node tests/workers-runtime-smoke.mjs",
     "pretest:webkit": "npm run build",
