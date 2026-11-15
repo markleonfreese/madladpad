@@ -1492,6 +1492,84 @@ try {
   await fallbackAudioTrack.getByRole('button',{name:new RegExp(`Delete audio track ${audioTracksBeforeAbort+1} and its saved local audio file`)}).click();
   await page.waitForFunction(count=>document.querySelectorAll('#voice-overdub-layers .vocal-layer').length===count,audioTracksBeforeAbort);
   checkpoint('audio take remains saveable after a synthetic journal transaction abort');
+  const videoTracksBeforeSaveFailure=await page.locator('#song-video-layers .song-video-track').count();
+  await page.evaluate(()=>{
+    const prototype=IDBObjectStore.prototype,nativePut=prototype.put,aborted=new WeakSet();
+    window.__videoSaveAbort={attempts:0,restore:()=>{prototype.put=nativePut;}};
+    prototype.put=function(value,key){
+      const transaction=this.transaction;
+      if(aborted.has(transaction))return {};
+      if(window.__videoSaveAbort.attempts===0&&typeof key==='string'&&key.startsWith('video-layer:')){
+        window.__videoSaveAbort.attempts++;
+        aborted.add(transaction);
+        transaction.abort();
+        return {};
+      }
+      return nativePut.call(this,value,key);
+    };
+  });
+  await page.locator('#overdub-video-record').click();
+  await page.waitForFunction(()=>document.querySelector('#overdub-video-stop').hidden===false,null,{timeout:8000});
+  await page.waitForFunction(async()=>(await (await import('/storage.js')).listInterruptedVideoRecordings())[0]?.completeChunks>=2,null,{timeout:15000});
+  await page.locator('#overdub-video-stop').click();
+  await page.waitForFunction(()=>window.__videoSaveAbort.attempts===1,null,{timeout:30000});
+  await page.locator('#song-video-status a[download]').waitFor({timeout:20000});
+  assert.match(await page.locator('#song-video-status').textContent(),/Could not save camera take/,'the final-save failure should be reported next to a rescue link');
+  assert.equal(await page.locator('#song-video-status a[download]').textContent(),'Download unsaved video take','the captured video should remain downloadable after local persistence fails');
+  assert.equal(await page.locator('#song-video-layers .song-video-track').count(),videoTracksBeforeSaveFailure,'a failed final save should not create a phantom editable video track');
+  const pendingVideoRecovery=await page.evaluate(async()=>(await (await import('/storage.js')).listInterruptedVideoRecordings()).map(take=>({size:take.blob.size,chunks:take.completeChunks})));
+  assert.equal(pendingVideoRecovery.length,1,'the journal should remain available if final media persistence fails');
+  assert.ok(pendingVideoRecovery[0].size>0&&pendingVideoRecovery[0].chunks>0,'the recoverable video journal should contain captured media');
+  await page.evaluate(()=>window.__videoSaveAbort.restore());
+  const rescueVideoDownload=page.waitForEvent('download',{timeout:25000});
+  await page.locator('#song-video-status a[download]').click();
+  const rescuedVideo=await rescueVideoDownload;
+  assert.match(rescuedVideo.suggestedFilename(),/^song-video-.*\.(?:mp4|webm)$/,'the rescue download should retain its captured video filename and recorder container');
+  assert.ok((await readFile(await rescuedVideo.path())).length>100,'the rescued video file should contain playable media bytes');
+  await page.locator('#overdub-video-discard').click();
+  await page.waitForFunction(async()=>document.querySelector('#overdub-video-recover').hidden&&(await (await import('/storage.js')).listInterruptedVideoRecordings()).length===0,null,{timeout:10000});
+  checkpoint('completed video take can be downloaded after final local save failure');
+  const audioTracksBeforeSaveFailure=await page.locator('#voice-overdub-layers .vocal-layer').count();
+  await page.evaluate(async()=>{
+    const nativeGetUserMedia=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    const context=new AudioContext(),destination=context.createMediaStreamDestination(),oscillator=context.createOscillator(),gain=context.createGain();
+    gain.gain.value=.2;oscillator.frequency.value=440;oscillator.connect(gain).connect(destination);oscillator.start();await context.resume();
+    const prototype=IDBObjectStore.prototype,nativePut=prototype.put,aborted=new WeakSet();
+    window.__audioSaveAbort={attempts:0,restore:async()=>{prototype.put=nativePut;Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,value:nativeGetUserMedia});oscillator.stop();await context.close();}};
+    Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,value:constraints=>constraints?.audio&&!constraints?.video?Promise.resolve(destination.stream):nativeGetUserMedia(constraints)});
+    prototype.put=function(value,key){
+      const transaction=this.transaction;
+      if(aborted.has(transaction))return {};
+      if(window.__audioSaveAbort.attempts===0&&typeof key==='string'&&key.startsWith('voice-layer:')){
+        window.__audioSaveAbort.attempts++;
+        aborted.add(transaction);
+        transaction.abort();
+        return {};
+      }
+      return nativePut.call(this,value,key);
+    };
+  });
+  await page.locator('#voice-overdub-record').click();
+  await page.waitForFunction(()=>document.querySelector('#voice-overdub-status').textContent.includes('Recording microphone audio'),null,{timeout:8000});
+  await page.waitForFunction(async()=>(await (await import('/storage.js')).listInterruptedAudioRecordings())[0]?.completeChunks>=2,null,{timeout:15000});
+  await page.locator('#voice-overdub-stop').click();
+  await page.waitForFunction(()=>window.__audioSaveAbort.attempts===1,null,{timeout:30000});
+  await page.locator('#voice-overdub-status a[download]').waitFor({timeout:20000});
+  assert.match(await page.locator('#voice-overdub-status').textContent(),/Could not save vocal take/,'the final audio-save failure should be reported next to a rescue link');
+  assert.equal(await page.locator('#voice-overdub-status a[download]').textContent(),'Download unsaved audio take','the captured audio should remain downloadable after local persistence fails');
+  assert.equal(await page.locator('#voice-overdub-layers .vocal-layer').count(),audioTracksBeforeSaveFailure,'a failed final save should not create a phantom editable audio track');
+  const pendingAudioRecovery=await page.evaluate(async()=>(await (await import('/storage.js')).listInterruptedAudioRecordings()).map(take=>({size:take.blob.size,chunks:take.completeChunks})));
+  assert.equal(pendingAudioRecovery.length,1,'the audio journal should remain available if final media persistence fails');
+  assert.ok(pendingAudioRecovery[0].size>0&&pendingAudioRecovery[0].chunks>0,'the recoverable audio journal should contain captured media');
+  await page.evaluate(()=>window.__audioSaveAbort.restore());
+  const rescueAudioDownload=page.waitForEvent('download',{timeout:25000});
+  await page.locator('#voice-overdub-status a[download]').click();
+  const rescuedAudio=await rescueAudioDownload;
+  assert.match(rescuedAudio.suggestedFilename(),/^vocal-take-.*\.(?:m4a|mp4|webm|ogg)$/,'the rescue download should retain its captured audio filename and recorder container');
+  assert.ok((await readFile(await rescuedAudio.path())).length>100,'the rescued audio file should contain playable media bytes');
+  await page.locator('#voice-overdub-discard').click();
+  await page.waitForFunction(async()=>document.querySelector('#voice-overdub-recover').hidden&&(await (await import('/storage.js')).listInterruptedAudioRecordings()).length===0,null,{timeout:10000});
+  checkpoint('completed audio take can be downloaded after final local save failure');
   const audioTrackCountBeforeStorageCheck=await page.locator('#voice-overdub-layers .vocal-layer').count();
   const videoTrackCountBeforeStorageCheck=await page.locator('#song-video-layers .song-video-track').count();
   await page.evaluate(()=>{
