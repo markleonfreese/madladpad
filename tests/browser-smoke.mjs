@@ -1139,6 +1139,13 @@ try {
       await page.mouse.up();
     };
     assert.equal(await page.locator(gestureSelector('move')).count(),1,'imported track must have a draggable waveform body');
+    await page.locator('#studio-play').click();
+    await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='true');
+    await dragWave('move',2);
+    assert.equal(await page.evaluate(id=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.find(layer=>layer.id===id)?.startStep,importedId),0,'track edits must be rejected while Song playback is running');
+    assert.match(await page.locator('#voice-overdub-status').textContent(),/Stop Song playback before dragging or trimming/,'blocked edits should explain how to continue');
+    await page.locator('#studio-play').click();
+    await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='false');
     await dragWave('move',2);
     await page.waitForFunction(id=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.find(layer=>layer.id===id)?.startStep===2,importedId);
     const bpmForGesture=Number(await page.locator('#bpm-input').inputValue()),stepSeconds=60/bpmForGesture/4;
@@ -1198,6 +1205,8 @@ try {
       finally { await context.close(); }
     },vocalMixBytes.toString('base64'));
     assert.ok(vocalMixRms>importedRms*.1,`an imported Song audio track should reach the exported mix (track RMS ${importedRms}, export RMS ${vocalMixRms})`);
+    if((await page.locator('#play-seq').textContent()).includes('STOP'))await page.locator('#studio-play').click();
+    await page.waitForFunction(()=>!document.querySelector('#play-seq').textContent.includes('STOP'));
     const crashPage=page;
     await crashPage.goto(`${origin}/#overdub`);
     await crashPage.waitForFunction(()=>document.body.dataset.screen==='overdub');
