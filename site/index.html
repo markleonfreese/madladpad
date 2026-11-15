@@ -33,17 +33,12 @@
       </div>
     </header>
 
-    <nav id="studio-nav" class="studio-nav" aria-label="Studio">
+    <nav id="studio-nav" class="studio-nav" aria-label="Studio stages">
       <a href="#sounds" data-studio-screen="sounds" aria-current="page"><span>01</span> Playground</a>
-      <a href="#beats" data-studio-screen="beats"><span>02</span> Sequence</a>
-      <a href="#export" data-studio-screen="export"><span>03</span> Video & Export</a>
-      <details class="studio-more-tools" id="studio-more-tools">
-        <summary>Lab</summary>
-        <div class="studio-more-links">
-          <a href="#voice" data-studio-screen="voice">Voice Lab</a>
-          <a href="#overdub" data-studio-screen="overdub">Overdub</a>
-        </div>
-      </details>
+      <a href="#beats" data-studio-screen="beats"><span>02</span> Beat Maker</a>
+      <a href="#voice" data-studio-screen="voice"><span>03</span> Melody & Rhythm</a>
+      <a href="#overdub" data-studio-screen="overdub"><span>04</span> Tracks</a>
+      <a href="#export" data-studio-screen="export"><span>05</span> Export</a>
     </nav>
 
     <main id="studio-main">
@@ -228,10 +223,10 @@
     </details>
 
     <section class="voice-lab" id="voice-lab" aria-labelledby="voice-lab-title" hidden>
-      <div class="section-label"><span>03 / VOICE LAB</span><span>WORDS · MELODY · BARS</span></div>
-      <h2 id="voice-lab-title">Turn a voice into a track.</h2>
-      <p class="voice-intro">Transcribe local clips, shape words into phrases, write melodies and rap bars. Continue to Overdub to record vocal layers. Your audio and writing stay on this device.</p>
-      <div class="voice-jump" role="group" aria-label="Choose a Voice Lab tool"><button type="button" data-voice-jump="transcript-title" aria-controls="voice-speech-tool" aria-pressed="true">Speech & words</button><button type="button" data-voice-jump="melody-title" aria-controls="voice-melody-tool" aria-pressed="false">Melody & tuning</button><button type="button" data-voice-jump="rap-title" aria-controls="voice-rap-tool" aria-pressed="false">Rap & flow</button></div>
+      <div class="section-label"><span>03 / MELODY & RHYTHM</span><span>WORDS · MELODY · BARS</span></div>
+      <h2 id="voice-lab-title">Shape your words, notes and rhythm.</h2>
+      <p class="voice-intro">Transcribe local clips, shape words into phrases, write melodies and rap bars. Continue to Tracks to arrange and record takes. Your audio and writing stay on this device.</p>
+      <div class="voice-jump" role="group" aria-label="Choose a melody and rhythm tool"><button type="button" data-voice-jump="transcript-title" aria-controls="voice-speech-tool" aria-pressed="true">Speech & words</button><button type="button" data-voice-jump="melody-title" aria-controls="voice-melody-tool" aria-pressed="false">Melody & tuning</button><button type="button" data-voice-jump="rap-title" aria-controls="voice-rap-tool" aria-pressed="false">Rap & flow</button></div>
       <div class="voice-columns">
         <section class="voice-card" id="voice-speech-tool" aria-labelledby="transcript-title">
           <h3 id="transcript-title">Speech transcription</h3>
@@ -299,9 +294,9 @@
     </section>
 
     <section id="overdub-lab" class="studio-stage" aria-labelledby="overdub-title" hidden>
-      <div class="section-label"><span>04 / SONG TRACKS</span><span>RECORD · IMPORT · MIX</span></div>
-      <h2 id="overdub-title">Build the song, track by track.</h2>
-      <p class="voice-intro">Record a performance or bring in audio from this device. Arrange each local track against the Song, then adjust its start, trim, level, mute or solo.</p>
+      <div class="section-label"><span>04 / TRACKS</span><span>RECORD · IMPORT · MIX</span></div>
+      <h2 id="overdub-title">Arrange and edit your recordings.</h2>
+      <p class="voice-intro">Record or import an audio/video take. Move it directly on the timeline, drag its edges to trim, and adjust its mix. Original files remain untouched.</p>
       <section class="voice-card" aria-labelledby="vocal-layers-title">
         <h3 id="vocal-layers-title">Audio tracks</h3>
         <p class="voice-note">Use the Song arrangement as your backing track. Original files stay local; edits change track placement and trim, not the source.</p>
@@ -312,7 +307,8 @@
         <p class="voice-note">Generated harmony layers reference the original local take; no raw recording is overwritten. A pitch processor is required to keep timing aligned. Edit harmony pitch, gain, mute and solo independently.</p>
         <div class="overdub-timeline-section">
           <h4>Track arrangement · bars and waveforms</h4>
-          <p class="voice-note">See where each take sits over the loop. Adjust its start step and trim range below without changing the raw recording.</p>
+          <div class="overdub-zoom-controls" role="group" aria-label="Timeline zoom"><button type="button" id="overdub-zoom-out" aria-label="Zoom out of track arrangement">−</button><output id="overdub-zoom-label" aria-live="polite">2×</output><button type="button" id="overdub-zoom-in" aria-label="Zoom into track arrangement">+</button></div>
+          <p class="voice-note">Drag a waveform or video clip to move it. Pull its left or right edge to trim without deleting source audio. Use zoom for fine edits; precision fields remain below.</p>
           <div class="overdub-timeline-scroll" tabindex="0" aria-label="Scrollable overdub arrangement showing bar markers and audible waveforms">
             <div id="overdub-timeline" role="group" aria-label="Overdub tracks aligned with Sequence"></div>
           </div>
