@@ -71,10 +71,6 @@ try {
   });
   await page.goto(origin);
   const openScreen = async screen => {
-    if (screen === 'overdub') {
-      const menu = page.locator('#studio-more-tools');
-      if (!await menu.evaluate(element => element.open)) await menu.locator('summary').click();
-    }
     await page.locator(`[data-studio-screen="${screen}"]`).click();
     await page.waitForFunction(value => document.body.dataset.screen === value, screen);
   };
