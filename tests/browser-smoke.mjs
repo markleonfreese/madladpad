@@ -291,19 +291,7 @@ try {
   assert.ok(stickyTransport.bottom<=844&&stickyTransport.bottom>694,`the playback bar should sit above the phone safe area: ${JSON.stringify(stickyTransport)}`);
   await page.evaluate(()=>window.scrollTo(0,0));
   const openScreen=async screen=>{
-    if(screen==='voice'||screen==='overdub'){
-      const more=page.locator('#studio-more-tools');
-      if(!await more.evaluate(element=>element.open))await more.locator('summary').click();
-      const link=more.locator(`[data-studio-screen="${screen}"]`);
-      const expectedName=screen==='voice'?'Voice Lab':'Overdub';
-      assert.equal(await more.getByRole('link',{name:expectedName,exact:true}).count(),1,`${expectedName} should expose its visible text as the navigation link name`);
-      const hit=await link.evaluate(element=>{
-        const rect=element.getBoundingClientRect(),target=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);
-        return {visible:rect.width>0&&rect.height>0,centerHitsLink:target===element||element.contains(target)};
-      });
-      assert.equal(hit.visible,true,`${expectedName} should be visible when Lab is expanded: ${JSON.stringify(hit)}`);
-      assert.equal(hit.centerHitsLink,true,`${expectedName} should not be clipped or covered by the next section: ${JSON.stringify(hit)}`);
-    }
+    assert.equal(await page.locator('#studio-nav > a[data-studio-screen="'+screen+'"]').count(),1,'each studio stage should be directly reachable from primary navigation');
     await page.locator(`[data-studio-screen="${screen}"]`).click();
     await page.waitForFunction(value=>document.body.dataset.screen===value,screen);
     if(screen==='beats'){
@@ -334,15 +322,13 @@ try {
     const overdubLayout=await page.evaluate(()=>({viewport:document.documentElement.clientWidth,document:document.documentElement.scrollWidth,buttonRight:document.querySelector('#vocal-add-harmony').getBoundingClientRect().right,overflow:[...document.querySelectorAll('body *')].filter(el=>{const rect=el.getBoundingClientRect();return rect.width>0&&rect.right>document.documentElement.clientWidth+1;}).slice(0,14).map(el=>({tag:el.tagName,id:el.id,classes:typeof el.className==='string'?el.className.slice(0,85):'',right:Math.round(el.getBoundingClientRect().right),width:Math.round(el.getBoundingClientRect().width)}))}));
     assert.equal(overdubLayout.document,width,`Overdub should not overflow at ${width}px: ${JSON.stringify(overdubLayout)}`);
     assert.ok(overdubLayout.buttonRight<=width,`the vocal harmony action should fit at ${width}px: ${JSON.stringify(overdubLayout)}`);
-    assert.equal(await page.locator('#studio-more-tools > summary').getAttribute('aria-current'),'page','the selected Overdub destination should remain identifiable after its menu closes');
+    assert.equal(await page.locator('#studio-nav a[data-studio-screen="overdub"]').getAttribute('aria-current'),'page','Tracks should be identified as the current studio stage');
+    assert.equal(await page.locator('#sequencer').isHidden(),true,'Tracks must not repeat the Beat Maker editor');
   }
   await page.setViewportSize({width:1280,height:900});
   await openScreen('sounds');
-  await page.locator('#studio-more-tools > summary').click();
-  const desktopVoiceLink=page.locator('#studio-more-tools [data-studio-screen="voice"]');
-  assert.equal(await page.getByRole('link',{name:'Voice Lab',exact:true}).count(),1,'desktop Voice Lab navigation should have a computed text name');
-  assert.equal(await desktopVoiceLink.evaluate(element=>{const rect=element.getBoundingClientRect(),hit=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);return hit===element||element.contains(hit);}),true,'desktop Voice Lab popup link should remain visible outside the nav scroll box');
-  await page.locator('#studio-more-tools > summary').click();
+  const desktopVoiceLink=page.locator('#studio-nav > a[data-studio-screen="voice"]');
+  assert.equal(await desktopVoiceLink.evaluate(element=>{const rect=element.getBoundingClientRect(),hit=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);return hit===element||element.contains(hit);}),true,'desktop Melody & Rhythm navigation should be an unobstructed direct link');
   await page.locator('#pad-grid .pad-cell').first().hover();
   const desktopEdit=page.locator('#pad-grid .pad-cell').first().locator('.edit-pad');
   await desktopEdit.click();
@@ -2220,31 +2206,22 @@ try {
   await page.setViewportSize({width:390,height:844});
   await openScreen('voice');
   const mobileTabs=await page.locator('#studio-nav > a').evaluateAll(links=>links.map(link=>({left:link.getBoundingClientRect().left,right:link.getBoundingClientRect().right,visible:link.getBoundingClientRect().width>0})));
-  assert.equal(mobileTabs.length,3,'the three core studio destinations should be primary');
-  assert.ok(mobileTabs.every(tab=>tab.visible&&tab.left>=0&&tab.right<=390),`core destinations should remain in view without horizontal scrolling: ${JSON.stringify(mobileTabs)}`);
-  assert.deepEqual(await page.locator('#studio-nav > a').evaluateAll(links=>links.map(link=>link.textContent.replace(/\s+/g,' ').trim())),['01 Playground','02 Sequence','03 Video & Export'],'the primary navigation should name the three core creative tasks');
-  assert.match(await page.locator('#studio-more-tools > summary').textContent(),/Voice Lab/,'the current specialist destination should remain identified');
-  assert.equal((await page.locator('#studio-more-tools > summary').textContent()).trim(),'Lab · Voice Lab','the Lab menu should identify the active Voice Lab destination');
-  await page.locator('#studio-more-tools > summary').click();
-  for(const link of await page.locator('.studio-more-links a').all()){
-    const box=await link.boundingBox();
-    assert.ok(box&&box.x>=0&&box.x+box.width<=390,`specialist destinations should fit the mobile viewport: ${JSON.stringify(box)}`);
-  }
-  await page.locator('#studio-more-tools > summary').click();
+  assert.equal(mobileTabs.length,5,'all five studio stages should be directly visible');
+  assert.ok(mobileTabs.every(tab=>tab.visible&&tab.left>=0&&tab.right<=390),'five direct navigation tabs should fit a 390px phone without horizontal scrolling');
+  assert.deepEqual(await page.locator('#studio-nav > a').evaluateAll(links=>links.map(link=>link.textContent.replace(/\\s+/g,' ').trim())),['01 Playground','02 Beat Maker','03 Melody & Rhythm','04 Tracks','05 Export'],'navigation should follow a single creative path');
+  assert.equal(await page.locator('#studio-nav > a[data-studio-screen="voice"]').getAttribute('aria-current'),'page');
   await openScreen('sounds');
-  const secondaryNavSummary=page.locator('#studio-more-tools > summary');
-  await secondaryNavSummary.focus();await page.keyboard.press('Enter');await page.keyboard.press('Tab');await page.keyboard.press('Enter');
+  const voiceTab=page.locator('#studio-nav > a[data-studio-screen="voice"]');
+  await voiceTab.focus();await page.keyboard.press('Enter');
   await page.waitForFunction(()=>document.body.dataset.screen==='voice');
-  assert.equal(await page.locator('#studio-more-tools').evaluate(element=>element.open),false,'keyboard Voice Lab navigation should close the specialist menu');
-  assert.equal(await secondaryNavSummary.getAttribute('aria-current'),'page','the closed specialist menu should identify Voice Lab as the current page');
-  assert.match(await secondaryNavSummary.textContent(),/Voice Lab/,'the closed specialist menu should name the current Voice Lab destination');
-  assert.equal(await page.locator('#voice-lab').isVisible(),true,'keyboard Voice Lab navigation should show its workspace');
-  await secondaryNavSummary.focus();await page.keyboard.press('Enter');await page.keyboard.press('Tab');await page.keyboard.press('Tab');await page.keyboard.press('Enter');
+  assert.equal(await voiceTab.getAttribute('aria-current'),'page','keyboard navigation should identify Melody & Rhythm');
+  assert.equal(await page.locator('#voice-lab').isVisible(),true);
+  const tracksTab=page.locator('#studio-nav > a[data-studio-screen="overdub"]');
+  await tracksTab.focus();await page.keyboard.press('Enter');
   await page.waitForFunction(()=>document.body.dataset.screen==='overdub');
-  assert.equal(await page.locator('#studio-more-tools').evaluate(element=>element.open),false,'keyboard Overdub navigation should close the specialist menu');
-  assert.equal(await secondaryNavSummary.getAttribute('aria-current'),'page','the closed specialist menu should identify Overdub as the current page');
-  assert.match(await secondaryNavSummary.textContent(),/Overdub/,'the closed specialist menu should name the current Overdub destination');
-  assert.equal(await page.locator('#overdub-lab').isVisible(),true,'keyboard Overdub navigation should show its workspace');
+  assert.equal(await tracksTab.getAttribute('aria-current'),'page','keyboard navigation should identify Tracks');
+  assert.equal(await page.locator('#overdub-lab').isVisible(),true);
+  assert.equal(await page.locator('#sequencer').isHidden(),true,'Beat Maker must not be duplicated on Tracks');
   await openScreen('voice');
   await page.locator('[data-voice-jump="rap-title"]').click();
   const mobileRap=await page.locator('#rap-title').evaluate(title=>title.closest('.voice-card').getBoundingClientRect().width);
