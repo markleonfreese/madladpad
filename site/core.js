@@ -177,6 +177,35 @@ function normaliseVoice(value) {
 
 export const clamp = (value, min, max) => Math.min(max, Math.max(min, Number(value) || 0));
 
+/** Apply a sixteenth-note gesture to a placed audio/video source without mutating raw media.
+ * Moving preserves its source crop. Trim-in advances the Song position so the
+ * right-hand contents stay aligned; trim-out adjusts only the source end.
+ */
+export function editSongTrackOnTimeline(layer, gesture, offsetSteps, rawDuration, bpm) {
+  const unchanged={...layer};
+  const steps=Number.isFinite(Number(offsetSteps))?Math.round(Number(offsetSteps)):0;
+  const startStep=Math.round(clamp(layer?.startStep??0,0,4095));
+  const duration=Math.max(0,Number(rawDuration)||0);
+  if(!steps||!['move','trim-left','trim-right'].includes(gesture))return unchanged;
+  if(gesture==='move')return {...layer,startStep:Math.round(clamp(startStep+steps,0,4095))};
+  if(!duration)return unchanged;
+  const stepSeconds=60/clamp(bpm,40,240)/4;
+  const crop=vocalLayerClip(layer,duration);
+  const minDuration=.01;
+  const roundSeconds=value=>Math.round(value*1000)/1000;
+  if(gesture==='trim-left'){
+    const reveal=Math.floor((crop.start+1e-9)/stepSeconds);
+    const consume=Math.max(0,Math.floor((crop.end-crop.start-minDuration+1e-9)/stepSeconds));
+    const n=Math.max(-Math.min(reveal,startStep),Math.min(consume,Math.min(4095-startStep,steps)));
+    const snapped=steps<0?Math.max(-Math.min(reveal,startStep),steps):n;
+    return {...layer,startStep:startStep+snapped,trimStartSec:roundSeconds(crop.start+snapped*stepSeconds)};
+  }
+  const reveal=Math.max(0,Math.floor((duration-crop.end+1e-9)/stepSeconds));
+  const consume=Math.max(0,Math.floor((crop.end-crop.start-minDuration+1e-9)/stepSeconds));
+  const applied=clamp(steps,-consume,reveal);
+  return {...layer,trimEndSec:roundSeconds(crop.end+applied*stepSeconds)};
+}
+
 // The raw take is immutable. Crops are source-relative seconds while startStep
 // positions the audible portion on the sequencer timeline.
 export function vocalLayerClip(layer, rawDuration) {

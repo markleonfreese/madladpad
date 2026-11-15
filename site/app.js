@@ -91,25 +91,16 @@ function showStudioScreen() {
   if(screen!=='beats' && $('sample-note-dialog')?.open)$('sample-note-dialog').close();
   if(screen!=='sounds'&&padEditMode)setPadEditMode(false);
   if(screen!=='sounds' && $('sample-editor-dialog')?.open)closeSampleEditor();
-  if (screen !== 'voice') voiceLab?.stopTuner?.('Voice Lab closed. Microphone is off.');
+  if (screen !== 'voice') voiceLab?.stopTuner?.('Melody & Rhythm closed. Microphone is off.');
   document.body.dataset.screen = screen;
-  // Keep the sequencer first in reading and tab order on Sequence/Overdub.
+  // Beat Maker owns the sequencer; Tracks shows only its own editing workspace.
   const workspace=$('studio-workspace'),sequencer=$('sequencer');
-  if(screen==='beats'||screen==='overdub')workspace.before(sequencer);
+  if(screen==='beats')workspace.before(sequencer);
   else workspace.after(sequencer);
   for(const link of $('studio-nav').querySelectorAll('[data-studio-screen]')) {
     if(link.dataset.studioScreen===screen)link.setAttribute('aria-current','page');
     else link.removeAttribute('aria-current');
   }
-  const moreTools=$('studio-more-tools'),moreSummary=moreTools.querySelector('summary');
-  if(screen==='voice'||screen==='overdub'){
-    moreSummary.textContent=`Lab · ${screen==='voice'?'Voice Lab':'Overdub'}`;
-    moreSummary.setAttribute('aria-current','page');
-  }else{
-    moreSummary.textContent='Lab';
-    moreSummary.removeAttribute('aria-current');
-  }
-  moreTools.open=false;
   $('studio-intro').hidden = screen!=='sounds'||!introOpen;
   $('show-help').setAttribute('aria-expanded',String(screen==='sounds'&&introOpen));
   $('studio-workspace').hidden = screen!=='sounds' && !(screen==='beats'&&sequencePadsVisible);
@@ -117,7 +108,7 @@ function showStudioScreen() {
   $('sequence-pad-toggle').setAttribute('aria-expanded',String(sequencePadsVisible));
   $('sequence-pad-toggle').textContent=sequencePadsVisible?'Hide performance pads':'Show performance pads';
   $('pad-edit-mode').hidden = screen==='beats';
-  $('sequencer').hidden = screen!=='beats' && screen!=='overdub';
+  $('sequencer').hidden = screen!=='beats';
   $('video-director-details').hidden=screen!=='export';
   $('video-director').hidden=screen!=='export';
   $('voice-lab').hidden = screen!=='voice';

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withModelReferrerPolicy } from '../site/voice-model-fetch.js';
-import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, songVideoPositionAtStep, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars, reorderSongClips, resizeSongClipBars, localRecordingBudget, localJournaledRecordingBudget, MAX_MEDIA_BYTES, RECORDING_STORAGE_RESERVE_BYTES, createBoundedRecordingCapture } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, songVideoPositionAtStep, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars, reorderSongClips, resizeSongClipBars, editSongTrackOnTimeline, localRecordingBudget, localJournaledRecordingBudget, MAX_MEDIA_BYTES, RECORDING_STORAGE_RESERVE_BYTES, createBoundedRecordingCapture } from '../site/core.js';
 
 test('long-form recording budget respects both project and browser storage with headroom', () => {
   assert.equal(localRecordingBudget(10 * 1024 * 1024, {usage:90 * 1024 * 1024,quota:100 * 1024 * 1024}), 10 * 1024 * 1024 - RECORDING_STORAGE_RESERVE_BYTES);
@@ -429,4 +429,38 @@ test('Song clip resizing respects whole bars, 64 bars per clip and 256 total', (
   assert.deepEqual(resizeSongClipBars(almostFull,'a',64).map(clip=>clip.bars),[64,64,64,64]);
   assert.equal(songTotalBars({clips:resizeSongClipBars(almostFull,'a',64)}),256);
   assert.deepEqual(resizeSongClipBars(almostFull,'a',-3).map(clip=>clip.bars),[1,64,64,64]);
+});
+
+test('Song track waveform gestures move source without changing the crop or stored media',()=>{
+  const raw={id:'take',startStep:16,trimStartSec:1,trimEndSec:5,gain:.8,muted:false};
+  const moved=editSongTrackOnTimeline(raw,'move',8,6,120);
+  assert.deepEqual(moved,{...raw,startStep:24});
+  assert.deepEqual(raw,{id:'take',startStep:16,trimStartSec:1,trimEndSec:5,gain:.8,muted:false},'the original track object and source must remain untouched');
+  assert.equal(editSongTrackOnTimeline(raw,'move',-500,6,120).startStep,0,'moving before the Song start is bounded');
+  assert.equal(editSongTrackOnTimeline(raw,'move',99999,6,120).startStep,4095,'the 256-bar Song timeline is bounded');
+});
+
+test('Song track waveform left and right edges trim non-destructively with sixteenth-note snapping',()=>{
+  const raw={id:'verse',startStep:16,trimStartSec:1,trimEndSec:5,includeAudio:false,audioGain:.7};
+  const inwards=editSongTrackOnTimeline(raw,'trim-left',8,6,120);
+  assert.deepEqual(inwards,{...raw,startStep:24,trimStartSec:2},'moving trim-in inward also advances the visible left edge without changing the recorded source');
+  assert.deepEqual(editSongTrackOnTimeline(raw,'trim-left',-8,6,120),{...raw,startStep:8,trimStartSec:0},'dragging left reveals source audio when available');
+  assert.deepEqual(editSongTrackOnTimeline(raw,'trim-right',-8,6,120),{...raw,trimEndSec:4},'right edge shortens without moving the clip start');
+  assert.deepEqual(editSongTrackOnTimeline(raw,'trim-right',8,6,120),{...raw,trimEndSec:6},'right edge can reveal original media up to its duration');
+  assert.equal(editSongTrackOnTimeline(raw,'trim-left',999,6,120).trimStartSec<raw.trimEndSec,true,'left trim preserves a nonempty source interval');
+  assert.equal(editSongTrackOnTimeline(raw,'trim-right',-999,6,120).trimEndSec>raw.trimStartSec,true,'right trim preserves a nonempty source interval');
+  assert.equal(editSongTrackOnTimeline(raw,'trim-right',-999,6,120).startStep,raw.startStep);
+  assert.equal(raw.trimStartSec,1,'gestures must not mutate the source track object');
+});
+
+test('Song video waveform gestures preserve source-audio opt-in and note-sized timing',()=>{
+  const layer={id:'camera',startStep:160,trimStartSec:0,trimEndSec:null,durationSec:4,includeAudio:true,audioGain:0.6};
+  const edited=editSongTrackOnTimeline(layer,'trim-right',-8,4,120);
+  assert.deepEqual(edited,{...layer,trimEndSec:3});
+  const moved=editSongTrackOnTimeline(edited,'move',-16,4,120);
+  assert.equal(moved.startStep,144);
+  assert.equal(moved.includeAudio,true);
+  assert.equal(moved.audioGain,.6);
+  assert.equal(editSongTrackOnTimeline(layer,'trim-left',-1,4,120).trimStartSec,0,'source trim-in cannot reveal audio before the original');
+  assert.deepEqual(editSongTrackOnTimeline(layer,'move',0,4,120),layer);
 });

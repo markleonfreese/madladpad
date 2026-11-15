@@ -1,4 +1,4 @@
-import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, findRecorderMime, extensionForAudioMime, extensionForMime, vocalLayerClip, songVideoPositionAtStep, songTotalBars, AsyncActivity, localRecordingBudget, localJournaledRecordingBudget, createBoundedRecordingCapture } from './core.js';
+import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, findRecorderMime, extensionForAudioMime, extensionForMime, vocalLayerClip, songVideoPositionAtStep, songTotalBars, editSongTrackOnTimeline, AsyncActivity, localRecordingBudget, localJournaledRecordingBudget, createBoundedRecordingCapture } from './core.js';
 import { getValue, saveVoiceLayer, deleteVoiceLayer, saveSongVideoLayer, deleteSongVideoLayer, beginAudioRecordingRecovery, appendAudioRecordingRecoveryChunk, listInterruptedAudioRecordings, deleteInterruptedAudioRecording, beginVideoRecordingRecovery, appendVideoRecordingRecoveryChunk, listInterruptedVideoRecordings, deleteInterruptedVideoRecording } from './storage.js';
 import { detectPitch } from './tuner.js';
 
@@ -381,6 +381,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   const videoPlaybackElements = new Map();
   const videoAudioRoutes = new Map();
   let songVideoAudioFrameId=null;
+  let overdubZoom=2;
   const updateConsentState = () => { $('voice-transcribe').disabled = transcriptionActivity.phase!=='idle' || !$('voice-source-pad').value || !$('voice-consent').checked; };
   const cancelTranscription = (message = null) => {
     transcriptionActivity.cancel();
@@ -481,6 +482,94 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     renderInterruptedVideoRecovery();
   };
 
+
+  function createTrackGestureOverlay(layer,kind,index,rawDuration,secondsPerStep,pixelsPerStep) {
+    const editable=document.createElement('div');
+    editable.className='overdub-editable-clip';
+    editable.dataset.trackKind=kind;editable.dataset.layerId=layer.id;
+    const setPosition=next=>{
+      const range=vocalLayerClip(next,rawDuration);
+      editable.style.left=(next.startStep*pixelsPerStep)+'px';
+      editable.style.width=Math.max(2,range.duration/secondsPerStep*pixelsPerStep)+'px';
+    };
+    setPosition(layer);
+    const describe=kind==='audio'?'audio waveform':'video clip';
+    const status=kind==='audio'?'voice-overdub-status':'song-video-status';
+    const current=()=>kind==='audio'?project.voice.layers.find(item=>item.id===layer.id):project.voice.videoLayers.find(item=>item.id===layer.id);
+    const apply=next=>{
+      const active=current();if(!active)return;
+      const oldRange=vocalLayerClip(active,rawDuration),newRange=vocalLayerClip(next,rawDuration);
+      if(active.startStep===next.startStep&&Math.abs(oldRange.start-newRange.start)<.0001&&Math.abs(oldRange.end-newRange.end)<.0001)return;
+      Object.assign(active,next);
+      if(kind==='audio')audio.stopVocalLayer(layer.id);
+      save();
+      if(kind==='audio')renderVocalLayers();else {renderVideoLayers();renderOverdubTimeline();}
+      $('overdub-timeline-status').textContent=kind+' track '+(index+1)+' moved or trimmed on the Song timeline; original source retained.';
+    };
+    const button=(kindOfDrag,text,position)=>{
+      const control=document.createElement('button');control.type='button';
+      control.className='overdub-clip-handle overdub-clip-'+position;
+      control.textContent=text;
+      const action=kindOfDrag==='move'?'Move':kindOfDrag==='trim-left'?'Trim beginning of':'Trim end of';
+      control.setAttribute('aria-label',action+' '+describe+' '+(index+1)+' on the Song ruler; drag or use arrow keys');
+      control.title=kindOfDrag==='move'?'Drag to move on Song; arrows move 1 step, Shift+arrows move 1 bar':'Drag to trim without changing raw media; arrows trim 1 step, Shift+arrows trim 1 bar';
+      const blocked=()=>{if(!transportState().running)return false;$(status).textContent='Stop Song playback before dragging or trimming a track.';return true;};
+      control.addEventListener('keydown',event=>{
+        if(event.key!=='ArrowLeft'&&event.key!=='ArrowRight')return;
+        event.preventDefault();if(blocked())return;
+        const offset=(event.key==='ArrowRight'?1:-1)*(event.shiftKey?16:1);
+        const active=current();if(active)apply(editSongTrackOnTimeline(active,kindOfDrag,offset,rawDuration,project.bpm));
+        const replacement=$('overdub-timeline').querySelector('.overdub-editable-clip[data-layer-id="'+layer.id+'"] .overdub-clip-'+position);
+        replacement?.focus({preventScroll:true});
+      });
+      control.addEventListener('pointerdown',event=>{
+        if(event.button!==0||blocked())return;
+        event.preventDefault();event.stopPropagation();
+        control.setPointerCapture(event.pointerId);
+        const original={...current()},originX=event.clientX;
+        let proposed=original,started=false;
+        editable.classList.add('is-editing');
+        const move=point=>{
+          if(point.pointerId!==event.pointerId)return;
+          if(!started&&Math.abs(point.clientX-originX)<5)return;
+          started=true;
+          const delta=Math.round((point.clientX-originX)/pixelsPerStep);
+          proposed=editSongTrackOnTimeline(original,kindOfDrag,delta,rawDuration,project.bpm);
+          setPosition(proposed);
+        };
+        const cleanup=()=>{
+          control.removeEventListener('pointermove',move);
+          control.removeEventListener('pointerup',finish);
+          control.removeEventListener('pointercancel',cancel);
+          if(control.hasPointerCapture(event.pointerId))control.releasePointerCapture(event.pointerId);
+          editable.classList.remove('is-editing');
+        };
+        const cancel=point=>{if(point.pointerId!==event.pointerId)return;cleanup();setPosition(original);};
+        const finish=point=>{
+          if(point.pointerId!==event.pointerId)return;
+          cleanup();if(started&&!blocked())apply(proposed);else setPosition(original);
+        };
+        control.addEventListener('pointermove',move);
+        control.addEventListener('pointerup',finish);
+        control.addEventListener('pointercancel',cancel);
+      });
+      return control;
+    };
+    editable.append(button('move','↔','move'),button('trim-left','╷','left'),button('trim-right','╷','right'));
+    return editable;
+  }
+
+  for(const [name,change] of [['overdub-zoom-in',1],['overdub-zoom-out',-1]]){
+    $(name).addEventListener('click',()=>{
+      const options=[1,2,4],index=options.indexOf(overdubZoom);
+      overdubZoom=options[Math.max(0,Math.min(options.length-1,index+change))];
+      $('overdub-zoom-label').textContent=overdubZoom+'×';
+      $('overdub-zoom-in').disabled=overdubZoom===4;
+      $('overdub-zoom-out').disabled=overdubZoom===1;
+      renderOverdubTimeline();
+    });
+  }
+
   function renderOverdubTimeline(){
     const host=$('overdub-timeline');
     host.replaceChildren();
@@ -493,7 +582,8 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     // Vocal placements support up to 256 bars; keep the full arrangement compact
     // and scrollable inside this component rather than widening the page.
     const totalSteps=Math.max(16,Math.min(4096,Math.ceil(maxEnd/16)*16));
-    const width=Math.max(680,totalSteps*4),height=64;
+    const width=Math.max(680,Math.min(32768,totalSteps*4*overdubZoom)),height=64;
+    const pixelsPerStep=width/totalSteps;
     const ruler=document.createElement('div');ruler.className='overdub-ruler';ruler.style.width=width+'px';
     for(let step=0;step<totalSteps;step+=16){
       const mark=document.createElement('span');mark.style.width=(16/totalSteps*100)+'%';
@@ -540,22 +630,24 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
         }
         add('line',{x1:x+audibleWidth,x2:x+audibleWidth,y1:6,y2:height-6,stroke:'#edce7c','stroke-width':2});
       }
-      row.append(svg);host.append(row);
+      const stage=document.createElement('div');stage.className='overdub-wave-stage';stage.style.width=width+'px';stage.style.height='106px';stage.append(svg);
+      if(source&&clip.duration>0)stage.append(createTrackGestureOverlay(layer,'audio',index,source.duration,secondsPerStep,pixelsPerStep));
+      row.append(stage);host.append(row);
     }
     for(const [index,layer] of project.voice.videoLayers.entries()){
       const row=document.createElement('div');row.className='overdub-wave-row';row.dataset.videoLayer=layer.id;row.style.width=width+'px';
       const title=document.createElement('strong');title.textContent=`VIDEO ${index+1}. ${layer.name}`;row.append(title);
-      const lane=document.createElement('div');lane.className='overdub-video-lane';lane.style.width=width+'px';lane.setAttribute('role','img');lane.setAttribute('aria-label',`Song placement lane for video track ${index+1}, ${layer.name}`);
+      const lane=document.createElement('div');lane.className='overdub-video-lane';lane.style.width=width+'px';lane.setAttribute('role','group');lane.setAttribute('aria-label',`Song placement lane for video track ${index+1}, ${layer.name}`);
       const start=clamp(layer.startStep,0,totalSteps),rawEnd=layer.trimEndSec==null?layer.durationSec:Math.min(layer.durationSec,layer.trimEndSec);
       const clipSeconds=Math.max(0,rawEnd-clamp(layer.trimStartSec,0,Math.max(0,rawEnd-.01)));
       if(start<totalSteps&&clipSeconds>0){
         const clip=document.createElement('span');clip.className='overdub-video-clip';clip.style.left=`${start/totalSteps*100}%`;clip.style.width=`${Math.min(100-start/totalSteps*100,clipSeconds/secondsPerStep/totalSteps*100)}%`;clip.textContent=layer.name;
-        clip.setAttribute('aria-label',`${layer.name} video from bar ${Math.floor(start/16)+1} for ${clipSeconds.toFixed(1)} seconds`);lane.append(clip);
+        clip.setAttribute('aria-label',`${layer.name} video from bar ${Math.floor(start/16)+1} for ${clipSeconds.toFixed(1)} seconds`);lane.append(clip,createTrackGestureOverlay(layer,'video',index,layer.durationSec,secondsPerStep,pixelsPerStep));
       }
       row.append(lane);host.append(row);
     }
     $('overdub-timeline-status').textContent=project.voice.layers.length||project.voice.videoLayers.length
-      ?'Bars align with the Song arrangement when one is present. Green shows trimmed audio waveforms; purple shows placed video clips. Drag the timeline sideways on a phone. Changes to start or trim affect the next playback.'
+      ?'Drag clip centre to move; drag left or right handles to trim non-destructively. Zoom in for detail. The ruler aligns audio and video to the same Song bars. Stop playback before editing.'
       :'Recorded and imported audio waveforms will appear here, aligned with your Song bars. Original files stay local.';
   }
 

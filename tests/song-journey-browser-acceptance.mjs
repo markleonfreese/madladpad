@@ -54,9 +54,6 @@ try{
   await page.goto(origin);await page.locator('.pad-hit').first().waitFor();
   const openDetails=async selector=>{const details=page.locator(selector);if(!await details.evaluate(el=>el.open))await details.locator('summary').click();};
   const openScreen=async screen=>{
-    if(screen==='overdub'){
-      const menu=page.locator('#studio-more-tools');if(!await menu.evaluate(el=>el.open))await menu.locator('summary').click();
-    }
     await page.locator(`[data-studio-screen="${screen}"]`).click();
     await page.waitForFunction(value=>document.body.dataset.screen===value,screen);
   };
@@ -122,7 +119,7 @@ try{
   await openScreen('beats');
   await page.locator('#song-view').click();
   assert.match(await page.locator('#play-seq').textContent(),/PLAY SONG/,'the microphone take should be captured against the arranged Song transport');
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
   // At 240 BPM the first eight-bar A section lasts eight seconds. Start the
   // synthetic microphone take after that boundary and verify it is placed on
@@ -187,7 +184,7 @@ try{
   },audioBytes.toString('base64'));
   assert.ok(mixStats.rms>.01,`the exported audio should contain the imported vocal tone (RMS ${mixStats.rms})`);
   assert.ok(mixStats.duration>=8,`the exported mix should continue across the first eight-bar section boundary, got ${mixStats.duration} seconds`);
-  if((await page.locator('#play-seq').textContent()).includes('STOP')){await openScreen('beats');await page.locator('#play-seq').click();}
+  if((await page.locator('#play-seq').textContent()).includes('STOP')){await openScreen('beats');await page.locator('#studio-play').click();}
 
   await openScreen('beats');
   await page.locator('#studio-play').click();

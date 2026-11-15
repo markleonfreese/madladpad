@@ -99,8 +99,7 @@ try {
   await page.locator('.pad-hit').first().waitFor();
   await page.locator('#media-input').setInputFiles({ name: 'synthetic-speech.wav', mimeType: 'audio/wav', buffer: speechFile });
   await page.waitForFunction(() => [...document.querySelectorAll('#voice-source-pad option')].some(option => option.value));
-  await page.locator('#studio-more-tools > summary').click();
-  await page.locator('#studio-more-tools [data-studio-screen="voice"]').click();
+  await page.locator('#studio-nav [data-studio-screen="voice"]').click();
   await page.waitForFunction(() => document.body.dataset.screen === 'voice');
   const sourcePad = await page.locator('#voice-source-pad option').evaluateAll(options => options.filter(option => option.value).at(-1)?.value);
   assert.ok(sourcePad, 'the local synthetic speech file should appear as a Voice Lab source');

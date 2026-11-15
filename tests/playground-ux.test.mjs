@@ -8,9 +8,12 @@ const css=readFileSync(new URL('../site/styles.css',import.meta.url),'utf8');
 
 test('the primary studio surface exposes a simple playable progression',()=>{
   assert.match(html,/<a href="#sounds" data-studio-screen="sounds"[^>]*><span>01<\/span>\s*Playground<\/a>/);
-  assert.match(html,/<a href="#beats" data-studio-screen="beats"[^>]*><span>02<\/span>\s*Sequence<\/a>/);
-  assert.match(html,/<a href="#export" data-studio-screen="export"[^>]*><span>03<\/span>\s*Video &amp; Export<\/a>|<a href="#export" data-studio-screen="export"[^>]*><span>03<\/span>\s*Video & Export<\/a>/);
-  assert.match(html,/<summary>Lab<\/summary>/);
+  assert.match(html,/<a href="#beats" data-studio-screen="beats"[^>]*><span>02<\/span>\s*Beat Maker<\/a>/);
+  assert.match(html,/<a href="#voice" data-studio-screen="voice"[^>]*><span>03<\/span>\s*Melody & Rhythm<\/a>/);
+  assert.match(html,/<a href="#overdub" data-studio-screen="overdub"[^>]*><span>04<\/span>\s*Tracks<\/a>/);
+  assert.match(html,/<a href="#export" data-studio-screen="export"[^>]*><span>05<\/span>\s*Export<\/a>/);
+  assert.doesNotMatch(html,/<summary>Lab<\/summary>/,'Music stages should not be hidden behind a Lab submenu');
+  assert.match(app,/\$\('sequencer'\)\.hidden = screen!=='beats'/,'Beat Maker must not be duplicated in Tracks');
   assert.match(html,/<section class="intro" id="studio-intro"[^>]*hidden>/);
   assert.doesNotMatch(html,/PLAYGROUND · 12 PADS|id="grid-section-label"/,'the Playground should not repeat its navigation label or pad count');
   assert.match(html,/<div class="playground-actions"><button type="button" id="pad-edit-mode"/,'Edit pads should be the primary Playground toolbar action');

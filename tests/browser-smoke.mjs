@@ -291,19 +291,7 @@ try {
   assert.ok(stickyTransport.bottom<=844&&stickyTransport.bottom>694,`the playback bar should sit above the phone safe area: ${JSON.stringify(stickyTransport)}`);
   await page.evaluate(()=>window.scrollTo(0,0));
   const openScreen=async screen=>{
-    if(screen==='voice'||screen==='overdub'){
-      const more=page.locator('#studio-more-tools');
-      if(!await more.evaluate(element=>element.open))await more.locator('summary').click();
-      const link=more.locator(`[data-studio-screen="${screen}"]`);
-      const expectedName=screen==='voice'?'Voice Lab':'Overdub';
-      assert.equal(await more.getByRole('link',{name:expectedName,exact:true}).count(),1,`${expectedName} should expose its visible text as the navigation link name`);
-      const hit=await link.evaluate(element=>{
-        const rect=element.getBoundingClientRect(),target=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);
-        return {visible:rect.width>0&&rect.height>0,centerHitsLink:target===element||element.contains(target)};
-      });
-      assert.equal(hit.visible,true,`${expectedName} should be visible when Lab is expanded: ${JSON.stringify(hit)}`);
-      assert.equal(hit.centerHitsLink,true,`${expectedName} should not be clipped or covered by the next section: ${JSON.stringify(hit)}`);
-    }
+    assert.equal(await page.locator('#studio-nav > a[data-studio-screen="'+screen+'"]').count(),1,'each studio stage should be directly reachable from primary navigation');
     await page.locator(`[data-studio-screen="${screen}"]`).click();
     await page.waitForFunction(value=>document.body.dataset.screen===value,screen);
     if(screen==='beats'){
@@ -334,15 +322,13 @@ try {
     const overdubLayout=await page.evaluate(()=>({viewport:document.documentElement.clientWidth,document:document.documentElement.scrollWidth,buttonRight:document.querySelector('#vocal-add-harmony').getBoundingClientRect().right,overflow:[...document.querySelectorAll('body *')].filter(el=>{const rect=el.getBoundingClientRect();return rect.width>0&&rect.right>document.documentElement.clientWidth+1;}).slice(0,14).map(el=>({tag:el.tagName,id:el.id,classes:typeof el.className==='string'?el.className.slice(0,85):'',right:Math.round(el.getBoundingClientRect().right),width:Math.round(el.getBoundingClientRect().width)}))}));
     assert.equal(overdubLayout.document,width,`Overdub should not overflow at ${width}px: ${JSON.stringify(overdubLayout)}`);
     assert.ok(overdubLayout.buttonRight<=width,`the vocal harmony action should fit at ${width}px: ${JSON.stringify(overdubLayout)}`);
-    assert.equal(await page.locator('#studio-more-tools > summary').getAttribute('aria-current'),'page','the selected Overdub destination should remain identifiable after its menu closes');
+    assert.equal(await page.locator('#studio-nav a[data-studio-screen="overdub"]').getAttribute('aria-current'),'page','Tracks should be identified as the current studio stage');
+    assert.equal(await page.locator('#sequencer').isHidden(),true,'Tracks must not repeat the Beat Maker editor');
   }
   await page.setViewportSize({width:1280,height:900});
   await openScreen('sounds');
-  await page.locator('#studio-more-tools > summary').click();
-  const desktopVoiceLink=page.locator('#studio-more-tools [data-studio-screen="voice"]');
-  assert.equal(await page.getByRole('link',{name:'Voice Lab',exact:true}).count(),1,'desktop Voice Lab navigation should have a computed text name');
-  assert.equal(await desktopVoiceLink.evaluate(element=>{const rect=element.getBoundingClientRect(),hit=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);return hit===element||element.contains(hit);}),true,'desktop Voice Lab popup link should remain visible outside the nav scroll box');
-  await page.locator('#studio-more-tools > summary').click();
+  const desktopVoiceLink=page.locator('#studio-nav > a[data-studio-screen="voice"]');
+  assert.equal(await desktopVoiceLink.evaluate(element=>{const rect=element.getBoundingClientRect(),hit=document.elementFromPoint(rect.left+rect.width/2,rect.top+rect.height/2);return hit===element||element.contains(hit);}),true,'desktop Melody & Rhythm navigation should be an unobstructed direct link');
   await page.locator('#pad-grid .pad-cell').first().hover();
   const desktopEdit=page.locator('#pad-grid .pad-cell').first().locator('.edit-pad');
   await desktopEdit.click();
@@ -574,24 +560,24 @@ try {
     context.__nativeResume=context.resume;
     context.resume=()=>new Promise(resolve=>{window.__finishPendingAudioUnlock=resolve;});
   });
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('CANCEL'));
   assert.equal(await page.locator('#play-seq').getAttribute('aria-pressed'),'true','pending transport start should expose pressed state');
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('PLAY'));
   assert.equal(await page.locator('#play-seq').getAttribute('aria-pressed'),'false','canceling pending transport start should restore its idle state');
   await page.evaluate(()=>{window.__finishPendingAudioUnlock();window.__madladpadAppAudioContext.resume=window.__madladpadAppAudioContext.__nativeResume;});
   await page.waitForTimeout(50);
   assert.equal(await page.locator('#play-seq').getAttribute('aria-pressed'),'false','late audio unlock must not restart a canceled transport');
   checkpoint('canceling a pending audio unlock leaves transport idle');
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   checkpoint('layouts, demo and sequencer');
   await page.waitForFunction(() => document.querySelector('#play-seq').textContent.includes('STOP'));
   assert.equal(await page.locator('#play-seq').getAttribute('aria-pressed'),'true','running transport should expose pressed state');
   await page.locator('#grid-division').selectOption('1/4');
   await page.locator('#steps .step.current[data-step="8"]').waitFor({timeout:4000});
   assert.equal(await page.locator('#steps .step.current').getAttribute('data-step'),'8','coarse-grid playhead should track the mapped sixteenth-step position');
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   assert.equal(await page.locator('#play-seq').getAttribute('aria-pressed'),'false','stopping transport should restore idle pressed state');
   await page.locator('#grid-division').selectOption('1/16');
   await page.keyboard.press('q');
@@ -656,7 +642,7 @@ try {
   await openScreen('beats');
   await page.waitForFunction(()=>document.querySelectorAll('#steps .step.on').length===0);
   assert.equal(await page.locator('#steps .step.on').count(),0,'clear should remove the selected pattern');
-  if((await page.locator('#play-seq').textContent()).includes('STOP'))await page.locator('#play-seq').click();
+  if((await page.locator('#play-seq').textContent()).includes('STOP'))await page.locator('#studio-play').click();
   await page.locator('#launch-scene').click();
   await page.waitForFunction(()=>document.querySelector('#steps .step.on'));
   await page.locator(`.track-row[data-pad="${modePadId}"] .track-name`).click();
@@ -693,14 +679,14 @@ try {
     window.__heldLoopStarts=[];
     prototype.start=function(...args){if(this.buffer&&this.loop)window.__heldLoopStarts.push({loopStart:this.loopStart,loopEnd:this.loopEnd,duration:args[2]??null});return window.__nativeLoopStart.apply(this,args);};
   });
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   await page.waitForFunction(()=>window.__heldLoopStarts.length>0,null,{timeout:5000});
   await page.waitForTimeout(360);
   const loopStarts=await page.evaluate(()=>window.__heldLoopStarts);
   assert.equal(loopStarts.length,1,'three adjacent active cells should start one held voice rather than retrigger three times');
   assert.ok(Math.abs(loopStarts[0].loopEnd-loopStarts[0].loopStart-.08)<.015,'the 80ms local trim should be the loop region');
   assert.ok(loopStarts[0].duration>=.35&&loopStarts[0].duration<=.4,`the held voice should span three 16th notes, got ${loopStarts[0].duration}`);
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   await page.evaluate(()=>{AudioBufferSourceNode.prototype.start=window.__nativeLoopStart;});
   await page.locator('#grid-division').selectOption('1/4');
   await page.locator('#beat-pad-select').selectOption(String(modePadId));
@@ -1071,7 +1057,7 @@ try {
   const vocalOverdubSupported=await page.evaluate(()=>Boolean(window.MediaRecorder&&navigator.mediaDevices?.getUserMedia));
   if(vocalOverdubSupported){
     await openScreen('overdub');
-    await page.locator('#play-seq').click();
+    await page.locator('#studio-play').click();
     await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
     await page.waitForFunction(()=>!document.querySelector('#voice-overdub-record').disabled);
     await page.locator('#voice-overdub-record').click();
@@ -1132,6 +1118,57 @@ try {
     assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.[1]?.startStep),0,'the accessible one-bar move control should return an audio clip to its original placement');
     assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Move audio track 2 later by one bar','when the audio track reaches its start, keyboard focus should move to the available direction');
     const importedId=await importedTrack.getAttribute('data-layer');
+
+    // Timeline edit commits are disabled while the Song is actually playing.
+    // Stop before dragging; resume afterward for the existing export and capture checks.
+    await page.locator('#studio-play').click();
+    await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='false');
+    const sourceBytesBeforeGesture=await page.evaluate(async id=>(await (await import('/storage.js')).getValue('voice-layer:'+id))?.size,importedId);
+    await page.locator('#overdub-zoom-in').click();
+    assert.equal(await page.locator('#overdub-zoom-label').textContent(),'4×','Song track zoom should improve short-take touch precision');
+    const gestureSelector=kind=>'#overdub-timeline .overdub-editable-clip[data-layer-id="'+importedId+'"] .overdub-clip-'+kind;
+    const dragWave=async(kind,stepDelta)=>{
+      const stepPx=await page.locator('#overdub-timeline .overdub-ruler>span').first().evaluate(node=>node.getBoundingClientRect().width/16);
+      const handle=page.locator(gestureSelector(kind));
+      await handle.scrollIntoViewIfNeeded();
+      const rect=await handle.boundingBox();
+      assert.ok(rect&&rect.width>=44&&rect.height>=44,'waveform handles must expose 44-pixel touch targets');
+      await page.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);
+      await page.mouse.down();
+      await page.mouse.move(rect.x+rect.width/2+stepDelta*stepPx,rect.y+rect.height/2,{steps:8});
+      await page.mouse.up();
+    };
+    assert.equal(await page.locator(gestureSelector('move')).count(),1,'imported track must have a draggable waveform body');
+    await page.locator('#studio-play').click();
+    await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='true');
+    await dragWave('move',2);
+    assert.equal(await page.evaluate(id=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.find(layer=>layer.id===id)?.startStep,importedId),0,'track edits must be rejected while Song playback is running');
+    assert.match(await page.locator('#voice-overdub-status').textContent(),/Stop Song playback before dragging or trimming/,'blocked edits should explain how to continue');
+    await page.locator('#studio-play').click();
+    await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='false');
+    await dragWave('move',2);
+    await page.waitForFunction(id=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.find(layer=>layer.id===id)?.startStep===2,importedId);
+    const bpmForGesture=Number(await page.locator('#bpm-input').inputValue()),stepSeconds=60/bpmForGesture/4;
+    await dragWave('left',2);
+    await page.waitForFunction(({id,seconds})=>{
+      const layer=JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.find(item=>item.id===id);
+      return layer?.startStep===4&&Math.abs(layer.trimStartSec-2*seconds)<.002;
+    },{id:importedId,seconds:stepSeconds});
+    const sourceTrimEnd=await importedTrack.locator('.vocal-layer-trim input').nth(1).inputValue();
+    await dragWave('right',-2);
+    await page.waitForFunction(({id,end,seconds})=>{
+      const layer=JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.find(item=>item.id===id);
+      return Math.abs(layer?.trimEndSec-(end-2*seconds))<.003;
+    },{id:importedId,end:Number(sourceTrimEnd),seconds:stepSeconds});
+    assert.equal(await page.evaluate(async id=>(await (await import('/storage.js')).getValue('voice-layer:'+id))?.size,importedId),sourceBytesBeforeGesture,'dragging and trimming must not rewrite or delete the source');
+    const audioInputs=importedTrack.locator('.vocal-layer-trim input');
+    await audioInputs.nth(0).fill('0');await audioInputs.nth(0).press('Tab');
+    await audioInputs.nth(1).fill(sourceTrimEnd);await audioInputs.nth(1).press('Tab');
+    await importedTrack.locator('.vocal-layer-start input').fill('0');await importedTrack.locator('.vocal-layer-start input').press('Tab');
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.[1]?.startStep),0,'precision numeric controls remain an accessible fallback');
+    checkpoint('Song waveform direct move and edge trims preserve original audio and editable numeric controls');
+    await page.locator('#studio-play').click();
+    await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='true');
     const importedRms=await page.evaluate(async id=>{
       const {getValue}=await import('/storage.js');const file=await getValue(`voice-layer:${id}`);
       if(!file)throw new Error('Imported audio source is missing from IndexedDB');
@@ -1140,7 +1177,7 @@ try {
       finally{await context.close();}
     },importedId);
     assert.ok(importedRms>.01,`the imported Song track should preserve audible source audio, got RMS ${importedRms}`);
-    await page.locator('#play-seq').click();
+    await page.locator('#studio-play').click();
     const layerId=await vocalRow.getAttribute('data-layer');
     const rawTakeRms=await page.evaluate(async id=>{
       const {getValue}=await import('/storage.js');
@@ -1168,6 +1205,8 @@ try {
       finally { await context.close(); }
     },vocalMixBytes.toString('base64'));
     assert.ok(vocalMixRms>importedRms*.1,`an imported Song audio track should reach the exported mix (track RMS ${importedRms}, export RMS ${vocalMixRms})`);
+    if((await page.locator('#play-seq').textContent()).includes('STOP'))await page.locator('#studio-play').click();
+    await page.waitForFunction(()=>!document.querySelector('#play-seq').textContent.includes('STOP'));
     const crashPage=page;
     await crashPage.goto(`${origin}/#overdub`);
     await crashPage.waitForFunction(()=>document.body.dataset.screen==='overdub');
@@ -1179,7 +1218,7 @@ try {
       window.__recoveryTone={context,oscillator};
       Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,value:constraints=>constraints?.audio&&!constraints?.video?Promise.resolve(destination.stream):nativeGetUserMedia(constraints)});
     });
-    await crashPage.locator('#play-seq').click();
+    await crashPage.locator('#studio-play').click();
     await crashPage.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
     await crashPage.waitForFunction(()=>!document.querySelector('#voice-overdub-record').disabled);
     await crashPage.locator('#voice-overdub-record').click();
@@ -1250,6 +1289,17 @@ try {
   const videoTrackId=await page.locator('#song-video-layers .song-video-track').getAttribute('data-video-layer');
   const videoTrackBytes=await page.evaluate(async id=>(await (await import('/storage.js')).getValue(`video-layer:${id}`))?.size,videoTrackId);
   assert.equal(videoTrackBytes,songVideoSource.length,'video source should be stored locally in IndexedDB');
+
+  const videoClipSelector='#overdub-timeline .overdub-editable-clip[data-layer-id="'+videoTrackId+'"]';
+  assert.equal(await page.locator(videoClipSelector+' .overdub-clip-move').count(),1,'video tracks should use the same direct timeline editor');
+  await page.locator(videoClipSelector+' .overdub-clip-move').press('ArrowRight');
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.videoLayers?.[0]?.startStep),1,'keyboard video move handle should nudge one sixteenth step');
+  await page.locator(videoClipSelector+' .overdub-clip-right').press('ArrowLeft');
+  assert.ok((await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.videoLayers?.[0]?.trimEndSec))>0,'keyboard video trim should retain an audible segment');
+  const videoTrimEndInput=page.locator('#song-video-layers .song-video-track .vocal-layer-start input').nth(2);
+  await videoTrimEndInput.fill(await videoTrimEndInput.getAttribute('max'));await videoTrimEndInput.press('Tab');
+  assert.equal(await page.evaluate(async id=>(await (await import('/storage.js')).getValue('video-layer:'+id))?.size,videoTrackId),videoTrackBytes,'video source remains intact after positioning and trimming');
+
   const videoStart=page.locator('#song-video-layers .song-video-track .vocal-layer-start input').nth(0);
   await videoStart.fill('32');await videoStart.press('Tab');
   await page.locator('[aria-label="Move video track 1 later by one bar"]').focus();
@@ -1273,7 +1323,7 @@ try {
   await videoAudioGain.evaluate(input=>{input.value='85';input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));});
   await page.waitForFunction(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.videoLayers?.[0]?.includeAudio===true&&JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.videoLayers?.[0]?.audioGain===.85,null,{timeout:2000});
   checkpoint('local Song video track import, placement and trim');
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
   const videoRecoveryIdsBefore=await page.evaluate(async()=>(await (await import('/storage.js')).listInterruptedVideoRecordings()).map(take=>take.id));
   await page.locator('#overdub-video-record').click();
@@ -1319,7 +1369,7 @@ try {
   await videoRecoveryPage.getByRole('button',{name:/Delete video track 2 and its local source/}).click();
   await videoRecoveryPage.waitForFunction(()=>document.querySelectorAll('#song-video-layers .song-video-track').length===1);
   page=videoRecoveryPage;
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
   checkpoint('real Chromium renderer crash recovers journaled camera chunks into an editable Song video track');
     await page.evaluate(()=>{
@@ -1365,7 +1415,7 @@ try {
   const recordedVideoInfo=await page.evaluate(async id=>{const file=await (await import('/storage.js')).getValue(`video-layer:${id}`);return {type:file?.type,size:file?.size};},recordedVideoTrackId);
   assert.match(recordedVideoInfo.type,/^video\//,'the camera track should save its real video container');
   assert.ok(recordedVideoInfo.size>0,'the locally saved camera track should contain media');
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('PLAY'));
   await recordedVideoTrack.locator('[aria-label="TRIM IN (S) for video track 2"]').fill('0.10');
   await recordedVideoTrack.locator('[aria-label="TRIM IN (S) for video track 2"]').press('Tab');
@@ -2142,10 +2192,10 @@ try {
   },null,{timeout:8000});
   await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
   checkpoint('service worker ready');
-  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v28')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
-  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v28')).match('/audio.js')).text()),/pendingStarts/,'the current fallback retrigger fix should be cached before offline use');
-  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v28')).match('/voice.js')).text()),/Use rhyme idea/,'the current Rap Lab writing aid should be cached before offline use');
-  const cachedFonts=await page.evaluate(async()=>Promise.all(['/fonts/dm-sans-variable-latin.woff2','/fonts/dm-sans-variable-latin-ext.woff2','/fonts/dm-mono-400-latin.woff2','/fonts/dm-mono-400-latin-ext.woff2','/fonts/dm-mono-500-latin.woff2','/fonts/dm-mono-500-latin-ext.woff2'].map(async path=>Boolean(await (await caches.open('madladpad-shell-v28')).match(path)))));
+  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v29')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
+  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v29')).match('/audio.js')).text()),/pendingStarts/,'the current fallback retrigger fix should be cached before offline use');
+  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v29')).match('/voice.js')).text()),/Use rhyme idea/,'the current Rap Lab writing aid should be cached before offline use');
+  const cachedFonts=await page.evaluate(async()=>Promise.all(['/fonts/dm-sans-variable-latin.woff2','/fonts/dm-sans-variable-latin-ext.woff2','/fonts/dm-mono-400-latin.woff2','/fonts/dm-mono-400-latin-ext.woff2','/fonts/dm-mono-500-latin.woff2','/fonts/dm-mono-500-latin-ext.woff2'].map(async path=>Boolean(await (await caches.open('madladpad-shell-v29')).match(path)))));
   assert.ok(cachedFonts.every(Boolean),'both local UI fonts and their Latin/extended subsets should be cached for offline use');
   await page.reload();
   await page.waitForFunction(()=>Boolean(navigator.serviceWorker.controller));
@@ -2220,31 +2270,22 @@ try {
   await page.setViewportSize({width:390,height:844});
   await openScreen('voice');
   const mobileTabs=await page.locator('#studio-nav > a').evaluateAll(links=>links.map(link=>({left:link.getBoundingClientRect().left,right:link.getBoundingClientRect().right,visible:link.getBoundingClientRect().width>0})));
-  assert.equal(mobileTabs.length,3,'the three core studio destinations should be primary');
-  assert.ok(mobileTabs.every(tab=>tab.visible&&tab.left>=0&&tab.right<=390),`core destinations should remain in view without horizontal scrolling: ${JSON.stringify(mobileTabs)}`);
-  assert.deepEqual(await page.locator('#studio-nav > a').evaluateAll(links=>links.map(link=>link.textContent.replace(/\s+/g,' ').trim())),['01 Playground','02 Sequence','03 Video & Export'],'the primary navigation should name the three core creative tasks');
-  assert.match(await page.locator('#studio-more-tools > summary').textContent(),/Voice Lab/,'the current specialist destination should remain identified');
-  assert.equal((await page.locator('#studio-more-tools > summary').textContent()).trim(),'Lab · Voice Lab','the Lab menu should identify the active Voice Lab destination');
-  await page.locator('#studio-more-tools > summary').click();
-  for(const link of await page.locator('.studio-more-links a').all()){
-    const box=await link.boundingBox();
-    assert.ok(box&&box.x>=0&&box.x+box.width<=390,`specialist destinations should fit the mobile viewport: ${JSON.stringify(box)}`);
-  }
-  await page.locator('#studio-more-tools > summary').click();
+  assert.equal(mobileTabs.length,5,'all five studio stages should be directly visible');
+  assert.ok(mobileTabs.every(tab=>tab.visible&&tab.left>=0&&tab.right<=390),'five direct navigation tabs should fit a 390px phone without horizontal scrolling');
+  assert.deepEqual(await page.locator('#studio-nav > a').evaluateAll(links=>links.map(link=>link.textContent.replace(/\s+/g,' ').trim())),['01 Playground','02 Beat Maker','03 Melody & Rhythm','04 Tracks','05 Export'],'navigation should follow a single creative path');
+  assert.equal(await page.locator('#studio-nav > a[data-studio-screen="voice"]').getAttribute('aria-current'),'page');
   await openScreen('sounds');
-  const secondaryNavSummary=page.locator('#studio-more-tools > summary');
-  await secondaryNavSummary.focus();await page.keyboard.press('Enter');await page.keyboard.press('Tab');await page.keyboard.press('Enter');
+  const voiceTab=page.locator('#studio-nav > a[data-studio-screen="voice"]');
+  await voiceTab.focus();await page.keyboard.press('Enter');
   await page.waitForFunction(()=>document.body.dataset.screen==='voice');
-  assert.equal(await page.locator('#studio-more-tools').evaluate(element=>element.open),false,'keyboard Voice Lab navigation should close the specialist menu');
-  assert.equal(await secondaryNavSummary.getAttribute('aria-current'),'page','the closed specialist menu should identify Voice Lab as the current page');
-  assert.match(await secondaryNavSummary.textContent(),/Voice Lab/,'the closed specialist menu should name the current Voice Lab destination');
-  assert.equal(await page.locator('#voice-lab').isVisible(),true,'keyboard Voice Lab navigation should show its workspace');
-  await secondaryNavSummary.focus();await page.keyboard.press('Enter');await page.keyboard.press('Tab');await page.keyboard.press('Tab');await page.keyboard.press('Enter');
+  assert.equal(await voiceTab.getAttribute('aria-current'),'page','keyboard navigation should identify Melody & Rhythm');
+  assert.equal(await page.locator('#voice-lab').isVisible(),true);
+  const tracksTab=page.locator('#studio-nav > a[data-studio-screen="overdub"]');
+  await tracksTab.focus();await page.keyboard.press('Enter');
   await page.waitForFunction(()=>document.body.dataset.screen==='overdub');
-  assert.equal(await page.locator('#studio-more-tools').evaluate(element=>element.open),false,'keyboard Overdub navigation should close the specialist menu');
-  assert.equal(await secondaryNavSummary.getAttribute('aria-current'),'page','the closed specialist menu should identify Overdub as the current page');
-  assert.match(await secondaryNavSummary.textContent(),/Overdub/,'the closed specialist menu should name the current Overdub destination');
-  assert.equal(await page.locator('#overdub-lab').isVisible(),true,'keyboard Overdub navigation should show its workspace');
+  assert.equal(await tracksTab.getAttribute('aria-current'),'page','keyboard navigation should identify Tracks');
+  assert.equal(await page.locator('#overdub-lab').isVisible(),true);
+  assert.equal(await page.locator('#sequencer').isHidden(),true,'Beat Maker must not be duplicated on Tracks');
   await openScreen('voice');
   await page.locator('[data-voice-jump="rap-title"]').click();
   const mobileRap=await page.locator('#rap-title').evaluate(title=>title.closest('.voice-card').getBoundingClientRect().width);
@@ -2341,9 +2382,9 @@ try {
   const firstSceneId=songSceneIds[0];
   assert.equal(savedSong.song.clips[0].sceneId,firstSceneId);
   assert.equal(savedSong.song.clips[3].sceneId,firstSceneId,'returning to A should reuse the saved pattern, not clone its sounds');
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   assert.equal(await page.locator('#play-seq').textContent().then(x=>x.includes('PLAY SONG')),true,'Song mode should remain selected after stopping playback');
   await page.locator('#pattern-view').click();
   assert.equal(await page.locator('#sequence-pattern-content').isVisible(),true,'switching back restores the old pattern editor');
