@@ -1,27 +1,33 @@
-# MadLadPad transcript UX follow-up — 11 November 2026
+# Transcript and capture UX follow-up
 
-Status: review candidate; **not deployed**. This follows the 16-minute in-person UX discussion and the first Playground-first release. The goal is a shorter record → play → sequence → share path without changing the audio engine, project schema, recorded media, or optional labs.
+**Status (16 November 2026): shipped.** The capture and sequence changes described here are included in the MadLadPad Pages production deployment `fa74f92d-478e-417d-8d29-2979505b265b`, built from app source `dfe52bbe665aee59e410062944e76a05bf3adc55`. The current `main` tip is `8c58698f746a3fe4a144f4d748198aed89a456da`; its commits after the deployed source are documentation-only, and `site/` has no differences from the deployed source. Cloudflare deployment status and source were checked read-only.
 
-## Changes in this candidate
+This note records the follow-up to the 16-minute in-person UX discussion. It summarizes a shorter record → play → sequence → share path while preserving local media and the existing project format. Use [`DEVICE-ACCEPTANCE.md`](DEVICE-ACCEPTANCE.md) for the release baseline and device checklist; use [Issue #2](https://github.com/markleonfreese/madladpad/issues/2) for dated evidence and blockers.
 
-| User observation | Follow-up | Evidence to collect |
+## Shipped changes
+
+The follow-up addresses these observations:
+
+| Observation | Shipped behavior | Remaining acceptance |
 | --- | --- | --- |
-| Recording video should not hide the live pads (15:24) | A Record video toggle stays in the shared transport on Playground, Sequence and Export; both existing and new controls use the same recorder | Begin on Playground, tap pads, switch screens, stop, then review the downloaded video |
-| Too much scrolling between Sequence and pads (13:26) | Sequence opens on its 16-step controls; a labelled, keyboard-accessible Show performance pads disclosure reveals the extra pad grid only when requested | Check 320/390 px portrait, keyboard and screen-reader states, and preservation of beat steps |
-| One clip should supply multiple pads (01:48) | Copy to pad is available directly after the primary trim controls and opens the copied pad for an independent trim | Import a sample, copy to two empty pads, trim independently, reload and export/reimport a pack |
-| Editing should prioritise the chosen sound (07:07) | Record/Files and secondary sources collapse behind Replace this clip when a pad already contains media | Opening a populated pad shows the trim first; empty pads still show their source choices |
-| Empty-pad hold should clearly suggest recording (03:40) | The Playground instructions now explain the hold-for-camera gesture and the tap-for-file alternative | Test tap, long hold, cancellation, permission denial, no unintended overwrites |
+| Recording video should not hide the live pads (15:24) | The shared **Record video** control uses the same recorder on Playground, Sequence and Export. | On Android and iOS, record while tapping pads, switch screens, stop, and review the saved video. |
+| Sequence and pads require too much scrolling (13:26) | Sequence opens on its 16-step controls; the labelled **Show performance pads** disclosure reveals the pad grid when needed. | Check portrait layouts, keyboard access, TalkBack and VoiceOver. |
+| One clip should supply multiple pads (01:48) | **Copy to pad** creates independent local media slots, each with its own trim. | Copy and trim on a phone, reload, then export and reimport a project pack. |
+| Editing should prioritize the chosen sound (07:07) | A populated pad opens on its trim controls; **Replace this clip** reveals recording, file and optional source choices. | Check touch operation and modal focus on Android and iOS. |
+| Empty-pad hold should suggest recording (03:40) | Holding an empty pad opens the camera flow; recording requires explicit **Start** and **Keep**. A tap opens source choices, including **Device / Files**. | Test hold, tap, cancellation, denied permission and overwrite protection on a phone. |
 
-## Deliberate limits
+These behaviors preserve the existing permission and save transaction: a long press does not start recording or replace media without confirmation.
 
-- Long-press still **opens a camera preview**, and recording requires an explicit Start then Keep; it does not secretly activate a microphone or overwrite a pad. This preserves the existing permission and save transaction.
-- Copying is manual and uses the existing independent media slots. Automatic multi-region splitting and a shared clip library are **not yet implemented**.
-- Pad layouts remain 4/12/16. Automatically growing by rows of three would require a separate project-layout and migration decision.
-- This candidate does not change Voice Lab, Overdub, MIDI, codecs, export formats, billing, account configuration, or production.
+## Scope boundaries
 
-## Verification / release gate
+- Copying is manual and uses independent pad media slots. Automatic multi-region splitting and a shared clip library are not part of this follow-up.
+- Pad layouts remain 4, 12 or 16 pads. Automatically growing the layout requires a separate project-layout and migration decision.
+- The current MVP also includes separate Speech, Melody and Rap tools. Their local inference and creative-flow acceptance is documented in [`DEVICE-ACCEPTANCE.md`](DEVICE-ACCEPTANCE.md) and [Issue #2](https://github.com/markleonfreese/madladpad/issues/2#issuecomment-6900860991).
 
-1. Unit tests, JavaScript syntax, build and `git diff --check` pass.
-2. Chromium/browser accessibility, WebKit mobile, and Workers runtime smoke pass on the **exact candidate head** in an environment permitted to launch browsers and local servers. Verify the new persistent recording control in real downloadable video, not just its button state.
-3. Physical Android Chrome and iOS Safari: camera permission, touch-hold, one-shot/gated playback, recording during pad taps, trim/copy, 320/390-width overflow, modal focus, offline reopen, project pack restore. TalkBack/VoiceOver and human audio/video review are still required before calling it device-accepted.
-4. Do not merge or deploy solely on the strength of unit tests or a PR report. The current Pages release remains the rollback point.
+## Verification and release status
+
+Current `main` passes `npm test` (119/119 unit tests), `npm run test:browser`, `npm run test:song-browser`, `npm run test:webkit` and `npm run test:workers-runtime`. The opt-in `npm run test:speech-model` also passed with 28 synthetic speech words online and offline, a decoded phrase WAV, MIDI events matching the melody editor, and persisted Rap export. The checks use generated media and desktop browsers; they do not establish human speech accuracy or musical quality, physical-device behavior, or screen-reader acceptance. See [the current-main acceptance record](https://github.com/markleonfreese/madladpad/issues/2#issuecomment-6900834267) and [the real-model speech record](https://github.com/markleonfreese/madladpad/issues/2#issuecomment-6900860991).
+
+Physical Android Chrome and iOS Safari/PWA acceptance remains open for camera permission, touch-hold, playback, recording during pad taps, trim/copy, layout, modal focus, offline reopen and project-pack restore. TalkBack, VoiceOver and human audio/video review also remain open. This host has no `adb` or iOS `simctl`. PR [#84](https://github.com/markleonfreese/madladpad/pull/84) is a review-only draft and is not a release candidate.
+
+The deployed app is static Pages. This documentation update does not change application assets, production configuration or the published deployment. Account-wide spend under A$5/month is not conclusively verified; see [the billing check](https://github.com/markleonfreese/madladpad/issues/2#issuecomment-6900774452). Keep the physical-device, human-review and budget gates open until they have direct evidence.
