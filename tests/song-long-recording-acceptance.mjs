@@ -105,7 +105,7 @@ try {
   await page.locator('#song-bars').selectOption('64');
   await page.locator('#song-add-section').click();
   assert.match(await page.locator('#song-status').textContent(), /64 bars/);
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   await page.waitForFunction(() => document.querySelector('#play-seq').textContent.includes('STOP'));
 
   await openScreen('overdub');
@@ -166,7 +166,7 @@ try {
   assert.ok(decoded.duration >= seconds - 0.5, `decoded mix must contain the full take: ${JSON.stringify(decoded)}`);
   assert.ok(decoded.rms > 0.01, `decoded mix must contain the generated source signal: ${JSON.stringify(decoded)}`);
   await openScreen('beats');
-  if ((await page.locator('#play-seq').textContent()).includes('STOP')) await page.locator('#play-seq').click();
+  if ((await page.locator('#play-seq').textContent()).includes('STOP')) await page.locator('#studio-play').click();
   await page.reload();
   await openScreen('sounds');
   await page.locator('.pad-hit').first().waitFor();
