@@ -1140,7 +1140,7 @@ try {
     };
     assert.equal(await page.locator(gestureSelector('move')).count(),1,'imported track must have a draggable waveform body');
     await page.locator('#studio-play').click();
-    await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='true');
+    await page.waitForFunction(()=>document.querySelector('#studio-play').textContent.includes('STOP'));
     await dragWave('move',2);
     assert.equal(await page.evaluate(id=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.find(layer=>layer.id===id)?.startStep,importedId),0,'track edits must be rejected while Song playback is running');
     assert.match(await page.locator('#voice-overdub-status').textContent(),/Stop Song playback before dragging or trimming/,'blocked edits should explain how to continue');
