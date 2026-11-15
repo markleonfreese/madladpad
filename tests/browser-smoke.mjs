@@ -2359,6 +2359,19 @@ try {
   assert.equal(rapFlowLayout.columns,4,`the 16-step rap flow should use a compact 4-column mobile grid: ${JSON.stringify(rapFlowLayout)}`);
   assert.equal(rapFlowLayout.steps,16,'the mobile flow grid should retain all 16 steps');
   assert.ok(rapFlowLayout.scrollWidth<=rapFlowLayout.width&&rapFlowLayout.pageWidth<=rapFlowLayout.viewportWidth,`rap flow should fit without horizontal overflow: ${JSON.stringify(rapFlowLayout)}`);
+  await page.addScriptTag({path:axePath});
+  const voiceAccessibilityViews=[['Speech & words','transcript-title','#voice-speech-tool'],['Melody & tuning','melody-title','#voice-melody-tool'],['Rap & flow','rap-title','#voice-rap-tool']];
+  for(const [width,height] of [[390,844],[320,720]]){
+    await page.setViewportSize({width,height});
+    await openScreen('voice');
+    for(const [label,jump,selector] of voiceAccessibilityViews){
+      await page.locator(`[data-voice-jump="${jump}"]`).click();
+      const audit=await page.evaluate(async()=>axe.run(document));
+      const violations=audit.violations.map(({id,nodes})=>({id,nodes:nodes.map(node=>({target:node.target,summary:node.failureSummary}))}));
+      assert.deepEqual(violations,[],`${label} at ${width}px should pass axe-core accessibility checks: ${JSON.stringify(violations)}`);
+    }
+  }
+  checkpoint('Speech, Melody and Rap axe-core audit at 320px and 390px');
   await openScreen('sounds');
   if(await page.locator('#loop-settings').evaluate(element=>element.open))await page.locator('#loop-settings > summary').click();
   const mobileEdit=await page.locator('#pad-edit-mode').boundingBox();
