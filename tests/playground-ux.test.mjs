@@ -12,7 +12,7 @@ test('the primary studio surface exposes a simple playable progression',()=>{
   assert.match(html,/<a href="#voice" data-studio-screen="voice"[^>]*><span>03<\/span>\s*Melody & Rhythm<\/a>/);
   assert.match(html,/<a href="#overdub" data-studio-screen="overdub"[^>]*><span>04<\/span>\s*Tracks<\/a>/);
   assert.match(html,/<a href="#export" data-studio-screen="export"[^>]*><span>05<\/span>\s*Export<\/a>/);
-  assert.doesNotMatch(html,/<summary>Lab<\\/summary>/,'Music stages should not be hidden behind a Lab submenu');
+  assert.doesNotMatch(html,/<summary>Lab<\/summary>/,'Music stages should not be hidden behind a Lab submenu');
   assert.match(app,/\$\('sequencer'\)\.hidden = screen!=='beats'/,'Beat Maker must not be duplicated in Tracks');
   assert.match(html,/<section class="intro" id="studio-intro"[^>]*hidden>/);
   assert.doesNotMatch(html,/PLAYGROUND · 12 PADS|id="grid-section-label"/,'the Playground should not repeat its navigation label or pad count');
