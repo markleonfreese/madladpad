@@ -3,10 +3,10 @@
 ## Release under test
 
 - Public app: <https://madladpad.pages.dev>
-- Pages deployment: `ca45f0aa-42fe-47da-8317-2928ecca027b`, production branch `main`
-- Source: `47d188d1949ff59c7e83a023f1360ca94e30b317`
-- GitHub post-merge Verify: [run 43739511443](https://github.com/markleonfreese/madladpad/actions/runs/43739511443), success at this exact source across unit, browser/accessibility, Song media, WebKit and Workers runtime.
-- Pages publish check: all 39 built static files returned HTTP 200 and matched SHA-256; `/voices/` and `/rap/` returned the app shell. The user's normal Chrome session reloaded the app and showed **Playground → Beat Maker → Melody & Rhythm → Tracks → Export**.
+- Pages deployment: `fa74f92d-478e-417d-8d29-2979505b265b`, production branch `main`
+- Published app source: `dfe52bbe665aee59e410062944e76a05bf3adc55`
+- App-source post-merge Verify: [run 43749583955](https://github.com/markleonfreese/madladpad/actions/runs/43749583955), success across unit, browser/accessibility, Song media, WebKit and Workers runtime. The release-runbook docs PR then merged as `28796f0`; current-main Verify [run 43753484143](https://github.com/markleonfreese/madladpad/actions/runs/43753484143) also passed all five stages.
+- Pages publish check: all 39 built static files returned HTTP 200 and matched SHA-256; `/voices/` and `/rap/` returned the app shell. Current hosted synthetic speech/Melody/Rap and Pitch/Speed/video acceptance is linked from the [device acceptance checklist](DEVICE-ACCEPTANCE.md) and [Issue #2](https://github.com/markleonfreese/madladpad/issues/2). The app has **Playground → Beat Maker → Melody & Rhythm → Tracks → Export**.
 - Upload contained only the static `site/` directory; no Functions, bindings, legacy Worker, domain, DNS or account configuration was changed. No paid service was used. Account-wide monthly spend is still not independently verified.
 
 ## Human/device status
