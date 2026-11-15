@@ -7,6 +7,42 @@ import { extname, resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { chromium } from 'playwright';
 
+function readMidiNoteEvents(bytes) {
+  assert.equal(bytes.subarray(0, 4).toString(), 'MThd', 'Melody should export a Standard MIDI file');
+  assert.equal(bytes.readUInt32BE(4), 6, 'MIDI header chunk should have the Standard MIDI length');
+  assert.equal(bytes.readUInt16BE(8), 0, 'Melody should export a single-track MIDI file');
+  assert.equal(bytes.subarray(14, 18).toString(), 'MTrk', 'MIDI should contain a track');
+  const trackLength = bytes.readUInt32BE(18);
+  assert.equal(22 + trackLength, bytes.length, 'MIDI track length should match the exported bytes');
+
+  let offset = 22, tick = 0;
+  const readVariableLength = () => {
+    let value = 0, byte;
+    do {
+      assert.ok(offset < bytes.length, 'MIDI variable-length value should not run past the file');
+      byte = bytes[offset++];
+      value = value * 128 + (byte & 0x7f);
+    } while (byte & 0x80);
+    return value;
+  };
+  const events = [];
+  while (offset < bytes.length) {
+    tick += readVariableLength();
+    const status = bytes[offset++];
+    if (status === 0xff) {
+      const type = bytes[offset++], length = readVariableLength();
+      if (type === 0x2f) break;
+      offset += length;
+      continue;
+    }
+    assert.ok(status >= 0x80 && status <= 0xef, `Unexpected MIDI status byte ${status}`);
+    const pitch = bytes[offset++], velocity = bytes[offset++];
+    if (status === 0x90 && velocity > 0) events.push({ kind: 'on', pitch, velocity, tick });
+    else if (status === 0x80 || (status === 0x90 && velocity === 0)) events.push({ kind: 'off', pitch, velocity, tick });
+  }
+  return events;
+}
+
 if (process.platform !== 'darwin') throw new Error('This opt-in acceptance command requires macOS `say` and ffmpeg.');
 const run = (command, args) => {
   const result = spawnSync(command, args, { encoding: 'utf8' });
@@ -130,10 +166,18 @@ try {
   await page.locator('#melody-add').click();
   const firstWord = words[0];
   await page.locator('#melody-notes select[aria-label^="Assign phrase word to"]').selectOption({ label: firstWord });
+  const melodyPitch = Number(await page.locator('#melody-notes select[aria-label="Note 1 pitch"]').inputValue());
   const midiDownload = page.waitForEvent('download');
   await page.locator('#melody-export').click();
   const midi = await readFile(await (await midiDownload).path());
-  assert.equal(midi.subarray(0, 4).toString(), 'MThd', 'Melody should export a Standard MIDI file');
+  const midiEvents = readMidiNoteEvents(midi);
+  const melodyNotesOn = midiEvents.filter(event => event.kind === 'on');
+  const melodyNotesOff = midiEvents.filter(event => event.kind === 'off');
+  assert.equal(melodyNotesOn.length, 1, 'the authored melody should export exactly one note-on event');
+  assert.equal(melodyNotesOn[0].pitch, melodyPitch, 'the exported melody pitch should match the editor');
+  assert.equal(melodyNotesOff.length, 1, 'the authored melody should export a note-off event');
+  assert.equal(melodyNotesOff[0].pitch, melodyPitch, 'the exported note-off should release the authored pitch');
+  assert.ok(melodyNotesOff[0].tick > melodyNotesOn[0].tick, 'the exported melody note should have a positive duration');
 
   await page.locator('[data-voice-jump="rap-title"]').click();
   const rapLine = words.slice(0, Math.min(8, words.length)).join(' ');
@@ -183,6 +227,7 @@ try {
     phraseAudio,
     midiBytes: midi.length,
     midiHeader: midi.subarray(0, 4).toString(),
+    midiEvents,
     rapLine,
     modelResponseCount: network.modelResponses.length,
     modelHosts: [...new Set(network.modelResponses.map(response => new URL(response.url).hostname))],
