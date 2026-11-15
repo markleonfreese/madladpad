@@ -372,6 +372,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   let interruptedVideoRecordings = [];
   let interruptedVideoRecording = null;
   let videoRecording = null;
+  const pendingRecordingDownloads=new Map();
   const videoRecordingActivity = new AsyncActivity();
   let tunerStream = null, tunerSource = null, tunerAnalyser = null, tunerTimer = null, tunerFrame = null;
   const tunerActivity = new AsyncActivity();
@@ -390,6 +391,26 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   };
   const updateManualEntryState = () => { $('voice-manual-add').disabled = !$('voice-source-pad').value || !getMediaFiles().has(Number($('voice-source-pad').value)) || !$('voice-manual-text').value.trim(); };
   const transportState = () => getTransport?.() || {running:false, epoch:audio.transportEpoch, bpm:project.bpm};
+  const offerRecordingDownload=(statusId,file,message,label)=>{
+    const status=$(statusId),url=URL.createObjectURL(file),entry={url,pending:true};
+    const cleanup=()=>{
+      URL.revokeObjectURL(url);
+      window.removeEventListener('pagehide',cleanup);
+      if(pendingRecordingDownloads.get(statusId)===entry)pendingRecordingDownloads.delete(statusId);
+    };
+    entry.cleanup=cleanup;
+    pendingRecordingDownloads.set(statusId,entry);
+    status.textContent=`${message} Download this take before leaving; it remains available in this tab.`;
+    const link=document.createElement('a');link.href=url;link.download=file.name;link.className='pill-button';link.textContent=label;
+    link.addEventListener('click',()=>{
+      entry.pending=false;
+      pendingRecordingDownloads.delete(statusId);
+      updateOverdubControls();
+      setTimeout(cleanup,60000);
+    },{once:true});
+    window.addEventListener('pagehide',cleanup,{once:true});
+    status.append(' ',link);
+  };
   const stopTuner = (message = 'Tuner stopped. Microphone is off.') => {
     tunerActivity.cancel();
     if (tunerTimer) clearInterval(tunerTimer);
@@ -405,11 +426,11 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   const updateOverdubControls = () => {
     const state = transportState();
     const videoStarting=videoRecordingActivity.phase==='starting';
-    $('voice-overdub-record').disabled = !state.running || Boolean(vocalRecording) || Boolean(videoRecording) || videoStarting || Boolean(interruptedAudioRecording) || project.voice.layers.length >= MAX_VOCAL_LAYERS;
+    $('voice-overdub-record').disabled = !state.running || Boolean(vocalRecording) || Boolean(videoRecording) || videoStarting || Boolean(interruptedAudioRecording) || Boolean(pendingRecordingDownloads.get('voice-overdub-status')?.pending) || project.voice.layers.length >= MAX_VOCAL_LAYERS;
     $('voice-overdub-stop').hidden = !vocalRecording;
     if (project.voice.layers.length >= MAX_VOCAL_LAYERS && !vocalRecording) $('voice-overdub-status').textContent = `The ${MAX_VOCAL_LAYERS} audio-track limit is full. Export a project pack before deleting a local track.`;
     else if (!state.running && !vocalRecording && !$('voice-overdub-status').textContent) $('voice-overdub-status').textContent = 'Start the sequencer to record an audio track.';
-    $('overdub-video-record').disabled=!state.running||Boolean(vocalRecording)||Boolean(videoRecording)||Boolean(interruptedVideoRecording)||project.voice.videoLayers.length>=MAX_VOCAL_LAYERS;
+    $('overdub-video-record').disabled=!state.running||Boolean(vocalRecording)||Boolean(videoRecording)||Boolean(interruptedVideoRecording)||Boolean(pendingRecordingDownloads.get('song-video-status')?.pending)||project.voice.videoLayers.length>=MAX_VOCAL_LAYERS;
     $('overdub-video-record').textContent=videoStarting?'× CANCEL CAMERA START':'● RECORD VIDEO TRACK';
     $('overdub-video-record').setAttribute('aria-label',videoStarting?'Cancel Song camera start':'Record a video track over the Song');
     $('overdub-video-stop').hidden=!videoRecording;
@@ -946,9 +967,11 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       recorder.onstop = async () => {
         stream.getTracks().forEach(track => track.stop());
         const type = recorder.mimeType || mime || 'audio/webm';
-        const blob = new Blob(capture.chunks, {type});
+        let blob = new Blob(capture.chunks, {type});
+        let unsavedTakeFile=null;
         try {
           await take.journalWrite;
+          if(!take.discard&&!blob.size){const recovery=(await listInterruptedAudioRecordings()).find(item=>item.id===take.recoveryId);if(recovery?.blob.size)blob=recovery.blob;}
           if (!blob.size) {
             await deleteInterruptedAudioRecording(take.recoveryId);
             throw new Error('The browser did not capture any microphone audio.');
@@ -957,6 +980,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
           if (usedBytes + blob.size > MAX_MEDIA_BYTES) throw new Error('This take would exceed the 80 MB local project media limit. Export a pack and remove unused media before recording more.');
           const index = project.voice.layers.length + 1, id = `vocal-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
           const file = new File([blob], `vocal-take-${Date.now()}.${extensionForAudioMime(type)}`, {type});
+          unsavedTakeFile=file;
           const layer = {id, name:`Vocal take ${index}`, origin:'recording', startStep:take.startStep, gain:1, muted:false, solo:false};
           const nextLayers = [...project.voice.layers, layer];
           await saveVoiceLayer(id, file, {...project, voice:{...project.voice, layers:nextLayers}},{recoveryId:take.recoveryId});
@@ -969,7 +993,11 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
           $('voice-overdub-status').textContent = capture.stoppedForStorage
             ? `${savedMessage} Recording stopped at the safe local-storage limit; export a pack and remove unused media before the next take.`
             : savedMessage;
-        } catch (error) { $('voice-overdub-status').textContent = `Could not save vocal take: ${error.message}`; await refreshInterruptedAudioRecordings(); }
+        } catch (error) {
+          await refreshInterruptedAudioRecordings();
+          if(!take.discard&&unsavedTakeFile)offerRecordingDownload('voice-overdub-status',unsavedTakeFile,`Could not save vocal take: ${error.message}`,'Download unsaved audio take');
+          else $('voice-overdub-status').textContent = `Could not save vocal take: ${error.message}`;
+        }
         finally { if (vocalRecording === take) vocalRecording = null; updateOverdubControls(); }
       };
       recorder.start(1000);
@@ -1096,16 +1124,19 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       recorder.onerror=event=>{$('song-video-status').textContent=`Camera recording failed: ${event.error?.message||'unknown error'}`;stopSongVideoRecording(false);};
       recorder.onstop=async()=>{
         stream.getTracks().forEach(track=>track.stop());
-        const type=recorder.mimeType||mime,blob=new Blob(capture.chunks,{type});
+        const type=recorder.mimeType||mime;let blob=new Blob(capture.chunks,{type});
+        let unsavedTakeFile=null;
         try{
           await take.journalWrite;
           if(take.discard){await deleteInterruptedVideoRecording(take.recoveryId);$('song-video-status').textContent='Camera take discarded. No video was saved.';return;}
+          if(!blob.size){const recovery=(await listInterruptedVideoRecordings()).find(item=>item.id===take.recoveryId);if(recovery?.blob.size)blob=recovery.blob;}
           if(!blob.size){await deleteInterruptedVideoRecording(take.recoveryId);throw new Error('The browser did not capture a video take.');}
           const currentBytes=[...getMediaFiles().values(),...vocalFiles.values(),...videoFiles.values()].reduce((sum,file)=>sum+(file?.size||0),0);
           if(currentBytes+blob.size>MAX_MEDIA_BYTES)throw new Error('This take reached the project media limit. Export a pack and remove media before recording another.');
-          const durationSec=await probeVideoDuration(blob,(performance.now()-take.startedAt)/1000);
           const index=project.voice.videoLayers.length+1,id=`video-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
           const file=new File([blob],`song-video-${Date.now()}.${extensionForMime(type)}`,{type});
+          unsavedTakeFile=file;
+          const durationSec=await probeVideoDuration(file,(performance.now()-take.startedAt)/1000);
           const layer={id,name:`Video take ${index}`,origin:'recording',startStep:take.startStep,trimStartSec:0,trimEndSec:durationSec,durationSec,type};
           const nextLayers=[...project.voice.videoLayers,layer];
           await saveSongVideoLayer(id,file,{...project,voice:{...project.voice,videoLayers:nextLayers}},{recoveryId:take.recoveryId});
@@ -1113,7 +1144,11 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
           $('song-video-status').textContent=capture.stoppedForStorage
             ?`${layer.name} saved locally from bar ${Math.floor(layer.startStep/16)+1}. Recording stopped at the safe storage limit.`
             :`${layer.name} saved locally from bar ${Math.floor(layer.startStep/16)+1}. The raw camera take is retained.`;
-        }catch(error){$('song-video-status').textContent=`Could not ${take.discard?'discard':'save'} camera take: ${error.message}`;await refreshInterruptedVideoRecordings();}
+        }catch(error){
+          await refreshInterruptedVideoRecordings();
+          if(!take.discard&&unsavedTakeFile)offerRecordingDownload('song-video-status',unsavedTakeFile,`Could not save camera take: ${error.message}`,'Download unsaved video take');
+          else $('song-video-status').textContent=`Could not ${take.discard?'discard':'save'} camera take: ${error.message}`;
+        }
         finally{if(videoRecording===take)videoRecording=null;videoRecordingActivity.cancel();updateOverdubControls();}
       };
       if(!videoRecordingActivity.activate(token))throw new Error('Camera recording start was canceled.');
