@@ -637,7 +637,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     for(const [index,layer] of project.voice.videoLayers.entries()){
       const row=document.createElement('div');row.className='overdub-wave-row';row.dataset.videoLayer=layer.id;row.style.width=width+'px';
       const title=document.createElement('strong');title.textContent=`VIDEO ${index+1}. ${layer.name}`;row.append(title);
-      const lane=document.createElement('div');lane.className='overdub-video-lane';lane.style.width=width+'px';lane.setAttribute('role','img');lane.setAttribute('aria-label',`Song placement lane for video track ${index+1}, ${layer.name}`);
+      const lane=document.createElement('div');lane.className='overdub-video-lane';lane.style.width=width+'px';lane.setAttribute('role','group');lane.setAttribute('aria-label',`Song placement lane for video track ${index+1}, ${layer.name}`);
       const start=clamp(layer.startStep,0,totalSteps),rawEnd=layer.trimEndSec==null?layer.durationSec:Math.min(layer.durationSec,layer.trimEndSec);
       const clipSeconds=Math.max(0,rawEnd-clamp(layer.trimStartSec,0,Math.max(0,rawEnd-.01)));
       if(start<totalSteps&&clipSeconds>0){
