@@ -2,6 +2,8 @@
 
 Use this checklist to close the physical-device and human-review gates recorded in [GitHub Issue #2](https://github.com/markleonfreese/madladpad/issues/2). It supplements [`tests/BROWSER-SMOKE.md`](../tests/BROWSER-SMOKE.md), which is synthetic desktop Chromium evidence.
 
+**Current physical-device session:** See [`DEVICE-ACCEPTANCE-SESSION-2026-11-15.md`](DEVICE-ACCEPTANCE-SESSION-2026-11-15.md) for the exact production-release baseline, Android/iOS actions, expected outcomes, safe test-data handling and device-by-device evidence fields. **Status: BLOCKED / not executed by an assistant without attached physical hardware.** The existing automated Chromium/WebKit evidence is not a substitute.
+
 ## Current published app — 15 November 2026
 
 - **Production target:** <https://madladpad.pages.dev>, current Pages deployment `ffb580d0-9759-4665-a535-faab36f56907`, source commit `7f2069df3344c155653cc615b6b526cf3cb8a6f7` (`main`, PR #231). Cloudflare's read-only project API reports the deployment as successful production and `uses_functions: false`. After deployment, all 39 files in the built `site/` directory returned HTTP 200 and matched their local SHA-256 byte-for-byte (15,442,143 bytes total). Key hashes: `/index.html` `1918528be2457681f4cf226a4ba61e8147f812bb30810bbc353ac7727c3c34fa`, `/app.js` `d9635449c96869507286fc3dfd19bf692cd80276ce2b7cef737ebdd2767c2451`, `/storage.js` `96711e4245609a0eab455cd096a882231ac4b99132b59633ac8834e42f09037f`, `/voice.js` `bca54bbcc99ba09139e7c0739639dddab4a764fb897b195dfc6fb00918158cae`, `/sw.js` `02e1624fc31aead8e9306671c76b4adf1bda9f2fe202974686d98035e81da14a`. This verifies the deployed static release matches the tested checkout assets. No Pages Functions, legacy Worker or Cloudflare configuration changed.
