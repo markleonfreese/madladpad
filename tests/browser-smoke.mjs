@@ -1119,6 +1119,10 @@ try {
     assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Move audio track 2 later by one bar','when the audio track reaches its start, keyboard focus should move to the available direction');
     const importedId=await importedTrack.getAttribute('data-layer');
 
+    // Timeline edit commits are disabled while the Song is actually playing.
+    // Stop before dragging; resume afterward for the existing export and capture checks.
+    await page.locator('#studio-play').click();
+    await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='false');
     const sourceBytesBeforeGesture=await page.evaluate(async id=>(await (await import('/storage.js')).getValue('voice-layer:'+id))?.size,importedId);
     await page.locator('#overdub-zoom-in').click();
     assert.equal(await page.locator('#overdub-zoom-label').textContent(),'4×','Song track zoom should improve short-take touch precision');
@@ -1156,6 +1160,8 @@ try {
     await importedTrack.locator('.vocal-layer-start input').fill('0');await importedTrack.locator('.vocal-layer-start input').press('Tab');
     assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.[1]?.startStep),0,'precision numeric controls remain an accessible fallback');
     checkpoint('Song waveform direct move and edge trims preserve original audio and editable numeric controls');
+    await page.locator('#studio-play').click();
+    await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='true');
     const importedRms=await page.evaluate(async id=>{
       const {getValue}=await import('/storage.js');const file=await getValue(`voice-layer:${id}`);
       if(!file)throw new Error('Imported audio source is missing from IndexedDB');
