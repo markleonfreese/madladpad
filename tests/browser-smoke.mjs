@@ -289,6 +289,24 @@ try {
   assert.equal(stickyTransport.position,'fixed','phone playback controls should remain reachable in the bottom bar');
   assert.equal(stickyTransport.visible,true,`the main playback control should remain visible on a long phone page: ${JSON.stringify(stickyTransport)}`);
   assert.ok(stickyTransport.bottom<=844&&stickyTransport.bottom>694,`the playback bar should sit above the phone safe area: ${JSON.stringify(stickyTransport)}`);
+  for(const [width,height] of [[390,844],[320,720]]){
+    await page.setViewportSize({width,height});
+    const compactDock=await page.evaluate(()=>{
+      const panel=document.querySelector('.transport-panel').getBoundingClientRect();
+      const controls=['#studio-play','#studio-record','#loop-settings > summary'].map(selector=>{
+        const rect=document.querySelector(selector).getBoundingClientRect();
+        return {selector,left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom,height:rect.height};
+      });
+      return {panelHeight:panel.height,controls,scrollWidth:document.documentElement.scrollWidth,viewport:innerWidth};
+    });
+    assert.ok(compactDock.panelHeight<=(width<360?140:80),`mobile global transport should stay compact instead of covering the work area when it fits: ${JSON.stringify(compactDock)}`);
+    assert.ok(compactDock.controls.every(control=>control.height>=44),`mobile transport actions should remain touch-sized at ${width}px: ${JSON.stringify(compactDock)}`);
+    if(width>=360)assert.ok(Math.max(...compactDock.controls.map(control=>control.top))-Math.min(...compactDock.controls.map(control=>control.top))<=1,`Play, Record and Settings should share one row when it fits at ${width}px: ${JSON.stringify(compactDock)}`);
+    else assert.ok(compactDock.controls[2].top>=compactDock.controls[0].bottom,`Settings should move to its own row below Play and Record on narrow phones: ${JSON.stringify(compactDock)}`);
+    assert.ok(compactDock.controls.every(control=>control.left>=0&&control.right<=width),`mobile transport actions should fit at ${width}px: ${JSON.stringify(compactDock)}`);
+    assert.equal(compactDock.scrollWidth,compactDock.viewport,`compact mobile transport should not cause horizontal overflow at ${width}px`);
+  }
+  await page.setViewportSize({width:390,height:844});
   await page.evaluate(()=>window.scrollTo(0,0));
   const openScreen=async screen=>{
     assert.equal(await page.locator('#studio-nav > a[data-studio-screen="'+screen+'"]').count(),1,'each studio stage should be directly reachable from primary navigation');
@@ -436,7 +454,8 @@ try {
       return {play:{x:play.x,y:play.y,width:play.width,height:play.height},record:{x:record.x,y:record.y,width:record.width,height:record.height},settings:{x:settings.x,y:settings.y,width:settings.width,height:settings.height}};
     });
     assert.ok(Math.abs(transportLayout.play.y-transportLayout.record.y)<2,`Play and Record should share the first mobile row at ${width}px: ${JSON.stringify(transportLayout)}`);
-    assert.ok(transportLayout.settings.y>=transportLayout.play.y+transportLayout.play.height,`Settings should have its own secondary row at ${width}px: ${JSON.stringify(transportLayout)}`);
+    if(width<360)assert.ok(transportLayout.settings.y>=transportLayout.play.y+transportLayout.play.height,`Settings should have its own secondary row on the narrowest phones: ${JSON.stringify(transportLayout)}`);
+    else assert.ok(Math.abs(transportLayout.settings.y-transportLayout.play.y)<2,`Settings should share the compact transport row when it fits: ${JSON.stringify(transportLayout)}`);
     assert.ok(transportLayout.record.width>=44&&transportLayout.record.height>=44,`Record must remain a usable touch target at ${width}px`);
     for(const screen of ['sounds','beats','voice','overdub','export']){
       await openScreen(screen);
