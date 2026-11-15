@@ -154,6 +154,26 @@ try{
   assert.match(await recordedTrack.locator('.vocal-layer-meta').textContent(),/starts at bar (9|10|11|12)/,'the visible track placement should match the later Song section');
   assert.match(await page.locator('#overdub-timeline .overdub-wave-row svg').nth(1).getAttribute('aria-label'),/from bar (9|10|11|12)/,'the waveform should expose the later Song placement');
 
+  await page.locator('#overdub-video-record').click();
+  await page.waitForFunction(()=>document.querySelector('#song-video-status').textContent.includes('Recording camera and microphone locally over the Song'));
+  await page.waitForTimeout(1300);
+  await page.locator('#overdub-video-stop').click();
+  await page.waitForFunction(()=>document.querySelectorAll('#song-video-layers .song-video-track').length===2,null,{timeout:15000});
+  const recordedVideoTrack=page.locator('#song-video-layers .song-video-track').nth(1);
+  const recordedVideoId=await recordedVideoTrack.getAttribute('data-video-layer');
+  const recordedVideo=await page.evaluate(async id=>{
+    const {getValue,listInterruptedVideoRecordings}=await import('/storage.js');
+    const file=await getValue(`video-layer:${id}`);
+    const project=JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'));
+    const layer=project?.voice?.videoLayers?.find(item=>item.id===id);
+    return {bytes:file?.size,type:file?.type,startStep:layer?.startStep,journals:(await listInterruptedVideoRecordings()).length};
+  },recordedVideoId);
+  assert.ok(recordedVideo.bytes>100&&recordedVideo.type.startsWith('video/'),`the camera take should be saved as local video: ${JSON.stringify(recordedVideo)}`);
+  assert.ok(recordedVideo.startStep>=128&&recordedVideo.startStep<384,`the camera take should begin in Song section B, got step ${recordedVideo.startStep}`);
+  assert.equal(recordedVideo.journals,0,'a saved section-B camera take should clear its recovery journal');
+  assert.match(await recordedVideoTrack.locator('.song-video-meta').textContent(),/bar (?:9|1[0-9]|2[0-4])\b/,'the visible camera track placement should match section B');
+  assert.match(await page.locator('#overdub-timeline .overdub-video-clip').nth(1).getAttribute('aria-label'),/video from bar (?:9|1[0-9]|2[0-4])\b/,'the timeline should expose the section-B camera placement');
+
   const audioDownload=page.waitForEvent('download',{timeout:10000});
   await openScreen('export');await page.locator('#record-audio').click();
   await page.waitForFunction(()=>document.querySelector('#record-audio').textContent.includes('STOP AUDIO TAKE'));
@@ -195,7 +215,7 @@ try{
   assert.ok(decodedVideo.width>0&&decodedVideo.height>0&&decodedVideo.readyState>=2,`the audiovisual export should decode a video frame, got ${JSON.stringify(decodedVideo)}`);
   await openScreen('beats');await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='false');
-  console.log(`Song journey browser acceptance passed: 36-bar A-B-C-A, four-minute local audio/video pack recovery, synthetic microphone take ${recorded.duration.toFixed(2)} s from Song step ${recordedStartStep}, decoded 8+ second mix RMS ${mixStats.rms.toFixed(3)}, and a decoded ${decodedVideo.width}×${decodedVideo.height} video frame.`);
+  console.log(`Song journey browser acceptance passed: 36-bar A-B-C-A, four-minute local audio/video pack recovery, synthetic microphone take ${recorded.duration.toFixed(2)} s from Song step ${recordedStartStep}, camera clip ${recordedVideo.bytes} bytes from Song step ${recordedVideo.startStep}, decoded 8+ second mix RMS ${mixStats.rms.toFixed(3)}, and a decoded ${decodedVideo.width}×${decodedVideo.height} video frame.`);
   await context.close();
 }finally{
   if(browser)await browser.close();
