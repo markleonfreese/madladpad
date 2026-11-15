@@ -503,7 +503,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       Object.assign(active,next);
       if(kind==='audio')audio.stopVocalLayer(layer.id);
       save();
-      if(kind==='audio')renderVocalLayers();else renderVideoLayers();
+      if(kind==='audio')renderVocalLayers();else {renderVideoLayers();renderOverdubTimeline();}
       $('overdub-timeline-status').textContent=kind+' track '+(index+1)+' moved or trimmed on the Song timeline; original source retained.';
     };
     const button=(kindOfDrag,text,position)=>{
