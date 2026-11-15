@@ -560,24 +560,24 @@ try {
     context.__nativeResume=context.resume;
     context.resume=()=>new Promise(resolve=>{window.__finishPendingAudioUnlock=resolve;});
   });
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('CANCEL'));
   assert.equal(await page.locator('#play-seq').getAttribute('aria-pressed'),'true','pending transport start should expose pressed state');
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('PLAY'));
   assert.equal(await page.locator('#play-seq').getAttribute('aria-pressed'),'false','canceling pending transport start should restore its idle state');
   await page.evaluate(()=>{window.__finishPendingAudioUnlock();window.__madladpadAppAudioContext.resume=window.__madladpadAppAudioContext.__nativeResume;});
   await page.waitForTimeout(50);
   assert.equal(await page.locator('#play-seq').getAttribute('aria-pressed'),'false','late audio unlock must not restart a canceled transport');
   checkpoint('canceling a pending audio unlock leaves transport idle');
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   checkpoint('layouts, demo and sequencer');
   await page.waitForFunction(() => document.querySelector('#play-seq').textContent.includes('STOP'));
   assert.equal(await page.locator('#play-seq').getAttribute('aria-pressed'),'true','running transport should expose pressed state');
   await page.locator('#grid-division').selectOption('1/4');
   await page.locator('#steps .step.current[data-step="8"]').waitFor({timeout:4000});
   assert.equal(await page.locator('#steps .step.current').getAttribute('data-step'),'8','coarse-grid playhead should track the mapped sixteenth-step position');
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   assert.equal(await page.locator('#play-seq').getAttribute('aria-pressed'),'false','stopping transport should restore idle pressed state');
   await page.locator('#grid-division').selectOption('1/16');
   await page.keyboard.press('q');
@@ -642,7 +642,7 @@ try {
   await openScreen('beats');
   await page.waitForFunction(()=>document.querySelectorAll('#steps .step.on').length===0);
   assert.equal(await page.locator('#steps .step.on').count(),0,'clear should remove the selected pattern');
-  if((await page.locator('#play-seq').textContent()).includes('STOP'))await page.locator('#play-seq').click();
+  if((await page.locator('#play-seq').textContent()).includes('STOP'))await page.locator('#studio-play').click();
   await page.locator('#launch-scene').click();
   await page.waitForFunction(()=>document.querySelector('#steps .step.on'));
   await page.locator(`.track-row[data-pad="${modePadId}"] .track-name`).click();
@@ -679,14 +679,14 @@ try {
     window.__heldLoopStarts=[];
     prototype.start=function(...args){if(this.buffer&&this.loop)window.__heldLoopStarts.push({loopStart:this.loopStart,loopEnd:this.loopEnd,duration:args[2]??null});return window.__nativeLoopStart.apply(this,args);};
   });
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   await page.waitForFunction(()=>window.__heldLoopStarts.length>0,null,{timeout:5000});
   await page.waitForTimeout(360);
   const loopStarts=await page.evaluate(()=>window.__heldLoopStarts);
   assert.equal(loopStarts.length,1,'three adjacent active cells should start one held voice rather than retrigger three times');
   assert.ok(Math.abs(loopStarts[0].loopEnd-loopStarts[0].loopStart-.08)<.015,'the 80ms local trim should be the loop region');
   assert.ok(loopStarts[0].duration>=.35&&loopStarts[0].duration<=.4,`the held voice should span three 16th notes, got ${loopStarts[0].duration}`);
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   await page.evaluate(()=>{AudioBufferSourceNode.prototype.start=window.__nativeLoopStart;});
   await page.locator('#grid-division').selectOption('1/4');
   await page.locator('#beat-pad-select').selectOption(String(modePadId));
@@ -1057,7 +1057,7 @@ try {
   const vocalOverdubSupported=await page.evaluate(()=>Boolean(window.MediaRecorder&&navigator.mediaDevices?.getUserMedia));
   if(vocalOverdubSupported){
     await openScreen('overdub');
-    await page.locator('#play-seq').click();
+    await page.locator('#studio-play').click();
     await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
     await page.waitForFunction(()=>!document.querySelector('#voice-overdub-record').disabled);
     await page.locator('#voice-overdub-record').click();
@@ -1126,7 +1126,7 @@ try {
       finally{await context.close();}
     },importedId);
     assert.ok(importedRms>.01,`the imported Song track should preserve audible source audio, got RMS ${importedRms}`);
-    await page.locator('#play-seq').click();
+    await page.locator('#studio-play').click();
     const layerId=await vocalRow.getAttribute('data-layer');
     const rawTakeRms=await page.evaluate(async id=>{
       const {getValue}=await import('/storage.js');
@@ -1165,7 +1165,7 @@ try {
       window.__recoveryTone={context,oscillator};
       Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,value:constraints=>constraints?.audio&&!constraints?.video?Promise.resolve(destination.stream):nativeGetUserMedia(constraints)});
     });
-    await crashPage.locator('#play-seq').click();
+    await crashPage.locator('#studio-play').click();
     await crashPage.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
     await crashPage.waitForFunction(()=>!document.querySelector('#voice-overdub-record').disabled);
     await crashPage.locator('#voice-overdub-record').click();
@@ -1259,7 +1259,7 @@ try {
   await videoAudioGain.evaluate(input=>{input.value='85';input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));});
   await page.waitForFunction(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.videoLayers?.[0]?.includeAudio===true&&JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.videoLayers?.[0]?.audioGain===.85,null,{timeout:2000});
   checkpoint('local Song video track import, placement and trim');
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
   const videoRecoveryIdsBefore=await page.evaluate(async()=>(await (await import('/storage.js')).listInterruptedVideoRecordings()).map(take=>take.id));
   await page.locator('#overdub-video-record').click();
@@ -1305,7 +1305,7 @@ try {
   await videoRecoveryPage.getByRole('button',{name:/Delete video track 2 and its local source/}).click();
   await videoRecoveryPage.waitForFunction(()=>document.querySelectorAll('#song-video-layers .song-video-track').length===1);
   page=videoRecoveryPage;
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
   checkpoint('real Chromium renderer crash recovers journaled camera chunks into an editable Song video track');
     await page.evaluate(()=>{
@@ -1351,7 +1351,7 @@ try {
   const recordedVideoInfo=await page.evaluate(async id=>{const file=await (await import('/storage.js')).getValue(`video-layer:${id}`);return {type:file?.type,size:file?.size};},recordedVideoTrackId);
   assert.match(recordedVideoInfo.type,/^video\//,'the camera track should save its real video container');
   assert.ok(recordedVideoInfo.size>0,'the locally saved camera track should contain media');
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('PLAY'));
   await recordedVideoTrack.locator('[aria-label="TRIM IN (S) for video track 2"]').fill('0.10');
   await recordedVideoTrack.locator('[aria-label="TRIM IN (S) for video track 2"]').press('Tab');
@@ -2208,7 +2208,7 @@ try {
   const mobileTabs=await page.locator('#studio-nav > a').evaluateAll(links=>links.map(link=>({left:link.getBoundingClientRect().left,right:link.getBoundingClientRect().right,visible:link.getBoundingClientRect().width>0})));
   assert.equal(mobileTabs.length,5,'all five studio stages should be directly visible');
   assert.ok(mobileTabs.every(tab=>tab.visible&&tab.left>=0&&tab.right<=390),'five direct navigation tabs should fit a 390px phone without horizontal scrolling');
-  assert.deepEqual(await page.locator('#studio-nav > a').evaluateAll(links=>links.map(link=>link.textContent.replace(/\\s+/g,' ').trim())),['01 Playground','02 Beat Maker','03 Melody & Rhythm','04 Tracks','05 Export'],'navigation should follow a single creative path');
+  assert.deepEqual(await page.locator('#studio-nav > a').evaluateAll(links=>links.map(link=>link.textContent.replace(/\s+/g,' ').trim())),['01 Playground','02 Beat Maker','03 Melody & Rhythm','04 Tracks','05 Export'],'navigation should follow a single creative path');
   assert.equal(await page.locator('#studio-nav > a[data-studio-screen="voice"]').getAttribute('aria-current'),'page');
   await openScreen('sounds');
   const voiceTab=page.locator('#studio-nav > a[data-studio-screen="voice"]');
@@ -2318,9 +2318,9 @@ try {
   const firstSceneId=songSceneIds[0];
   assert.equal(savedSong.song.clips[0].sceneId,firstSceneId);
   assert.equal(savedSong.song.clips[3].sceneId,firstSceneId,'returning to A should reuse the saved pattern, not clone its sounds');
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
-  await page.locator('#play-seq').click();
+  await page.locator('#studio-play').click();
   assert.equal(await page.locator('#play-seq').textContent().then(x=>x.includes('PLAY SONG')),true,'Song mode should remain selected after stopping playback');
   await page.locator('#pattern-view').click();
   assert.equal(await page.locator('#sequence-pattern-content').isVisible(),true,'switching back restores the old pattern editor');
