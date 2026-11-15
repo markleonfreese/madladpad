@@ -967,10 +967,11 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       recorder.onstop = async () => {
         stream.getTracks().forEach(track => track.stop());
         const type = recorder.mimeType || mime || 'audio/webm';
-        const blob = new Blob(capture.chunks, {type});
+        let blob = new Blob(capture.chunks, {type});
         let unsavedTakeFile=null;
         try {
           await take.journalWrite;
+          if(!take.discard&&!blob.size){const recovery=(await listInterruptedAudioRecordings()).find(item=>item.id===take.recoveryId);if(recovery?.blob.size)blob=recovery.blob;}
           if (!blob.size) {
             await deleteInterruptedAudioRecording(take.recoveryId);
             throw new Error('The browser did not capture any microphone audio.');
@@ -1123,11 +1124,12 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       recorder.onerror=event=>{$('song-video-status').textContent=`Camera recording failed: ${event.error?.message||'unknown error'}`;stopSongVideoRecording(false);};
       recorder.onstop=async()=>{
         stream.getTracks().forEach(track=>track.stop());
-        const type=recorder.mimeType||mime,blob=new Blob(capture.chunks,{type});
+        const type=recorder.mimeType||mime;let blob=new Blob(capture.chunks,{type});
         let unsavedTakeFile=null;
         try{
           await take.journalWrite;
           if(take.discard){await deleteInterruptedVideoRecording(take.recoveryId);$('song-video-status').textContent='Camera take discarded. No video was saved.';return;}
+          if(!blob.size){const recovery=(await listInterruptedVideoRecordings()).find(item=>item.id===take.recoveryId);if(recovery?.blob.size)blob=recovery.blob;}
           if(!blob.size){await deleteInterruptedVideoRecording(take.recoveryId);throw new Error('The browser did not capture a video take.');}
           const currentBytes=[...getMediaFiles().values(),...vocalFiles.values(),...videoFiles.values()].reduce((sum,file)=>sum+(file?.size||0),0);
           if(currentBytes+blob.size>MAX_MEDIA_BYTES)throw new Error('This take reached the project media limit. Export a pack and remove media before recording another.');

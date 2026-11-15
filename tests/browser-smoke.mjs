@@ -1495,7 +1495,7 @@ try {
   const videoTracksBeforeSaveFailure=await page.locator('#song-video-layers .song-video-track').count();
   await page.evaluate(()=>{
     const prototype=IDBObjectStore.prototype,nativePut=prototype.put,aborted=new WeakSet();
-    window.__videoSaveAbort={attempts:0,restore:()=>{prototype.put=nativePut;}};
+    window.__videoSaveAbort={attempts:0,restore:()=>{prototype.put=nativePut;window.Blob=window.__videoSaveAbort.nativeBlob;}};
     prototype.put=function(value,key){
       const transaction=this.transaction;
       if(aborted.has(transaction))return {};
@@ -1511,9 +1511,17 @@ try {
   await page.locator('#overdub-video-record').click();
   await page.waitForFunction(()=>document.querySelector('#overdub-video-stop').hidden===false,null,{timeout:8000});
   await page.waitForFunction(async()=>(await (await import('/storage.js')).listInterruptedVideoRecordings())[0]?.completeChunks>=3,null,{timeout:20000});
+  await page.evaluate(()=>{
+    const state=window.__videoSaveAbort;state.nativeBlob=window.Blob;state.emptyBlob=true;
+    window.Blob=new Proxy(state.nativeBlob,{construct(target,args,newTarget){
+      if(state.emptyBlob&&Array.isArray(args[0])){state.emptyBlob=false;return Reflect.construct(target,[[],args[1]],newTarget);}
+      return Reflect.construct(target,args,newTarget);
+    }});
+  });
   await page.locator('#overdub-video-stop').click();
   await page.waitForFunction(()=>window.__videoSaveAbort.attempts===1||document.querySelector('#song-video-status').textContent.includes('Could not save camera take'),null,{timeout:30000});
   assert.equal(await page.evaluate(()=>window.__videoSaveAbort.attempts),1,`the final video save should reach the injected IndexedDB abort; status: ${await page.locator('#song-video-status').textContent()}`);
+  assert.equal(await page.evaluate(()=>window.__videoSaveAbort.emptyBlob),false,'the test should force the in-memory video assembly through its journal-backed recovery fallback');
   await page.locator('#song-video-status a[download]').waitFor({timeout:20000});
   assert.match(await page.locator('#song-video-status').textContent(),/Could not save camera take/,'the final-save failure should be reported next to a rescue link');
   assert.equal(await page.locator('#song-video-status a[download]').textContent(),'Download unsaved video take','the captured video should remain downloadable after local persistence fails');
@@ -1536,7 +1544,7 @@ try {
     const context=new AudioContext(),destination=context.createMediaStreamDestination(),oscillator=context.createOscillator(),gain=context.createGain();
     gain.gain.value=.2;oscillator.frequency.value=440;oscillator.connect(gain).connect(destination);oscillator.start();await context.resume();
     const prototype=IDBObjectStore.prototype,nativePut=prototype.put,aborted=new WeakSet();
-    window.__audioSaveAbort={attempts:0,restore:async()=>{prototype.put=nativePut;Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,value:nativeGetUserMedia});oscillator.stop();await context.close();}};
+    window.__audioSaveAbort={attempts:0,restore:async()=>{prototype.put=nativePut;window.Blob=window.__audioSaveAbort.nativeBlob;Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,value:nativeGetUserMedia});oscillator.stop();await context.close();}};
     Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,value:constraints=>constraints?.audio&&!constraints?.video?Promise.resolve(destination.stream):nativeGetUserMedia(constraints)});
     prototype.put=function(value,key){
       const transaction=this.transaction;
@@ -1553,9 +1561,17 @@ try {
   await page.locator('#voice-overdub-record').click();
   await page.waitForFunction(()=>document.querySelector('#voice-overdub-status').textContent.includes('Recording microphone audio'),null,{timeout:8000});
   await page.waitForFunction(async()=>(await (await import('/storage.js')).listInterruptedAudioRecordings())[0]?.completeChunks>=3,null,{timeout:20000});
+  await page.evaluate(()=>{
+    const state=window.__audioSaveAbort;state.nativeBlob=window.Blob;state.emptyBlob=true;
+    window.Blob=new Proxy(state.nativeBlob,{construct(target,args,newTarget){
+      if(state.emptyBlob&&Array.isArray(args[0])){state.emptyBlob=false;return Reflect.construct(target,[[],args[1]],newTarget);}
+      return Reflect.construct(target,args,newTarget);
+    }});
+  });
   await page.locator('#voice-overdub-stop').click();
   await page.waitForFunction(()=>window.__audioSaveAbort.attempts===1||document.querySelector('#voice-overdub-status').textContent.includes('Could not save vocal take'),null,{timeout:30000});
   assert.equal(await page.evaluate(()=>window.__audioSaveAbort.attempts),1,`the final audio save should reach the injected IndexedDB abort; status: ${await page.locator('#voice-overdub-status').textContent()}`);
+  assert.equal(await page.evaluate(()=>window.__audioSaveAbort.emptyBlob),false,'the test should force the in-memory audio assembly through its journal-backed recovery fallback');
   await page.locator('#voice-overdub-status a[download]').waitFor({timeout:20000});
   assert.match(await page.locator('#voice-overdub-status').textContent(),/Could not save vocal take/,'the final audio-save failure should be reported next to a rescue link');
   assert.equal(await page.locator('#voice-overdub-status a[download]').textContent(),'Download unsaved audio take','the captured audio should remain downloadable after local persistence fails');
