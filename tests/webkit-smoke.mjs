@@ -62,14 +62,15 @@ try{
     const dimensions=await page.evaluate(()=>({viewport:innerWidth,document:document.documentElement.scrollWidth}));
     assert.ok(dimensions.document<=dimensions.viewport,`document should not overflow at ${width}px: ${JSON.stringify(dimensions)}`);
   }
-  assert.equal(await page.locator('#studio-nav > a').count(),3,'the three core destinations should stay primary');
-
-  const more=page.locator('#studio-more-tools');
-  if(!await more.evaluate(element=>element.open))await more.locator('summary').click();
+  assert.equal(await page.locator('#studio-nav > a').count(),5,'all five studio stages should remain primary');
   await page.locator('[data-studio-screen="voice"]').click();
   await page.waitForFunction(()=>document.body.dataset.screen==='voice');
-  assert.match(await more.locator('summary').textContent(),/Voice Lab/,'hidden specialist navigation should retain the selected screen label');
-  assert.equal(await more.locator('summary').getAttribute('aria-current'),'page');
+  assert.equal(await page.locator('#studio-nav [data-studio-screen="voice"]').getAttribute('aria-current'),'page','Melody & Rhythm is selected as a direct tab');
+  await page.locator('[data-studio-screen="overdub"]').click();
+  await page.waitForFunction(()=>document.body.dataset.screen==='overdub');
+  assert.equal(await page.locator('#sequencer').isHidden(),true,'Tracks should not display Beat Maker');
+  await page.locator('[data-studio-screen="voice"]').click();
+  await page.waitForFunction(()=>document.body.dataset.screen==='voice');
   await page.locator('[data-voice-jump="rap-title"]').click();
   assert.equal(await page.locator('#voice-rap-tool').isVisible(),true,'Rap & Flow should open in the focused Voice Lab');
   assert.equal(await page.locator('[data-voice-jump="rap-title"]').getAttribute('aria-pressed'),'true');
