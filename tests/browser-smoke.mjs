@@ -1492,6 +1492,32 @@ try {
   await fallbackAudioTrack.getByRole('button',{name:new RegExp(`Delete audio track ${audioTracksBeforeAbort+1} and its saved local audio file`)}).click();
   await page.waitForFunction(count=>document.querySelectorAll('#voice-overdub-layers .vocal-layer').length===count,audioTracksBeforeAbort);
   checkpoint('audio take remains saveable after a synthetic journal transaction abort');
+  const audioTrackCountBeforeStorageCheck=await page.locator('#voice-overdub-layers .vocal-layer').count();
+  const videoTrackCountBeforeStorageCheck=await page.locator('#song-video-layers .song-video-track').count();
+  await page.evaluate(()=>{
+    const storage=navigator.storage,media=navigator.mediaDevices;
+    const nativeEstimate=storage.estimate.bind(storage),nativeGetUserMedia=media.getUserMedia.bind(media);
+    window.__lowStorageGuard={permissionRequests:0,restore:()=>{
+      Object.defineProperty(storage,'estimate',{configurable:true,value:nativeEstimate});
+      Object.defineProperty(media,'getUserMedia',{configurable:true,value:nativeGetUserMedia});
+    }};
+    Object.defineProperty(storage,'estimate',{configurable:true,value:async()=>({quota:4096,usage:4096})});
+    Object.defineProperty(media,'getUserMedia',{configurable:true,value:(...args)=>{
+      window.__lowStorageGuard.permissionRequests++;
+      return nativeGetUserMedia(...args);
+    }});
+  });
+  await page.locator('#overdub-video-record').click();
+  await page.waitForFunction(()=>document.querySelector('#song-video-status').textContent.includes('There is not enough safe local storage for another video take'));
+  await page.locator('#voice-overdub-record').click();
+  await page.waitForFunction(()=>document.querySelector('#voice-overdub-status').textContent.includes('There is not enough safe local storage for another take'));
+  assert.equal(await page.evaluate(()=>window.__lowStorageGuard.permissionRequests),0,'a zero-capacity storage estimate should reject audio and video capture before requesting microphone or camera permission');
+  assert.equal(await page.locator('#voice-overdub-layers .vocal-layer').count(),audioTrackCountBeforeStorageCheck,'low-storage preflight should not alter existing audio tracks');
+  assert.equal(await page.locator('#song-video-layers .song-video-track').count(),videoTrackCountBeforeStorageCheck,'low-storage preflight should not alter existing video tracks');
+  assert.equal(await page.locator('#voice-overdub-stop').isHidden(),true,'low-storage refusal should not leave an audio recorder active');
+  assert.equal(await page.locator('#overdub-video-stop').isHidden(),true,'low-storage refusal should not leave a video recorder active');
+  await page.evaluate(()=>window.__lowStorageGuard.restore());
+  checkpoint('audio and video recording stop safely at zero reported storage headroom');
   await page.waitForTimeout(500);
   await page.reload();
   await openScreen('sounds');
