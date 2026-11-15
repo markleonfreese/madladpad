@@ -1139,11 +1139,23 @@ try {
       await page.mouse.up();
     };
     assert.equal(await page.locator(gestureSelector('move')).count(),1,'imported track must have a draggable waveform body');
+    const blockedMoveHandle=page.locator(gestureSelector('move'));
+    await page.evaluate(()=>{
+      document.querySelector('#voice-overdub-status').textContent='';
+      document.querySelectorAll('#steps .current').forEach(step=>step.classList.remove('current'));
+    });
     await page.locator('#studio-play').click();
-    await page.waitForFunction(()=>document.querySelector('#studio-play').textContent.includes('STOP'));
-    await dragWave('move',2);
+    await page.waitForFunction(()=>document.querySelector('#studio-play').textContent.includes('STOP')&&document.querySelector('#steps .current'));
+    await blockedMoveHandle.scrollIntoViewIfNeeded();
+    const blockedMoveRect=await blockedMoveHandle.boundingBox();
+    assert.ok(blockedMoveRect,'the move handle should be on screen before the guard gesture');
+    await page.mouse.move(blockedMoveRect.x+blockedMoveRect.width/2,blockedMoveRect.y+blockedMoveRect.height/2);
+    await page.mouse.down();
+    const blockedStepPx=await page.locator('#overdub-timeline .overdub-ruler>span').first().evaluate(node=>node.getBoundingClientRect().width/16);
+    await page.mouse.move(blockedMoveRect.x+blockedMoveRect.width/2+2*blockedStepPx,blockedMoveRect.y+blockedMoveRect.height/2);
+    await page.mouse.up();
+    await page.waitForFunction(()=>/Stop Song playback before dragging or trimming/.test(document.querySelector('#voice-overdub-status').textContent));
     assert.equal(await page.evaluate(id=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.find(layer=>layer.id===id)?.startStep,importedId),0,'track edits must be rejected while Song playback is running');
-    assert.match(await page.locator('#voice-overdub-status').textContent(),/Stop Song playback before dragging or trimming/,'blocked edits should explain how to continue');
     await page.locator('#studio-play').click();
     await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='false');
     await dragWave('move',2);
