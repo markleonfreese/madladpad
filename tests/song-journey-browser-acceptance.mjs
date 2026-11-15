@@ -119,8 +119,41 @@ try{
   assert.equal(await page.locator('#voice-overdub-layers .vocal-layer').count(),1);
   assert.equal(await page.locator('#song-video-layers .song-video-track').count(),1);
 
+  await openScreen('beats');
+  await page.locator('#song-view').click();
+  assert.match(await page.locator('#play-seq').textContent(),/PLAY SONG/,'the microphone take should be captured against the arranged Song transport');
   await page.locator('#play-seq').click();
   await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
+  // At 240 BPM the first eight-bar A section lasts eight seconds. Start the
+  // synthetic microphone take after that boundary and verify it is placed on
+  // the shared Song ruler rather than silently restarting at bar one.
+  await page.waitForTimeout(8100);
+  await openScreen('overdub');
+  await page.locator('#voice-overdub-record').click();
+  await page.waitForFunction(()=>document.querySelector('#voice-overdub-status').textContent.includes('Recording microphone audio'));
+  await page.waitForTimeout(1300);
+  await page.locator('#voice-overdub-stop').click();
+  await page.waitForFunction(()=>document.querySelectorAll('#voice-overdub-layers .vocal-layer').length===2,null,{timeout:10000});
+  const recordedTrack=page.locator('#voice-overdub-layers .vocal-layer').nth(1);
+  const recordedId=await recordedTrack.getAttribute('data-layer');
+  const recorded=await page.evaluate(async id=>{
+    const {getValue,listInterruptedAudioRecordings}=await import('/storage.js');
+    const file=await getValue(`voice-layer:${id}`);
+    if(!file)throw new Error('The synthetic microphone take was not saved locally');
+    const context=new AudioContext();
+    try{
+      const buffer=await context.decodeAudioData(await file.arrayBuffer());
+      const samples=buffer.getChannelData(0);
+      return {bytes:file.size,duration:buffer.duration,rms:Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length),journals:(await listInterruptedAudioRecordings()).length};
+    }finally{await context.close();}
+  },recordedId);
+  const recordedStartStep=await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.[1]?.startStep);
+  assert.ok(recordedStartStep>=128&&recordedStartStep<192,`the captured microphone take should begin in Song section B after bar 8, got step ${recordedStartStep}`);
+  assert.ok(recorded.bytes>100&&recorded.duration>.5&&recorded.rms>.01,`the later-section microphone source should remain playable: ${JSON.stringify(recorded)}`);
+  assert.equal(recorded.journals,0,'a saved later-section microphone take should clear its recovery journal');
+  assert.match(await recordedTrack.locator('.vocal-layer-meta').textContent(),/starts at bar (9|10|11|12)/,'the visible track placement should match the later Song section');
+  assert.match(await page.locator('#overdub-timeline .overdub-wave-row svg').nth(1).getAttribute('aria-label'),/from bar (9|10|11|12)/,'the waveform should expose the later Song placement');
+
   const audioDownload=page.waitForEvent('download',{timeout:10000});
   await openScreen('export');await page.locator('#record-audio').click();
   await page.waitForFunction(()=>document.querySelector('#record-audio').textContent.includes('STOP AUDIO TAKE'));
@@ -162,7 +195,7 @@ try{
   assert.ok(decodedVideo.width>0&&decodedVideo.height>0&&decodedVideo.readyState>=2,`the audiovisual export should decode a video frame, got ${JSON.stringify(decodedVideo)}`);
   await openScreen('beats');await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='false');
-  console.log(`Song journey browser acceptance passed: 36-bar A-B-C-A, four-minute local audio/video pack recovery, decoded 8+ second mix RMS ${mixStats.rms.toFixed(3)}, and a decoded ${decodedVideo.width}×${decodedVideo.height} video frame.`);
+  console.log(`Song journey browser acceptance passed: 36-bar A-B-C-A, four-minute local audio/video pack recovery, synthetic microphone take ${recorded.duration.toFixed(2)} s from Song step ${recordedStartStep}, decoded 8+ second mix RMS ${mixStats.rms.toFixed(3)}, and a decoded ${decodedVideo.width}×${decodedVideo.height} video frame.`);
   await context.close();
 }finally{
   if(browser)await browser.close();
