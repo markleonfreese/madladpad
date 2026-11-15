@@ -1494,11 +1494,20 @@ try {
   checkpoint('audio take remains saveable after a synthetic journal transaction abort');
   const videoTracksBeforeSaveFailure=await page.locator('#song-video-layers .song-video-track').count();
   await page.evaluate(()=>{
-    const prototype=IDBObjectStore.prototype,nativePut=prototype.put,aborted=new WeakSet();
-    window.__videoSaveAbort={attempts:0,restore:()=>{prototype.put=nativePut;window.Blob=window.__videoSaveAbort.nativeBlob;}};
+    const prototype=IDBObjectStore.prototype,nativePut=prototype.put,aborted=new WeakSet(),storage=navigator.storage,nativeEstimate=storage.estimate.bind(storage),nativeRecorder=window.MediaRecorder,testBlob=window.Blob;
+    window.__videoSaveAbort={attempts:0,recoveryId:null,restore:()=>{prototype.put=nativePut;window.Blob=window.__videoSaveAbort.nativeBlob;window.MediaRecorder=nativeRecorder;Object.defineProperty(storage,'estimate',{configurable:true,value:nativeEstimate});}};
+    Object.defineProperty(storage,'estimate',{configurable:true,value:async()=>({quota:1024*1024*1024,usage:0})});
+    window.MediaRecorder=class{
+      static isTypeSupported(type){return type.startsWith('video/');}
+      constructor(stream,options={}){this.mimeType=options.mimeType||'video/webm';this.state='inactive';}
+      emit(){if(this.state==='inactive')return;this.ondataavailable?.({data:new testBlob([new Uint8Array(128)],{type:this.mimeType})});}
+      start(){this.state='recording';this.timer=setInterval(()=>this.emit(),1000);}
+      stop(){if(this.state==='inactive')return;clearInterval(this.timer);this.emit();this.state='inactive';setTimeout(()=>this.onstop?.(),0);}
+    };
     prototype.put=function(value,key){
       const transaction=this.transaction;
       if(aborted.has(transaction))return {};
+      if(window.__videoSaveAbort.recoveryId===null&&typeof key==='string'&&key.startsWith('recording-recovery:video:')&&key.endsWith(':manifest'))window.__videoSaveAbort.recoveryId=key.slice('recording-recovery:video:'.length,-':manifest'.length);
       if(window.__videoSaveAbort.attempts===0&&typeof key==='string'&&key.startsWith('video-layer:')){
         window.__videoSaveAbort.attempts++;
         aborted.add(transaction);
@@ -1510,7 +1519,7 @@ try {
   });
   await page.locator('#overdub-video-record').click();
   await page.waitForFunction(()=>document.querySelector('#overdub-video-stop').hidden===false,null,{timeout:8000});
-  await page.waitForFunction(async()=>(await (await import('/storage.js')).listInterruptedVideoRecordings())[0]?.completeChunks>=3,null,{timeout:20000});
+  await page.waitForFunction(()=>Boolean(window.__videoSaveAbort.recoveryId),null,{timeout:10000});
   await page.evaluate(()=>{
     const state=window.__videoSaveAbort;state.nativeBlob=window.Blob;state.emptyBlob=true;
     window.Blob=new Proxy(state.nativeBlob,{construct(target,args,newTarget){
@@ -1526,8 +1535,9 @@ try {
   assert.match(await page.locator('#song-video-status').textContent(),/Could not save camera take/,'the final-save failure should be reported next to a rescue link');
   assert.equal(await page.locator('#song-video-status a[download]').textContent(),'Download unsaved video take','the captured video should remain downloadable after local persistence fails');
   assert.equal(await page.locator('#song-video-layers .song-video-track').count(),videoTracksBeforeSaveFailure,'a failed final save should not create a phantom editable video track');
-  const pendingVideoRecovery=await page.evaluate(async()=>(await (await import('/storage.js')).listInterruptedVideoRecordings()).map(take=>({size:take.blob.size,chunks:take.completeChunks})));
+  const pendingVideoRecovery=await page.evaluate(async()=>(await (await import('/storage.js')).listInterruptedVideoRecordings()).map(take=>({id:take.id,size:take.blob.size,chunks:take.completeChunks})));
   assert.equal(pendingVideoRecovery.length,1,'the journal should remain available if final media persistence fails');
+  assert.equal(pendingVideoRecovery[0].id,await page.evaluate(()=>window.__videoSaveAbort.recoveryId),'the failed save should preserve the newly recorded video journal');
   assert.ok(pendingVideoRecovery[0].size>0&&pendingVideoRecovery[0].chunks>0,'the recoverable video journal should contain captured media');
   await page.evaluate(()=>window.__videoSaveAbort.restore());
   const rescueVideoDownload=page.waitForEvent('download',{timeout:25000});
@@ -1543,12 +1553,21 @@ try {
     const nativeGetUserMedia=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
     const context=new AudioContext(),destination=context.createMediaStreamDestination(),oscillator=context.createOscillator(),gain=context.createGain();
     gain.gain.value=.2;oscillator.frequency.value=440;oscillator.connect(gain).connect(destination);oscillator.start();await context.resume();
-    const prototype=IDBObjectStore.prototype,nativePut=prototype.put,aborted=new WeakSet();
-    window.__audioSaveAbort={attempts:0,restore:async()=>{prototype.put=nativePut;window.Blob=window.__audioSaveAbort.nativeBlob;Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,value:nativeGetUserMedia});oscillator.stop();await context.close();}};
+    const prototype=IDBObjectStore.prototype,nativePut=prototype.put,aborted=new WeakSet(),storage=navigator.storage,nativeEstimate=storage.estimate.bind(storage),nativeRecorder=window.MediaRecorder,testBlob=window.Blob;
+    window.__audioSaveAbort={attempts:0,recoveryId:null,restore:async()=>{prototype.put=nativePut;window.Blob=window.__audioSaveAbort.nativeBlob;window.MediaRecorder=nativeRecorder;Object.defineProperty(storage,'estimate',{configurable:true,value:nativeEstimate});Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,value:nativeGetUserMedia});oscillator.stop();await context.close();}};
+    Object.defineProperty(storage,'estimate',{configurable:true,value:async()=>({quota:1024*1024*1024,usage:0})});
     Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,value:constraints=>constraints?.audio&&!constraints?.video?Promise.resolve(destination.stream):nativeGetUserMedia(constraints)});
+    window.MediaRecorder=class{
+      static isTypeSupported(type){return type.startsWith('audio/');}
+      constructor(stream,options={}){this.mimeType=options.mimeType||'audio/webm';this.state='inactive';}
+      emit(){if(this.state==='inactive')return;this.ondataavailable?.({data:new testBlob([new Uint8Array(128)],{type:this.mimeType})});}
+      start(){this.state='recording';this.timer=setInterval(()=>this.emit(),1000);}
+      stop(){if(this.state==='inactive')return;clearInterval(this.timer);this.emit();this.state='inactive';setTimeout(()=>this.onstop?.(),0);}
+    };
     prototype.put=function(value,key){
       const transaction=this.transaction;
       if(aborted.has(transaction))return {};
+      if(window.__audioSaveAbort.recoveryId===null&&typeof key==='string'&&key.startsWith('recording-recovery:audio:')&&key.endsWith(':manifest'))window.__audioSaveAbort.recoveryId=key.slice('recording-recovery:audio:'.length,-':manifest'.length);
       if(window.__audioSaveAbort.attempts===0&&typeof key==='string'&&key.startsWith('voice-layer:')){
         window.__audioSaveAbort.attempts++;
         aborted.add(transaction);
@@ -1560,7 +1579,7 @@ try {
   });
   await page.locator('#voice-overdub-record').click();
   await page.waitForFunction(()=>document.querySelector('#voice-overdub-status').textContent.includes('Recording microphone audio'),null,{timeout:8000});
-  await page.waitForFunction(async()=>(await (await import('/storage.js')).listInterruptedAudioRecordings())[0]?.completeChunks>=3,null,{timeout:20000});
+  await page.waitForFunction(()=>Boolean(window.__audioSaveAbort.recoveryId),null,{timeout:10000});
   await page.evaluate(()=>{
     const state=window.__audioSaveAbort;state.nativeBlob=window.Blob;state.emptyBlob=true;
     window.Blob=new Proxy(state.nativeBlob,{construct(target,args,newTarget){
@@ -1576,8 +1595,9 @@ try {
   assert.match(await page.locator('#voice-overdub-status').textContent(),/Could not save vocal take/,'the final audio-save failure should be reported next to a rescue link');
   assert.equal(await page.locator('#voice-overdub-status a[download]').textContent(),'Download unsaved audio take','the captured audio should remain downloadable after local persistence fails');
   assert.equal(await page.locator('#voice-overdub-layers .vocal-layer').count(),audioTracksBeforeSaveFailure,'a failed final save should not create a phantom editable audio track');
-  const pendingAudioRecovery=await page.evaluate(async()=>(await (await import('/storage.js')).listInterruptedAudioRecordings()).map(take=>({size:take.blob.size,chunks:take.completeChunks})));
+  const pendingAudioRecovery=await page.evaluate(async()=>(await (await import('/storage.js')).listInterruptedAudioRecordings()).map(take=>({id:take.id,size:take.blob.size,chunks:take.completeChunks})));
   assert.equal(pendingAudioRecovery.length,1,'the audio journal should remain available if final media persistence fails');
+  assert.equal(pendingAudioRecovery[0].id,await page.evaluate(()=>window.__audioSaveAbort.recoveryId),'the failed save should preserve the newly recorded audio journal');
   assert.ok(pendingAudioRecovery[0].size>0&&pendingAudioRecovery[0].chunks>0,'the recoverable audio journal should contain captured media');
   await page.evaluate(()=>window.__audioSaveAbort.restore());
   const rescueAudioDownload=page.waitForEvent('download',{timeout:25000});
