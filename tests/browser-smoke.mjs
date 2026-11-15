@@ -1166,7 +1166,31 @@ try {
     await audioInputs.nth(1).fill(sourceTrimEnd);await audioInputs.nth(1).press('Tab');
     await importedTrack.locator('.vocal-layer-start input').fill('0');await importedTrack.locator('.vocal-layer-start input').press('Tab');
     assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.[1]?.startStep),0,'precision numeric controls remain an accessible fallback');
-    checkpoint('Song waveform direct move and edge trims preserve original audio and editable numeric controls');
+
+    const cancelSelector=gestureSelector('move'),cancelHandle=page.locator(cancelSelector);
+    const cancelRect=await cancelHandle.boundingBox();
+    const cancelStepPx=await page.locator('#overdub-timeline .overdub-ruler>span').first().evaluate(node=>node.getBoundingClientRect().width/16);
+    await page.evaluate(()=>{
+      window.__timelineGesturePointerId=null;
+      document.addEventListener('pointerdown',event=>{
+        if(event.target instanceof Element&&event.target.matches('.overdub-editable-clip .overdub-clip-move'))window.__timelineGesturePointerId=event.pointerId;
+      },{capture:true,once:true});
+    });
+    await page.mouse.move(cancelRect.x+cancelRect.width/2,cancelRect.y+cancelRect.height/2);
+    await page.mouse.down();
+    await page.mouse.move(cancelRect.x+cancelRect.width/2+2*cancelStepPx,cancelRect.y+cancelRect.height/2,{steps:8});
+    const cancelPointerId=await page.evaluate(()=>window.__timelineGesturePointerId);
+    const previewLeft=Number.parseFloat(await cancelHandle.evaluate(node=>node.parentElement.style.left));
+    assert.ok(Math.abs(previewLeft-2*cancelStepPx)<.1,'an interrupted drag should visibly preview the proposed placement');
+    await page.evaluate(({selector,pointerId})=>{
+      const handle=document.querySelector(selector);
+      handle.dispatchEvent(new PointerEvent('pointercancel',{pointerId,bubbles:true}));
+    },{selector:cancelSelector,pointerId:cancelPointerId});
+    await page.mouse.up();
+    assert.equal(await page.evaluate(id=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.find(layer=>layer.id===id)?.startStep,importedId),0,'pointer cancellation must not persist a partial track move');
+    assert.equal(await cancelHandle.evaluate(node=>node.parentElement.classList.contains('is-editing')),false,'canceled track gestures must release their editing state');
+    assert.equal(await cancelHandle.evaluate(node=>node.parentElement.style.left),'0px','canceled track gestures must restore the original visual position');
+    checkpoint('Song waveform move, edge trims and pointer-cancel rollback preserve original audio and numeric controls');
     await page.locator('#studio-play').click();
     await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='true');
     const importedRms=await page.evaluate(async id=>{
