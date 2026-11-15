@@ -1118,6 +1118,44 @@ try {
     assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.[1]?.startStep),0,'the accessible one-bar move control should return an audio clip to its original placement');
     assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Move audio track 2 later by one bar','when the audio track reaches its start, keyboard focus should move to the available direction');
     const importedId=await importedTrack.getAttribute('data-layer');
+
+    const sourceBytesBeforeGesture=await page.evaluate(async id=>(await (await import('/storage.js')).getValue('voice-layer:'+id))?.size,importedId);
+    await page.locator('#overdub-zoom-in').click();
+    assert.equal(await page.locator('#overdub-zoom-label').textContent(),'4×','Song track zoom should improve short-take touch precision');
+    const gestureSelector=kind=>'#overdub-timeline .overdub-editable-clip[data-layer-id="'+importedId+'"] .overdub-clip-'+kind;
+    const dragWave=async(kind,stepDelta)=>{
+      const stepPx=await page.locator('#overdub-timeline .overdub-ruler>span').first().evaluate(node=>node.getBoundingClientRect().width/16);
+      const handle=page.locator(gestureSelector(kind));
+      await handle.scrollIntoViewIfNeeded();
+      const rect=await handle.boundingBox();
+      assert.ok(rect&&rect.width>=44&&rect.height>=44,'waveform handles must expose 44-pixel touch targets');
+      await page.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);
+      await page.mouse.down();
+      await page.mouse.move(rect.x+rect.width/2+stepDelta*stepPx,rect.y+rect.height/2,{steps:8});
+      await page.mouse.up();
+    };
+    assert.equal(await page.locator(gestureSelector('move')).count(),1,'imported track must have a draggable waveform body');
+    await dragWave('move',2);
+    await page.waitForFunction(id=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.find(layer=>layer.id===id)?.startStep===2,importedId);
+    const bpmForGesture=Number(await page.locator('#bpm-input').inputValue()),stepSeconds=60/bpmForGesture/4;
+    await dragWave('left',2);
+    await page.waitForFunction(({id,seconds})=>{
+      const layer=JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.find(item=>item.id===id);
+      return layer?.startStep===4&&Math.abs(layer.trimStartSec-2*seconds)<.002;
+    },{id:importedId,seconds:stepSeconds});
+    const sourceTrimEnd=await importedTrack.locator('.vocal-layer-trim input').nth(1).inputValue();
+    await dragWave('right',-2);
+    await page.waitForFunction(({id,end,seconds})=>{
+      const layer=JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.find(item=>item.id===id);
+      return Math.abs(layer?.trimEndSec-(end-2*seconds))<.003;
+    },{id:importedId,end:Number(sourceTrimEnd),seconds:stepSeconds});
+    assert.equal(await page.evaluate(async id=>(await (await import('/storage.js')).getValue('voice-layer:'+id))?.size,importedId),sourceBytesBeforeGesture,'dragging and trimming must not rewrite or delete the source');
+    const audioInputs=importedTrack.locator('.vocal-layer-trim input');
+    await audioInputs.nth(0).fill('0');await audioInputs.nth(0).press('Tab');
+    await audioInputs.nth(1).fill(sourceTrimEnd);await audioInputs.nth(1).press('Tab');
+    await importedTrack.locator('.vocal-layer-start input').fill('0');await importedTrack.locator('.vocal-layer-start input').press('Tab');
+    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.[1]?.startStep),0,'precision numeric controls remain an accessible fallback');
+    checkpoint('Song waveform direct move and edge trims preserve original audio and editable numeric controls');
     const importedRms=await page.evaluate(async id=>{
       const {getValue}=await import('/storage.js');const file=await getValue(`voice-layer:${id}`);
       if(!file)throw new Error('Imported audio source is missing from IndexedDB');
@@ -1236,6 +1274,17 @@ try {
   const videoTrackId=await page.locator('#song-video-layers .song-video-track').getAttribute('data-video-layer');
   const videoTrackBytes=await page.evaluate(async id=>(await (await import('/storage.js')).getValue(`video-layer:${id}`))?.size,videoTrackId);
   assert.equal(videoTrackBytes,songVideoSource.length,'video source should be stored locally in IndexedDB');
+
+  const videoClipSelector='#overdub-timeline .overdub-editable-clip[data-layer-id="'+videoTrackId+'"]';
+  assert.equal(await page.locator(videoClipSelector+' .overdub-clip-move').count(),1,'video tracks should use the same direct timeline editor');
+  await page.locator(videoClipSelector+' .overdub-clip-move').press('ArrowRight');
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.videoLayers?.[0]?.startStep),1,'keyboard video move handle should nudge one sixteenth step');
+  await page.locator(videoClipSelector+' .overdub-clip-right').press('ArrowLeft');
+  assert.ok((await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.videoLayers?.[0]?.trimEndSec))>0,'keyboard video trim should retain an audible segment');
+  const videoTrimEndInput=page.locator('#song-video-layers .song-video-track .vocal-layer-start input').nth(2);
+  await videoTrimEndInput.fill(await videoTrimEndInput.getAttribute('max'));await videoTrimEndInput.press('Tab');
+  assert.equal(await page.evaluate(async id=>(await (await import('/storage.js')).getValue('video-layer:'+id))?.size,videoTrackId),videoTrackBytes,'video source remains intact after positioning and trimming');
+
   const videoStart=page.locator('#song-video-layers .song-video-track .vocal-layer-start input').nth(0);
   await videoStart.fill('32');await videoStart.press('Tab');
   await page.locator('[aria-label="Move video track 1 later by one bar"]').focus();
