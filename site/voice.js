@@ -630,7 +630,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
         }
         add('line',{x1:x+audibleWidth,x2:x+audibleWidth,y1:6,y2:height-6,stroke:'#edce7c','stroke-width':2});
       }
-      const stage=document.createElement('div');stage.className='overdub-wave-stage';stage.style.width=width+'px';stage.style.height=height+'px';stage.append(svg);
+      const stage=document.createElement('div');stage.className='overdub-wave-stage';stage.style.width=width+'px';stage.style.height='106px';stage.append(svg);
       if(source&&clip.duration>0)stage.append(createTrackGestureOverlay(layer,'audio',index,source.duration,secondsPerStep,pixelsPerStep));
       row.append(stage);host.append(row);
     }
