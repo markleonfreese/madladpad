@@ -1510,9 +1510,10 @@ try {
   });
   await page.locator('#overdub-video-record').click();
   await page.waitForFunction(()=>document.querySelector('#overdub-video-stop').hidden===false,null,{timeout:8000});
-  await page.waitForFunction(async()=>(await (await import('/storage.js')).listInterruptedVideoRecordings())[0]?.completeChunks>=2,null,{timeout:15000});
+  await page.waitForFunction(async()=>(await (await import('/storage.js')).listInterruptedVideoRecordings())[0]?.completeChunks>=3,null,{timeout:20000});
   await page.locator('#overdub-video-stop').click();
-  await page.waitForFunction(()=>window.__videoSaveAbort.attempts===1,null,{timeout:30000});
+  await page.waitForFunction(()=>window.__videoSaveAbort.attempts===1||document.querySelector('#song-video-status').textContent.includes('Could not save camera take'),null,{timeout:30000});
+  assert.equal(await page.evaluate(()=>window.__videoSaveAbort.attempts),1,`the final video save should reach the injected IndexedDB abort; status: ${await page.locator('#song-video-status').textContent()}`);
   await page.locator('#song-video-status a[download]').waitFor({timeout:20000});
   assert.match(await page.locator('#song-video-status').textContent(),/Could not save camera take/,'the final-save failure should be reported next to a rescue link');
   assert.equal(await page.locator('#song-video-status a[download]').textContent(),'Download unsaved video take','the captured video should remain downloadable after local persistence fails');
@@ -1551,9 +1552,10 @@ try {
   });
   await page.locator('#voice-overdub-record').click();
   await page.waitForFunction(()=>document.querySelector('#voice-overdub-status').textContent.includes('Recording microphone audio'),null,{timeout:8000});
-  await page.waitForFunction(async()=>(await (await import('/storage.js')).listInterruptedAudioRecordings())[0]?.completeChunks>=2,null,{timeout:15000});
+  await page.waitForFunction(async()=>(await (await import('/storage.js')).listInterruptedAudioRecordings())[0]?.completeChunks>=3,null,{timeout:20000});
   await page.locator('#voice-overdub-stop').click();
-  await page.waitForFunction(()=>window.__audioSaveAbort.attempts===1,null,{timeout:30000});
+  await page.waitForFunction(()=>window.__audioSaveAbort.attempts===1||document.querySelector('#voice-overdub-status').textContent.includes('Could not save vocal take'),null,{timeout:30000});
+  assert.equal(await page.evaluate(()=>window.__audioSaveAbort.attempts),1,`the final audio save should reach the injected IndexedDB abort; status: ${await page.locator('#voice-overdub-status').textContent()}`);
   await page.locator('#voice-overdub-status a[download]').waitFor({timeout:20000});
   assert.match(await page.locator('#voice-overdub-status').textContent(),/Could not save vocal take/,'the final audio-save failure should be reported next to a rescue link');
   assert.equal(await page.locator('#voice-overdub-status a[download]').textContent(),'Download unsaved audio take','the captured audio should remain downloadable after local persistence fails');

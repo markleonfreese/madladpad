@@ -1131,10 +1131,10 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
           if(!blob.size){await deleteInterruptedVideoRecording(take.recoveryId);throw new Error('The browser did not capture a video take.');}
           const currentBytes=[...getMediaFiles().values(),...vocalFiles.values(),...videoFiles.values()].reduce((sum,file)=>sum+(file?.size||0),0);
           if(currentBytes+blob.size>MAX_MEDIA_BYTES)throw new Error('This take reached the project media limit. Export a pack and remove media before recording another.');
-          const durationSec=await probeVideoDuration(blob,(performance.now()-take.startedAt)/1000);
           const index=project.voice.videoLayers.length+1,id=`video-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
           const file=new File([blob],`song-video-${Date.now()}.${extensionForMime(type)}`,{type});
           unsavedTakeFile=file;
+          const durationSec=await probeVideoDuration(file,(performance.now()-take.startedAt)/1000);
           const layer={id,name:`Video take ${index}`,origin:'recording',startStep:take.startStep,trimStartSec:0,trimEndSec:durationSec,durationSec,type};
           const nextLayers=[...project.voice.videoLayers,layer];
           await saveSongVideoLayer(id,file,{...project,voice:{...project.voice,videoLayers:nextLayers}},{recoveryId:take.recoveryId});
