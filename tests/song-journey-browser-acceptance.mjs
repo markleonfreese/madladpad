@@ -54,9 +54,6 @@ try{
   await page.goto(origin);await page.locator('.pad-hit').first().waitFor();
   const openDetails=async selector=>{const details=page.locator(selector);if(!await details.evaluate(el=>el.open))await details.locator('summary').click();};
   const openScreen=async screen=>{
-    if(screen==='overdub'){
-      const menu=page.locator('#studio-more-tools');if(!await menu.evaluate(el=>el.open))await menu.locator('summary').click();
-    }
     await page.locator(`[data-studio-screen="${screen}"]`).click();
     await page.waitForFunction(value=>document.body.dataset.screen===value,screen);
   };
