@@ -420,7 +420,7 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
 .overdub-wave-row{padding:4px 0 8px;border-bottom:1px solid #3a503b}
 .overdub-wave-row>strong{display:block;position:sticky;left:0;padding:3px 6px;font-size:12px;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#1c2d21}
 .overdub-wave-row svg{display:block;max-width:none;background:#0e1912}
-.overdub-video-lane{position:relative;height:62px;background:repeating-linear-gradient(90deg,transparent 0,transparent calc(6.25% - 1px),#344b39 calc(6.25% - 1px),#344b39 6.25%)}.overdub-video-clip{position:absolute;top:16px;bottom:5px;display:flex;align-items:center;overflow:hidden;padding:0 8px;border:1px solid #d7a0f4;border-radius:4px;background:linear-gradient(120deg,#58336d,#38204c);color:#fff;font:10px var(--mono);white-space:nowrap}
+.overdub-video-lane{position:relative;height:110px;background:repeating-linear-gradient(90deg,transparent 0,transparent calc(6.25% - 1px),#344b39 calc(6.25% - 1px),#344b39 6.25%)}.overdub-video-clip{position:absolute;top:16px;bottom:5px;display:flex;align-items:center;overflow:hidden;padding:0 8px;border:1px solid #d7a0f4;border-radius:4px;background:linear-gradient(120deg,#58336d,#38204c);color:#fff;font:10px var(--mono);white-space:nowrap}
 .song-track-move-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.song-track-move-controls .pill-button{flex:1 1 88px;min-width:88px;min-height:44px}.song-video-controls .song-track-move-controls,.vocal-layer .song-track-move-controls{grid-column:1/-1}
 .vocal-layer-trim{display:grid;gap:4px;font:11px var(--mono);color:var(--muted)}
 .vocal-layer-trim input{width:85px;max-width:100%;min-height:44px;padding:8px;background:#101710;border:1px solid var(--line);color:var(--ink);border-radius:7px}
@@ -483,11 +483,11 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
 .overdub-zoom-controls button:focus-visible{outline:2px solid var(--acid)}
 .overdub-zoom-controls output{min-width:38px;text-align:center;color:var(--acid)}
 .overdub-wave-stage{position:relative;max-width:none}
-.overdub-editable-clip{position:absolute;top:7px;height:50px;min-width:2px;box-sizing:border-box;border:2px solid #d4ff92;border-radius:5px;background:rgba(55,100,49,.09);z-index:1;pointer-events:none}
-.overdub-editable-clip[data-track-kind=video]{top:13px;height:44px;border-color:#d7a0f4;background:rgba(113,59,131,.13)}
+.overdub-editable-clip{position:absolute;top:7px;height:94px;min-width:2px;box-sizing:border-box;border:2px solid #d4ff92;border-radius:5px;background:rgba(55,100,49,.09);z-index:1;pointer-events:none}
+.overdub-editable-clip[data-track-kind=video]{top:8px;height:94px;border-color:#d7a0f4;background:rgba(113,59,131,.13)}
 .overdub-editable-clip.is-editing{outline:2px solid #ffeaa1;outline-offset:2px;z-index:5}
-.overdub-clip-handle{position:absolute;top:0;min-width:44px;width:44px;min-height:44px;height:44px;display:grid;place-items:center;box-sizing:border-box;touch-action:none;user-select:none;border:1px solid #a4cd93;border-radius:7px;background:rgba(15,32,19,.92);color:#eaffda;font-size:22px;padding:0;pointer-events:auto}
-.overdub-clip-move{left:0;z-index:1;width:100%;min-width:44px;border:0;background:transparent;cursor:grab;color:#f1f8e8;text-shadow:0 1px 4px #000}
+ .overdub-clip-handle{position:absolute;top:0;min-width:44px;width:44px;min-height:44px;height:44px;display:grid;place-items:center;box-sizing:border-box;touch-action:none;user-select:none;border:1px solid #a4cd93;border-radius:7px;background:rgba(15,32,19,.92);color:#eaffda;font-size:22px;padding:0;pointer-events:auto}
+.overdub-clip-move{top:48px;left:0;z-index:2;width:100%;min-width:44px;border:1px solid #718b6d;background:#29412a;cursor:grab;color:#f1f8e8;text-shadow:0 1px 4px #000}
 .overdub-clip-left{left:-22px;z-index:3;cursor:ew-resize;border-color:#b2dd9b}
 .overdub-clip-right{right:-22px;z-index:3;cursor:ew-resize;border-color:#f0d08d}
 .overdub-clip-handle:hover,.overdub-clip-handle:focus-visible{outline:3px solid var(--acid);outline-offset:2px;background:#36533a}
