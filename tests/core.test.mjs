@@ -262,7 +262,7 @@ test('voice projects add bounded transcripts, phrases, vocal layers, melody, tun
   assert.equal(harmony.harmonyInterval,7);
   assert.equal(harmony.notes[0].layer,'harmony');
   const vocal=normaliseProject({voice:{layers:[{id:'vocal/one',name:'Lead',startStep:-2,gain:2,muted:true}]}}).voice.layers[0];
-  assert.deepEqual(vocal,{id:'vocalone',name:'Lead',origin:'recording',startStep:0,placementEndBar:null,repeatEnabled:false,repeatEveryBars:1,repeatPhaseBars:0,audibleLengthBars:null,trimStartSec:0,trimEndSec:null,gain:1.5,muted:true,solo:false,sourceId:'vocalone',pitch:0});
+  assert.deepEqual(vocal,{id:'vocalone',name:'Lead',origin:'recording',startStep:0,placementEndBar:null,repeatEnabled:false,repeatEveryBars:1,repeatPhaseBars:0,audibleLengthBars:null,reverseEnabled:false,trimStartSec:0,trimEndSec:null,gain:1.5,muted:true,solo:false,sourceId:'vocalone',pitch:0});
   const imported=normaliseProject({voice:{layers:[{id:'audio-1',name:'Beat stem',origin:'import',sourceId:'audio-1'}]}}).voice.layers[0];
   assert.equal(imported.origin,'import','imported Song audio must retain its local source kind across project normalization');
   assert.equal(voice.rap.scheme,'AABB');

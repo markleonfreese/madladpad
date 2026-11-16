@@ -84,6 +84,9 @@ try{
   await page.waitForFunction(()=>document.querySelectorAll('#song-video-layers .song-video-track').length===1);
   const audioId=await page.locator('#voice-overdub-layers .vocal-layer').first().getAttribute('data-layer');
   const videoId=await page.locator('#song-video-layers .song-video-track').first().getAttribute('data-video-layer');
+  const reverseAudio=page.locator('#voice-overdub-layers [aria-label="Reverse audio track 1"]');
+  await page.waitForFunction(()=>{const input=document.querySelector('#voice-overdub-layers [aria-label="Reverse audio track 1"]');return input&&!input.disabled;});
+  await reverseAudio.check();
   const cycle=page.locator('#voice-overdub-layers .song-cycle-settings').first();
   await cycle.locator('summary').click();
   await cycle.locator('input[type="checkbox"]').check();
@@ -118,6 +121,7 @@ try{
   assert.deepEqual(pack.project.song.clips.map(clip=>clip.bars),[8,16,4,8]);
   assert.deepEqual(pack.project.song.clips.map(clip=>clip.sceneId),[...sceneIds.slice(0,3),sceneIds[0]]);
   assert.deepEqual([pack.project.voice.layers[0].repeatEveryBars,pack.project.voice.layers[0].audibleLengthBars,pack.project.voice.layers[0].placementEndBar],[8,2,20],'portable project packs preserve the independent cycle settings');
+  assert.equal(pack.project.voice.layers[0].reverseEnabled,true,'portable project packs preserve the non-destructive reverse setting');
   assert.deepEqual([pack.project.voice.videoLayers[0].repeatEnabled,pack.project.voice.videoLayers[0].repeatEveryBars,pack.project.voice.videoLayers[0].audibleLengthBars,pack.project.voice.videoLayers[0].placementEndBar],[true,8,2,20],'portable project packs preserve the independent video cycle settings');
   assert.equal(pack.voiceMedia.length,1);assert.equal(pack.videoMedia.length,1);
   page.once('dialog',dialog=>dialog.accept());
@@ -138,6 +142,7 @@ try{
   assert.equal(await page.locator('#voice-overdub-layers .vocal-layer').count(),1);
   assert.equal(await page.locator('#song-video-layers .song-video-track').count(),1);
   assert.equal(await page.locator('#voice-overdub-layers .song-cycle-settings input[type="checkbox"]').first().isChecked(),true,'reload restores the audio cycle setting');
+  assert.equal(await page.locator('#voice-overdub-layers [aria-label="Reverse audio track 1"]').isChecked(),true,'reload restores the reverse playback setting');
   assert.equal(await page.locator('#voice-overdub-layers .song-cycle-settings [data-cycle-field="repeatEveryBars"]').first().inputValue(),'8');
   assert.equal(await page.locator('#overdub-timeline [data-repeat-instance]').count(),2,'the timeline restores only repeat instances before the explicit clip boundary');
   assert.deepEqual(await page.locator('#song-video-layers .song-cycle-settings input').evaluateAll(inputs=>inputs.map(input=>input.type==='checkbox'?input.checked:input.value)),[true,'8','0','2','20'],'reload restores all video cycle settings');

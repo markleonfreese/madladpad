@@ -1,4 +1,4 @@
-import { clamp, nextQuantizedTime, songLayerPlaybackEvents, vocalLayerClip } from './core.js';
+import { clamp, MAX_REVERSED_AUDIO_BYTES, nextQuantizedTime, songLayerPlaybackEvents, vocalLayerClip } from './core.js';
 import { effectivePitchSemitones } from './pitch-dsp.js';
 
 export class SamplerAudio {
@@ -21,6 +21,7 @@ export class SamplerAudio {
     this.visualTimers = new Map();
     this.vocalSources = new Map();
     this.vocalPlayback = new Map();
+    this.reversedVocalBuffers = new WeakMap();
     this.transportEpoch = this.context.currentTime;
     this.bpm = 120;
     this.quantize = 'off';
@@ -174,12 +175,15 @@ export class SamplerAudio {
       const source = this.vocalSources.get(layer.id);
       if (!source?.buffer || layer.muted || (hasSolo && !layer.solo)) continue;
       const events=songLayerPlaybackEvents(layer,source.buffer.duration,bpm,songBars);
+      if(!events.length)continue;
+      const rendered=this.vocalPlaybackBuffer(layer,source.buffer);
+      if(!rendered)continue;
       for(const [index,event] of events.entries()){
         const intended=epoch+event.startStep*secondsPerStep;
         const now=this.context.currentTime,late=Math.max(0,now-intended);
         if(late>=event.durationSec)continue;
         const key=events.length===1?layer.id:`${layer.id}:cycle:${index}`;
-        this.startVocalLayer(key,source.buffer,Math.max(now+.005,intended),event.sourceStartSec+late,layer.gain,layer.pitch,event.durationSec-late,layer.id);
+        this.startVocalLayer(key,rendered.buffer,Math.max(now+.005,intended),rendered.start+late,layer.gain,layer.pitch,event.durationSec-late,layer.id);
       }
     }
   }
@@ -210,9 +214,32 @@ export class SamplerAudio {
   previewVocalLayer(id, gainValue = 1, pitch = 0, layer = null) {
     const source = this.vocalSources.get(id);
     if (!source?.buffer) return false;
-    const crop=vocalLayerClip(layer,source.buffer.duration);
+    const rendered=this.vocalPlaybackBuffer(layer,source.buffer);
+    if(!rendered)return false;
     this.stopVocalLayer(id);
-    return this.startVocalLayer(id,source.buffer,this.context.currentTime+.005,crop.start,gainValue,pitch,crop.duration);
+    return this.startVocalLayer(id,rendered.buffer,this.context.currentTime+.005,rendered.start,gainValue,pitch,rendered.duration);
+  }
+
+  vocalPlaybackBuffer(layer,sourceBuffer){
+    const crop=vocalLayerClip(layer,sourceBuffer.duration);
+    if(!crop.duration)return null;
+    if(!layer?.reverseEnabled)return {buffer:sourceBuffer,start:crop.start,duration:crop.duration};
+    const firstFrame=Math.max(0,Math.floor(crop.start*sourceBuffer.sampleRate));
+    const lastFrame=Math.min(sourceBuffer.length,Math.ceil(crop.end*sourceBuffer.sampleRate));
+    const frameCount=lastFrame-firstFrame,bytes=frameCount*sourceBuffer.numberOfChannels*4;
+    if(frameCount<1||bytes>MAX_REVERSED_AUDIO_BYTES)return null;
+    const key=`${firstFrame}:${lastFrame}`;
+    const cached=this.reversedVocalBuffers.get(sourceBuffer);
+    let buffer=cached?.key===key?cached.buffer:null;
+    if(!buffer){
+      buffer=this.context.createBuffer(sourceBuffer.numberOfChannels,frameCount,sourceBuffer.sampleRate);
+      for(let channel=0;channel<sourceBuffer.numberOfChannels;channel++){
+        const input=sourceBuffer.getChannelData(channel),output=buffer.getChannelData(channel);
+        for(let frame=0;frame<frameCount;frame++)output[frame]=input[lastFrame-1-frame];
+      }
+      this.reversedVocalBuffers.set(sourceBuffer,{key,buffer});
+    }
+    return {buffer,start:0,duration:buffer.duration};
   }
 
   updateVocalLayerStates(layers) {

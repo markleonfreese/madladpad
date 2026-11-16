@@ -28,11 +28,16 @@ class FakeNode {
   start(...args){this.started=args;}
   stop(){this.stopped=true;}
 }
+class FakeAudioBuffer {
+  constructor(channels,length,sampleRate){this.numberOfChannels=channels;this.length=length;this.sampleRate=sampleRate;this.duration=length/sampleRate;this.channels=Array.from({length:channels},()=>new Float32Array(length));}
+  getChannelData(channel){return this.channels[channel];}
+}
 class FakeAudioContext {
   constructor(){this.currentTime=4;this.destination=new FakeNode();this.nodes=[];}
   createGain(){const node=new FakeNode();this.nodes.push(node);return node;}
   createDynamicsCompressor(){const node=new FakeNode();this.nodes.push(node);return node;}
   createMediaStreamDestination(){return {stream:{getAudioTracks:()=>[]}};}
+  createBuffer(channels,length,sampleRate){return new FakeAudioBuffer(channels,length,sampleRate);}
   createBufferSource(){const node=new FakeNode();this.nodes.push(node);return node;}
 }
 
@@ -194,6 +199,27 @@ test('repeated vocal phrases schedule independent onsets and stop as one track',
     assert.ok(voices.every(node=>node.stopped),'stopping the track cancels its future repeat events');
     assert.equal(audio.vocalPlayback.size,0);
     assert.equal(audio.vocalSources.get(layer.id).buffer,source,'repeat scheduling never rewrites source media');
+  } finally { delete globalThis.window; }
+});
+
+test('reversed Song audio uses a cached non-destructive trim-only buffer',()=>{
+  globalThis.window={AudioContext:FakeAudioContext};
+  try{
+    const audio=new SamplerAudio(),source=audio.context.createBuffer(1,5,1);
+    source.getChannelData(0).set([0,1,2,3,4]);
+    const original=source.getChannelData(0).slice();
+    const layer={id:'reverse-trim',startStep:0,trimStartSec:1,trimEndSec:4,reverseEnabled:true,gain:1,pitch:0,muted:false,solo:false};
+    audio.vocalSources.set(layer.id,{buffer:source});
+    audio.playVocalLayers([layer],audio.context.currentTime,90,4);
+    const first=audio.context.nodes.find(node=>node.started);
+    assert.deepEqual([...first.buffer.getChannelData(0)],[3,2,1],'only the selected trim is copied in reverse order');
+    assert.deepEqual([...source.getChannelData(0)],[...original],'the decoded source buffer is never modified');
+    assert.deepEqual(first.started.slice(1),[0,3],'reverse playback starts at the copied clip head and keeps its natural duration');
+    audio.stopVocalLayer(layer.id);
+    audio.previewVocalLayer(layer.id,1,0,layer);
+    const preview=audio.context.nodes.filter(node=>node.started).at(-1);
+    assert.strictEqual(preview.buffer,first.buffer,'preview and Song playback reuse the same cached reverse render');
+    assert.deepEqual([...source.getChannelData(0)],[...original],'preview does not rewrite local source samples');
   } finally { delete globalThis.window; }
 });
 
