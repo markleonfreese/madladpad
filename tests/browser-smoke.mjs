@@ -230,7 +230,8 @@ try {
   await page.setViewportSize({width:1280,height:900});
   await page.locator('[data-studio-screen="beats"]').click();
   await page.waitForFunction(()=>document.body.dataset.screen==='beats');
-  await openScreen('export');
+  await page.locator('[data-studio-screen="export"]').click();
+  await page.waitForFunction(()=>document.body.dataset.screen==='export');
   await page.waitForFunction(()=>document.body.dataset.screen==='export');
   await page.locator('[data-studio-screen="beats"]').click();
   await page.waitForFunction(()=>document.body.dataset.screen==='beats');
