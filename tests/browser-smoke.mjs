@@ -179,6 +179,10 @@ try {
   assert.equal(await page.locator('#beat-advanced').evaluate(element=>element.open),false,'specialist beat controls should start collapsed');
   const narrowBeatGrid=()=>page.evaluate(()=>({viewport:document.documentElement.clientWidth,content:document.documentElement.scrollWidth,pad:(()=>{const rect=document.querySelector('#pad-grid .pad:not([hidden])').getBoundingClientRect();return {width:rect.width,height:rect.height};})()}));
   let narrowLayout=await narrowBeatGrid();
+  if(narrowLayout.content>narrowLayout.viewport){
+    const offenders=await page.evaluate(()=>[...document.querySelectorAll('body *')].filter(node=>node.getClientRects().length).map(node=>({name:node.tagName.toLowerCase()+(node.id?'#'+node.id:'')+(node.className&&typeof node.className==='string'?'.'+node.className.trim().split(/\\s+/).slice(0,2).join('.'):''),x:Math.round(node.getBoundingClientRect().x),right:Math.round(node.getBoundingClientRect().right),scrollWidth:node.scrollWidth,clientWidth:node.clientWidth})).filter(node=>node.right>innerWidth+1).sort((a,b)=>b.right-a.right).slice(0,18));
+    console.error('NARROW BEAT OVERFLOW',JSON.stringify({viewport:narrowLayout.viewport,content:narrowLayout.content,offenders}));
+  }
   assert.equal(narrowLayout.content,narrowLayout.viewport,'the 3-column Beat Grid should not cause horizontal overflow at 320px');
   assert.ok(narrowLayout.pad.width>=48&&narrowLayout.pad.height>=48,'narrow Beat Grid pads should retain touch-sized targets');
   await page.locator('#loop-settings > summary').click();
