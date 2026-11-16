@@ -285,9 +285,10 @@ try {
   assert.equal(settingsPopover.visible,true,'the bottom bar Settings control should expose layout and tempo options');
   assert.ok(settingsPopover.bottom<=settingsPopover.barTop,`transport settings should open above the fixed bar: ${JSON.stringify(settingsPopover)}`);
   assert.ok(settingsPopover.width<=settingsPopover.viewport,`transport settings should fit a narrow phone: ${JSON.stringify(settingsPopover)}`);
-  await page.evaluate(()=>window.scrollTo(0,80));
+  await page.mouse.move(10,300);
+  await page.mouse.wheel(0,80);
   await page.waitForTimeout(50);
-  assert.equal(await page.locator('#loop-settings').evaluate(element=>element.open),false,'scrolling away from the settings popover should dismiss it');
+  assert.equal(await page.locator('#loop-settings').evaluate(element=>element.open),false,'wheel scrolling outside Settings should dismiss the popover');
   await page.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));
   await page.waitForTimeout(100);
   const stickyTransport=await page.locator('#studio-play').evaluate(button=>({top:button.getBoundingClientRect().top,bottom:button.getBoundingClientRect().bottom,visible:button.getBoundingClientRect().bottom>0&&button.getBoundingClientRect().top<innerHeight,position:getComputedStyle(button.closest('.transport-panel')).position}));
