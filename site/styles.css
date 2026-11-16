@@ -417,12 +417,7 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
 /* Overdub arrangement: one scrollable shared beat ruler with independent wave rows. */
 .overdub-timeline-section{min-width:0;margin:14px 0 24px}
 .overdub-timeline-section h4{font-size:14px;margin:0 0 7px;color:var(--ink)}
-.overdub-timeline-scroll{overflow:auto;max-width:100%;max-height:380px;border:1px solid #456148;border-radius:10px;background:#132018;overscroll-behavior:contain}
-.overdub-ruler{display:flex;position:sticky;top:0;z-index:2;background:#26372b;min-height:32px;font:11px var(--mono);color:#e7f5d6}
-.overdub-ruler>span{padding:8px 7px;border-left:1px solid #698365;flex:none;box-sizing:border-box}
-.overdub-song-sections{position:relative;height:38px;background:#18231c;border-bottom:1px solid #526a50}
-.overdub-song-section{position:absolute;top:3px;bottom:3px;box-sizing:border-box;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:7px 6px;border:1px solid #b8d88b;border-radius:4px;background:#35563a;color:#f2ffdf;font:10px var(--mono)}
-.overdub-song-section:nth-child(even){background:#3d5663;border-color:#a7d0d0}
+.overdub-timeline-scroll{position:relative;overflow:auto;max-width:100%;max-height:380px;border:1px solid #456148;border-radius:10px;background:#132018;overscroll-behavior:contain;touch-action:pan-x pan-y}
 .overdub-wave-row{padding:4px 0 8px;border-bottom:1px solid #3a503b}
 .overdub-wave-row>strong{display:block;position:sticky;left:0;padding:3px 6px;font-size:12px;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#1c2d21}
 .overdub-wave-row svg{display:block;max-width:none;background:#0e1912}
@@ -444,8 +439,7 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
 .song-add-controls{display:flex;gap:8px;align-items:end;flex-wrap:wrap}
 .song-add-controls label{display:grid;gap:4px;font:10px var(--mono);color:var(--muted)}
 .song-add-controls select,.song-section-editor input{min-height:44px;padding:8px;background:#101710;border:1px solid var(--line);color:var(--ink);border-radius:7px}
-.song-timeline-scroll{max-width:100%;overflow:auto;border:1px solid #4a604b;border-radius:10px;padding:12px;background:#18231c;overscroll-behavior-x:contain}
-#song-timeline{display:flex;min-width:max-content;gap:0;min-height:58px;align-items:stretch}
+#song-timeline{display:flex;min-width:100%;gap:0;min-height:58px;align-items:stretch;background:#18231c;border-bottom:1px solid #526a50}
 .song-section-clip{box-sizing:border-box;min-height:58px;max-height:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#3c6147;border:1px solid #90b77e;border-radius:4px;padding:8px;color:#eaf6e4;text-align:left;font:700 12px var(--mono)}
 .song-section-clip:nth-child(even){background:#42616e;border-color:#9bc9ca}
 .song-section-clip:hover,.song-section-clip:focus-visible{outline:2px solid #e0f1a3;outline-offset:-2px}
@@ -461,16 +455,20 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
 
 /* Explicit handles keep horizontal timeline scrolling available from the clip body. */
 .song-drag-help{font-size:12px;line-height:1.45;color:var(--muted)}
-.song-bar-ruler{display:flex;flex:none;min-width:max-content;min-height:24px;align-items:stretch;background:#23372b;color:#d2dfca;font:10px var(--mono)}
-.song-bar-tick{display:block;box-sizing:border-box;flex:0 0 28px;padding:5px 2px;border-left:1px solid #3b5544}
+.song-bar-ruler{display:flex;position:sticky;top:0;z-index:2;flex:none;min-width:max-content;min-height:36px;align-items:stretch;background:#26372b;color:#e7f5d6;font:12px var(--mono)}
+.song-bar-tick{display:block;box-sizing:border-box;flex:0 0 28px;min-width:0;padding:9px 5px;border-left:1px solid #3b5544}
+.song-fit-compact .song-bar-tick{padding-inline:0}
 .song-bar-tick.major{border-left-color:#a0c2a0;font-weight:700}
-.song-clip-wrap{position:relative;flex:none;height:58px;box-sizing:border-box}
-.song-clip-wrap .song-section-clip{display:block;width:100%;height:100%;padding:8px 45px}
+#song-playhead{position:absolute;left:0;top:36px;bottom:0;z-index:4;width:2px;background:#f2cf5b;box-shadow:0 0 0 1px #18231c;pointer-events:none;transition:left 90ms linear}
+.song-clip-wrap{position:relative;flex:none;min-width:0;height:58px;box-sizing:border-box}
+.song-clip-wrap .song-section-clip{display:block;box-sizing:border-box;width:100%;min-width:0;max-width:100%;height:100%;padding:8px 45px}
 .song-clip-wrap:not(:has(.song-clip-move)) .song-section-clip{padding:8px 4px}
 .song-clip-text{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .song-clip-wrap:nth-child(even) .song-section-clip{background:#42616e;border-color:#9bc9ca}
 .song-clip-wrap.selected .song-section-clip{outline:2px solid #e0f1a3;outline-offset:-2px}
 .song-clip-move,.song-clip-resize{position:absolute;top:7px;z-index:2;min-height:44px;min-width:44px;width:44px;padding:0;border:1px solid #d2eab2;background:#253c2c;color:#eef5de;border-radius:5px;font-size:20px;line-height:1;touch-action:none;user-select:none}
+.song-fit-compact #song-timeline .song-clip-move,.song-fit-compact #song-timeline .song-clip-resize{visibility:hidden;pointer-events:none}
+.song-fit-compact #song-timeline .song-section-clip{padding-inline:0}
 .song-clip-move{left:0;cursor:grab}
 .song-clip-resize{right:0;cursor:ew-resize}
 .song-clip-move:hover,.song-clip-resize:hover,.song-clip-move:focus-visible,.song-clip-resize:focus-visible{outline:2px solid #f4e5a7;outline-offset:-2px;background:#4a654c}
@@ -478,16 +476,19 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
 .song-clip-wrap.drop-before::before,.song-clip-wrap.drop-after::after{content:"";position:absolute;top:-7px;bottom:-7px;width:4px;z-index:3;border-radius:2px;background:#f7df8c;pointer-events:none}
 .song-clip-wrap.drop-before::before{left:-2px}
 .song-clip-wrap.drop-after::after{right:-2px}
-@media(max-width:740px){.song-drag-help{font-size:11px}.song-clip-move,.song-clip-resize{min-height:44px}}
+@media(max-width:740px){.song-drag-help{font-size:12px}.song-clip-move,.song-clip-resize{min-height:44px}}
 
 
 /* Five sequential studio stages and direct-manipulation Song tracks. */
 .studio-nav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
 .studio-nav>a{min-width:0;white-space:normal;justify-content:center;text-align:center;line-height:1.3}
-.overdub-zoom-controls{display:flex;align-items:center;justify-content:flex-end;gap:9px;margin:5px 0 11px;font:12px var(--mono);color:var(--muted)}
-.overdub-zoom-controls button{width:44px;height:44px;border:1px solid #587257;border-radius:10px;background:#233629;color:var(--ink);font-size:24px}
+.overdub-zoom-controls{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:5px 0 11px;font:12px var(--mono);color:var(--muted);flex-wrap:wrap}
+.overdub-zoom-controls button{min-width:44px;height:44px;padding:0 10px;border:1px solid #587257;border-radius:10px;background:#233629;color:var(--ink);font-size:14px}
 .overdub-zoom-controls button:focus-visible{outline:2px solid var(--acid)}
 .overdub-zoom-controls output{min-width:38px;text-align:center;color:var(--acid)}
+.overdub-zoom-controls label{font:12px var(--mono);color:var(--muted)}
+.overdub-zoom-controls input{width:72px;min-height:44px;padding:6px;background:#101710;border:1px solid var(--line);color:var(--ink);border-radius:7px}
+.overdub-zoom-controls button:disabled{opacity:.5;cursor:not-allowed}
 .overdub-wave-stage{position:relative;max-width:none}
 .overdub-editable-clip{position:absolute;top:7px;height:94px;min-width:2px;box-sizing:border-box;border:2px solid #d4ff92;border-radius:5px;background:rgba(55,100,49,.09);z-index:1;pointer-events:none}
 .overdub-editable-clip[data-track-kind=video]{top:8px;height:94px;border-color:#d7a0f4;background:rgba(113,59,131,.13)}

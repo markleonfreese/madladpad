@@ -93,20 +93,19 @@ try {
   if (!await loopSettings.evaluate(element => element.open)) await loopSettings.locator('summary').click();
   await page.locator('#bpm-input').fill('40');
   await page.locator('#bpm-input').press('Tab');
-  await page.locator('#pattern-view').click();
   if (!await page.locator('#steps').isVisible()) await page.locator('#track-view').click();
   await page.locator('#beat-advanced').evaluate(element => { element.open = true; });
   await page.locator('#scene-name').fill('Long Take');
   await page.locator('#save-scene').click();
   const sceneId = await page.evaluate(() => JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.scenes?.at(-1)?.id);
   assert.ok(sceneId, 'a stable empty scene should provide the long Song transport timeline');
-  await page.locator('#song-view').click();
+  await openScreen('overdub');
   await page.locator('#song-scene-select').selectOption(sceneId);
   await page.locator('#song-bars').selectOption('64');
   await page.locator('#song-add-section').click();
   assert.match(await page.locator('#song-status').textContent(), /64 bars/);
   await page.locator('#studio-play').click();
-  await page.waitForFunction(() => document.querySelector('#play-seq').textContent.includes('STOP'));
+  await page.waitForFunction(() => document.querySelector('#studio-play').textContent.includes('STOP'));
 
   await openScreen('overdub');
   await page.locator('#voice-overdub-record').click();
@@ -166,7 +165,7 @@ try {
   assert.ok(decoded.duration >= seconds - 0.5, `decoded mix must contain the full take: ${JSON.stringify(decoded)}`);
   assert.ok(decoded.rms > 0.01, `decoded mix must contain the generated source signal: ${JSON.stringify(decoded)}`);
   await openScreen('beats');
-  if ((await page.locator('#play-seq').textContent()).includes('STOP')) await page.locator('#studio-play').click();
+  if ((await page.locator('#studio-play').textContent()).includes('STOP')) await page.locator('#studio-play').click();
   await page.reload();
   await openScreen('sounds');
   await page.locator('.pad-hit').first().waitFor();

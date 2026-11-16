@@ -1100,7 +1100,7 @@ try {
     assert.deepEqual(await page.evaluate(async()=>(await (await import('/storage.js')).listInterruptedAudioRecordings()).map(item=>item.id)),[],'a successfully saved take should atomically clear its temporary recovery chunks');
     const vocalRow=page.locator('#voice-overdub-layers .vocal-layer').first();
     await page.locator('#overdub-timeline .overdub-wave-row svg rect').first().waitFor();
-    assert.match(await page.locator('#overdub-timeline .overdub-ruler').textContent(),/Bar 1/,'overdub waveform should align to a shared bar ruler');
+    assert.equal(await page.locator('#song-bar-ruler .song-bar-tick').first().getAttribute('title'),'Bar 1','audio waveform should align to the shared Song ruler');
     assert.match(await page.locator('#overdub-timeline .overdub-wave-row svg').first().getAttribute('aria-label'),/from bar.*to bar.*seconds of audible audio/,'waveform must expose its start, end and audible length to assistive technology');
     assert.match(await vocalRow.locator('.vocal-layer-meta').textContent(),/Raw take saved locally.*bar/,'a microphone overdub should save its raw local recording and sequencer position');
     await vocalRow.locator('.vocal-layer-name').fill('Lead take');
@@ -1110,7 +1110,7 @@ try {
     await layerStartInput.press('Tab');
     await layerStartInput.fill('4095');
     await layerStartInput.press('Tab');
-    assert.match(await page.locator('#overdub-timeline .overdub-ruler').textContent(),/Bar 256/,'the timeline should reach the full supported 256-bar vocal placement range');
+    assert.equal(await page.locator('#song-bar-ruler .song-bar-tick').last().getAttribute('title'),'Bar 256','the shared timeline should reach the full supported 256-bar vocal placement range');
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth===document.documentElement.clientWidth),true,'a long overdub arrangement must scroll inside its timeline without widening the page');
     await layerStartInput.fill('18');
     await layerStartInput.press('Tab');
@@ -1155,10 +1155,10 @@ try {
     await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='false');
     const sourceBytesBeforeGesture=await page.evaluate(async id=>(await (await import('/storage.js')).getValue('voice-layer:'+id))?.size,importedId);
     await page.locator('#overdub-zoom-in').click();
-    assert.equal(await page.locator('#overdub-zoom-label').textContent(),'4×','Song track zoom should improve short-take touch precision');
+    assert.equal(await page.locator('#overdub-zoom-label').textContent(),'2×','Song track zoom should improve short-take touch precision');
     const gestureSelector=kind=>'#overdub-timeline .overdub-editable-clip[data-layer-id="'+importedId+'"] .overdub-clip-'+kind;
     const dragWave=async(kind,stepDelta)=>{
-      const stepPx=await page.locator('#overdub-timeline .overdub-ruler>span').first().evaluate(node=>node.getBoundingClientRect().width/16);
+      const stepPx=await page.locator('#song-bar-ruler .song-bar-tick').first().evaluate(node=>node.getBoundingClientRect().width/16);
       const handle=page.locator(gestureSelector(kind));
       await handle.scrollIntoViewIfNeeded();
       const rect=await handle.boundingBox();
@@ -1181,7 +1181,7 @@ try {
     assert.ok(blockedMoveRect,'the move handle should be on screen before the guard gesture');
     await page.mouse.move(blockedMoveRect.x+blockedMoveRect.width/2,blockedMoveRect.y+blockedMoveRect.height/2);
     await page.mouse.down();
-    const blockedStepPx=await page.locator('#overdub-timeline .overdub-ruler>span').first().evaluate(node=>node.getBoundingClientRect().width/16);
+    const blockedStepPx=await page.locator('#song-bar-ruler .song-bar-tick').first().evaluate(node=>node.getBoundingClientRect().width/16);
     await page.mouse.move(blockedMoveRect.x+blockedMoveRect.width/2+2*blockedStepPx,blockedMoveRect.y+blockedMoveRect.height/2);
     await page.mouse.up();
     await page.waitForFunction(()=>/Stop Song playback before dragging or trimming/.test(document.querySelector('#voice-overdub-status').textContent));
@@ -1211,7 +1211,7 @@ try {
 
     const cancelSelector=gestureSelector('move'),cancelHandle=page.locator(cancelSelector);
     const cancelRect=await cancelHandle.boundingBox();
-    const cancelStepPx=await page.locator('#overdub-timeline .overdub-ruler>span').first().evaluate(node=>node.getBoundingClientRect().width/16);
+    const cancelStepPx=await page.locator('#song-bar-ruler .song-bar-tick').first().evaluate(node=>node.getBoundingClientRect().width/16);
     await page.evaluate(()=>{
       window.__timelineGesturePointerId=null;
       document.addEventListener('pointerdown',event=>{
@@ -2456,9 +2456,13 @@ try {
   assert.equal(await page.locator('#song-timeline .song-section-clip').count(),4,'A-B-C-A must create four timeline blocks');
   assert.match(await page.locator('#song-status').textContent(),/36 bars/,'Song must exceed the single 16-step loop');
   await openScreen('overdub');
-  assert.equal(await page.locator('#overdub-timeline .overdub-song-section').count(),4,'overdub timeline should display the matching four Song sections');
-  assert.deepEqual(await page.locator('#overdub-timeline .overdub-song-section').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-label'))),['A from bar 1 through bar 8','B from bar 9 through bar 24','C from bar 25 through bar 28','A from bar 29 through bar 36'],'overdub section labels should stay aligned to the Song bar positions');
-  assert.equal(await page.locator('#overdub-timeline .overdub-ruler').textContent().then(text=>text.includes('Bar 36')),true,'overdub ruler should extend through the end of the Song');
+  assert.equal(await page.locator('#overdub-timeline .overdub-song-section').count(),0,'the duplicate read-only Song section lane should be removed');
+  assert.equal(await page.locator('.overdub-timeline-scroll').count(),1,'all timeline lanes should share one horizontal scroll container');
+  assert.equal(await page.evaluate(()=>['song-bar-ruler','song-timeline','overdub-timeline'].every(id=>document.getElementById(id)?.parentElement===document.querySelector('.overdub-timeline-scroll'))),true,'Song ruler, editable sections and media tracks should share one timeline surface');
+  assert.equal(await page.locator('#overdub-timeline .overdub-ruler').count(),0,'the separate media ruler should be removed');
+  assert.deepEqual(await page.locator('#song-timeline .song-section-clip').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-label'))),['A in song from bar 1 through 8; select section to edit','B in song from bar 9 through 24; select section to edit','C in song from bar 25 through 28; select section to edit','A in song from bar 29 through 36; select section to edit'],'editable pattern sections should align to the shared Song ruler');
+  assert.deepEqual(await page.evaluate(()=>[document.querySelector('#song-bar-ruler').style.width,document.querySelector('#song-timeline').style.width,document.querySelector('#overdub-timeline .overdub-wave-row')?.style.width]),['1008px','1008px','1008px'],'pattern, audio and video lanes should use identical bar scale');
+  assert.equal(await page.locator('#song-bar-ruler .song-bar-tick').last().getAttribute('title'),'Bar 36','the shared ruler should extend through the end of the Song');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth===document.documentElement.clientWidth),true,'a Song-sized overdub timeline must scroll internally without widening the page');
   await openScreen('beats');
   await openScreen('overdub');
@@ -2469,8 +2473,24 @@ try {
   const firstSceneId=songSceneIds[0];
   assert.equal(savedSong.song.clips[0].sceneId,firstSceneId);
   assert.equal(savedSong.song.clips[3].sceneId,firstSceneId,'returning to A should reuse the saved pattern, not clone its sounds');
+  for(const width of [320,390]){
+    await page.setViewportSize({width,height:844});
+    await page.locator('#overdub-zoom-fit').click();
+    const fit=await page.evaluate(()=>{
+      const scroller=document.querySelector('.overdub-timeline-scroll');
+      return {viewport:innerWidth,page:document.documentElement.scrollWidth,visible:scroller.clientWidth,content:scroller.scrollWidth,bars:document.querySelectorAll('#song-bar-ruler .song-bar-tick').length};
+    });
+    assert.equal(fit.page,fit.viewport,`Fit Song should not widen a ${width}px page`);
+    assert.ok(fit.content<=fit.visible+1,`Fit Song should show all 36 bars in the ${width}px Tracks viewport: ${JSON.stringify(fit)}`);
+    assert.equal(fit.bars,36,'Fit Song keeps the full bar ruler visible and labelled');
+  }
+  await page.locator('#song-seek-bar').fill('29');
+  await page.locator('#song-go-to-bar').click();
+  assert.equal(await page.locator('#song-timeline .song-clip-wrap').last().evaluate(node=>node.classList.contains('current')),false,'seeking should only move the playhead before playback');
+  assert.equal(await page.locator('#song-playhead').evaluate(node=>parseFloat(node.style.left)>0),true,'the playhead marker should move to the selected bar');
   await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#studio-play').textContent.includes('STOP'));
+  await page.waitForFunction(()=>document.querySelector('#song-timeline .song-clip-wrap:last-child .song-section-clip')?.classList.contains('current'));
   await page.locator('#studio-play').click();
   assert.equal(await page.locator('#studio-play').textContent().then(x=>x.includes('PLAY SONG')),true,'Song mode should remain selected after stopping playback');
   await openScreen('beats');
@@ -2497,6 +2517,8 @@ try {
   assert.equal(await page.locator('#song-timeline .song-clip-move').count(),4,'long Song sections expose touch-sized move handles');
   const originalFirstId=await page.locator('#song-timeline .song-clip-wrap').first().getAttribute('data-song-clip');
   const moveHandle=page.locator('#song-timeline .song-clip-wrap').first().locator('.song-clip-move');
+  await moveHandle.scrollIntoViewIfNeeded();
+  await page.locator('#song-timeline .song-clip-wrap').nth(1).scrollIntoViewIfNeeded();
   const moveBox=await moveHandle.boundingBox(),nextBox=await page.locator('#song-timeline .song-clip-wrap').nth(1).boundingBox();
   assert.ok(moveBox?.width>=44&&moveBox?.height>=44,'move handle must meet the 44px touch target');
   await page.mouse.move(moveBox.x+moveBox.width/2,moveBox.y+moveBox.height/2);
@@ -2508,6 +2530,7 @@ try {
   await page.locator('#song-timeline .song-clip-wrap[data-song-clip="'+originalFirstId+'"] .song-clip-move').press('ArrowLeft');
   assert.deepEqual(await page.locator('#song-clip-editor .song-section-editor strong').allTextContents().then(names=>names.map(name=>name.split(' · ')[0])),['A','B','C','A'],'keyboard movement returns the section to its original position');
   const resizeHandle=page.locator('#song-timeline .song-clip-wrap[data-song-clip="'+originalFirstId+'"] .song-clip-resize');
+  await resizeHandle.scrollIntoViewIfNeeded();
   const resizeBox=await resizeHandle.boundingBox();
   assert.ok(resizeBox?.width>=44&&resizeBox?.height>=44,'resize handle must meet the 44px touch target');
   await page.mouse.move(resizeBox.x+resizeBox.width/2,resizeBox.y+resizeBox.height/2);
