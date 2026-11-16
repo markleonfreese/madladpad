@@ -84,6 +84,23 @@ try{
   await page.waitForFunction(()=>document.querySelectorAll('#song-video-layers .song-video-track').length===1);
   const audioId=await page.locator('#voice-overdub-layers .vocal-layer').first().getAttribute('data-layer');
   const videoId=await page.locator('#song-video-layers .song-video-track').first().getAttribute('data-video-layer');
+  const cycle=page.locator('#voice-overdub-layers .song-cycle-settings').first();
+  await cycle.locator('summary').click();
+  await cycle.locator('input[type="checkbox"]').check();
+  const setCycleField=async(key,value)=>{const input=cycle.locator(`[data-cycle-field="${key}"]`);await input.fill(String(value));await input.press('Tab');};
+  await setCycleField('repeatEveryBars',8);
+  await setCycleField('audibleLengthBars',2);
+  await page.waitForFunction(()=>document.querySelectorAll('#overdub-timeline [data-repeat-instance]').length===4,null,{timeout:5000});
+  assert.equal(await cycle.locator('input[type="checkbox"]').isChecked(),true,'repeat is enabled for the imported audio clip');
+  assert.equal(await cycle.locator('[data-cycle-field="repeatEveryBars"]').inputValue(),'8');
+  assert.equal(await cycle.locator('[data-cycle-field="audibleLengthBars"]').inputValue(),'2');
+  const videoCycle=page.locator('#song-video-layers .song-cycle-settings').first();
+  await videoCycle.locator('summary').click();
+  await videoCycle.locator('input[type="checkbox"]').check();
+  for(const [key,value] of [['repeatEveryBars',8],['audibleLengthBars',2]]){
+    const input=videoCycle.locator(`[data-cycle-field="${key}"]`);await input.fill(String(value));await input.press('Tab');
+  }
+  assert.ok(await page.locator('#overdub-timeline .overdub-video-clip.song-repeat-instance').count()>0,'video repeats are visible on the aligned Song ruler');
   assert.equal(await page.locator('[aria-label="Mix source audio for video track 1"]').isChecked(),false,'video source audio is muted by default');
   const before=await page.evaluate(async({audioId,videoId})=>{
     const {getValue}=await import('/storage.js');
@@ -99,6 +116,8 @@ try{
   const pack=JSON.parse(await readFile(backupPath,'utf8'));
   assert.deepEqual(pack.project.song.clips.map(clip=>clip.bars),[8,16,4,8]);
   assert.deepEqual(pack.project.song.clips.map(clip=>clip.sceneId),[...sceneIds.slice(0,3),sceneIds[0]]);
+  assert.deepEqual([pack.project.voice.layers[0].repeatEveryBars,pack.project.voice.layers[0].audibleLengthBars],[8,2],'portable project packs preserve the independent cycle settings');
+  assert.deepEqual([pack.project.voice.videoLayers[0].repeatEnabled,pack.project.voice.videoLayers[0].repeatEveryBars,pack.project.voice.videoLayers[0].audibleLengthBars],[true,8,2],'portable project packs preserve the independent video cycle settings');
   assert.equal(pack.voiceMedia.length,1);assert.equal(pack.videoMedia.length,1);
   page.once('dialog',dialog=>dialog.accept());
   await page.locator('#project-input').setInputFiles({name:'full-song.madladpad',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(pack))});
@@ -117,6 +136,11 @@ try{
   assert.equal(await page.locator('#song-bar-ruler .song-bar-tick').last().getAttribute('title'),'Bar 240','the shared ruler must include the full imported media tail beyond the 36-bar arrangement');
   assert.equal(await page.locator('#voice-overdub-layers .vocal-layer').count(),1);
   assert.equal(await page.locator('#song-video-layers .song-video-track').count(),1);
+  assert.equal(await page.locator('#voice-overdub-layers .song-cycle-settings input[type="checkbox"]').first().isChecked(),true,'reload restores the audio cycle setting');
+  assert.equal(await page.locator('#voice-overdub-layers .song-cycle-settings [data-cycle-field="repeatEveryBars"]').first().inputValue(),'8');
+  assert.equal(await page.locator('#overdub-timeline [data-repeat-instance]').count(),4,'the timeline restores four visible repeat instances after pack import');
+  assert.deepEqual(await page.locator('#song-video-layers .song-cycle-settings input').evaluateAll(inputs=>inputs.map(input=>input.type==='checkbox'?input.checked:input.value)),[true,'8','0','2'],'reload restores all video cycle settings');
+  assert.ok(await page.locator('#overdub-timeline .overdub-video-clip.song-repeat-instance').count()>0,'the video repeat layout survives pack import and reload');
 
   await openScreen('beats');
   await openScreen('overdub');
@@ -171,7 +195,7 @@ try{
   assert.ok(recordedVideo.startStep>=128&&recordedVideo.startStep<384,`the camera take should begin in Song section B, got step ${recordedVideo.startStep}`);
   assert.equal(recordedVideo.journals,0,'a saved section-B camera take should clear its recovery journal');
   assert.match(await recordedVideoTrack.locator('.song-video-meta').textContent(),/bar (?:9|1[0-9]|2[0-4])\b/,'the visible camera track placement should match section B');
-  assert.match(await page.locator('#overdub-timeline .overdub-video-clip').nth(1).getAttribute('aria-label'),/video from bar (?:9|1[0-9]|2[0-4])\b/,'the timeline should expose the section-B camera placement');
+  assert.match(await page.locator('#overdub-timeline .overdub-wave-row[data-video-layer]').nth(1).locator('.overdub-video-clip').first().getAttribute('aria-label'),/video repeat 1 from bar (?:9|1[0-9]|2[0-4])\b/,'the timeline should expose the section-B camera placement');
 
   const audioDownload=page.waitForEvent('download',{timeout:10000});
   await openScreen('export');await page.locator('#record-audio').click();

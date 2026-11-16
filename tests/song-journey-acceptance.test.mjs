@@ -9,6 +9,7 @@ import {
   songSectionAtStep,
   songTotalBars,
   songVideoPositionAtStep,
+  songLayerPlaybackEvents,
   localRecordingBudget,
   createBoundedRecordingCapture
 } from '../site/core.js';
@@ -171,6 +172,28 @@ test('the Song audio scheduler accepts one four-minute source without section-lo
     assert.equal(started[0].buffer,source);
     audio.stopVocalLayers();
     assert.equal(started[0].stopped,true,'the full take can be released by the arrangement transport');
+  } finally { delete globalThis.window; }
+});
+
+test('repeated vocal phrases schedule independent onsets and stop as one track',()=>{
+  globalThis.window={AudioContext:FakeAudioContext};
+  try{
+    const audio=new SamplerAudio(),epoch=audio.context.currentTime,bpm=90;
+    const source={duration:20,marker:'immutable synthetic phrase source'};
+    const layer={id:'eight-bar-cycle',startStep:0,trimStartSec:1,trimEndSec:20,repeatEnabled:true,repeatEveryBars:8,repeatPhaseBars:0,audibleLengthBars:2,gain:.7,pitch:0,muted:false,solo:false};
+    audio.vocalSources.set(layer.id,{file:{name:'phrase.wav'},buffer:source});
+    const expected=songLayerPlaybackEvents(layer,source.duration,bpm,24);
+    audio.playVocalLayers([layer],epoch,bpm,24);
+    const voices=audio.context.nodes.filter(node=>node.started);
+    assert.equal(voices.length,3,'24 bars schedules the cycle at bars 1, 9 and 17 only');
+    assert.deepEqual(voices.map(node=>node.started),expected.map(event=>[Math.max(audio.context.currentTime+.005,epoch+event.startStep*(60/bpm/4)),event.sourceStartSec,event.durationSec]));
+    assert.ok(voices.every(node=>node.connections.length===1),'each scheduled voice keeps an independent gain path');
+    audio.updateVocalLayerStates([{...layer,muted:true}]);
+    assert.ok([...audio.vocalPlayback.values()].every(playback=>playback.gain.gain.value===0),'mute updates every scheduled cycle voice');
+    audio.stopVocalLayer(layer.id);
+    assert.ok(voices.every(node=>node.stopped),'stopping the track cancels its future repeat events');
+    assert.equal(audio.vocalPlayback.size,0);
+    assert.equal(audio.vocalSources.get(layer.id).buffer,source,'repeat scheduling never rewrites source media');
   } finally { delete globalThis.window; }
 });
 

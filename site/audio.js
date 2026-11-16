@@ -1,4 +1,4 @@
-import { clamp, nextQuantizedTime, vocalLayerClip } from './core.js';
+import { clamp, nextQuantizedTime, songLayerPlaybackEvents, vocalLayerClip } from './core.js';
 import { effectivePitchSemitones } from './pitch-dsp.js';
 
 export class SamplerAudio {
@@ -166,22 +166,25 @@ export class SamplerAudio {
     }
   }
 
-  playVocalLayers(layers, epoch, bpm) {
+  playVocalLayers(layers, epoch, bpm, songBars=0) {
     this.stopVocalLayers();
     const secondsPerStep = 60 / clamp(bpm, 40, 240) / 4;
     const hasSolo = layers.some(layer => layer.solo && !layer.muted);
     for (const layer of layers) {
       const source = this.vocalSources.get(layer.id);
       if (!source?.buffer || layer.muted || (hasSolo && !layer.solo)) continue;
-      const intended = epoch + clamp(layer.startStep, 0, 4096) * secondsPerStep;
-      const crop=vocalLayerClip(layer,source.buffer.duration);
-      const now = this.context.currentTime, late = Math.max(0, now - intended);
-      if (late >= crop.duration) continue;
-      this.startVocalLayer(layer.id,source.buffer,Math.max(now+.005,intended),crop.start+late,layer.gain,layer.pitch,crop.duration-late);
+      const events=songLayerPlaybackEvents(layer,source.buffer.duration,bpm,songBars);
+      for(const [index,event] of events.entries()){
+        const intended=epoch+event.startStep*secondsPerStep;
+        const now=this.context.currentTime,late=Math.max(0,now-intended);
+        if(late>=event.durationSec)continue;
+        const key=events.length===1?layer.id:`${layer.id}:cycle:${index}`;
+        this.startVocalLayer(key,source.buffer,Math.max(now+.005,intended),event.sourceStartSec+late,layer.gain,layer.pitch,event.durationSec-late,layer.id);
+      }
     }
   }
 
-  startVocalLayer(id,buffer,start,offset=0,gainValue=1,pitch=0,playDuration=null){
+  startVocalLayer(id,buffer,start,offset=0,gainValue=1,pitch=0,playDuration=null,layerId=id){
     if(Math.abs(pitch)>.01&&!this.pitchReady)return false;
     const node=this.context.createBufferSource(),gain=this.context.createGain();
     const pitchNode=Math.abs(pitch)>.01?this.createPitchNode():null;
@@ -191,7 +194,7 @@ export class SamplerAudio {
     if(pitchNode){pitchNode.parameters.get('semitones').setValueAtTime(clamp(pitch,-12,12),start);node.connect(pitchNode);pitchNode.connect(gain);}
     else node.connect(gain);
     gain.connect(this.master);
-    const playback={node,gain,pitchNode,layerId:id};
+    const playback={node,gain,pitchNode,layerId};
     this.vocalPlayback.set(id,playback);
     node.onended=()=>{
       node.disconnect();pitchNode?.disconnect();gain.disconnect();
@@ -216,7 +219,7 @@ export class SamplerAudio {
     const hasSolo = layers.some(layer => layer.solo && !layer.muted);
     const byId = new Map(layers.map(layer => [layer.id, layer]));
     for (const [id, playback] of this.vocalPlayback) {
-      const layer = byId.get(id);
+      const layer = byId.get(playback.layerId||id);
       if (!layer) continue;
       const audible = !layer.muted && (!hasSolo || layer.solo);
       const gain = audible ? clamp(layer.gain, 0, 1.5) : 0;
@@ -226,11 +229,12 @@ export class SamplerAudio {
   }
 
   stopVocalLayer(id) {
-    const playback = this.vocalPlayback.get(id);
-    if (!playback) return;
-    this.vocalPlayback.delete(id);
-    try { playback.node.stop(); } catch {}
-    playback.node.disconnect();playback.pitchNode?.disconnect();playback.gain.disconnect();
+    for(const [key,playback] of [...this.vocalPlayback]){
+      if(key!==id&&playback.layerId!==id)continue;
+      this.vocalPlayback.delete(key);
+      try { playback.node.stop(); } catch {}
+      playback.node.disconnect();playback.pitchNode?.disconnect();playback.gain.disconnect();
+    }
   }
 
   stopVocalLayers() {

@@ -1,4 +1,4 @@
-import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, findRecorderMime, extensionForAudioMime, extensionForMime, vocalLayerClip, songVideoPositionAtStep, songTotalBars, editSongTrackOnTimeline, AsyncActivity, localRecordingBudget, localJournaledRecordingBudget, createBoundedRecordingCapture } from './core.js';
+import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, MAX_SONG_BARS, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, findRecorderMime, extensionForAudioMime, extensionForMime, vocalLayerClip, songVideoPositionAtStep, songLayerPlaybackEvents, songTotalBars, editSongTrackOnTimeline, AsyncActivity, localRecordingBudget, localJournaledRecordingBudget, createBoundedRecordingCapture } from './core.js';
 import { getValue, saveVoiceLayer, deleteVoiceLayer, saveSongVideoLayer, deleteSongVideoLayer, beginAudioRecordingRecovery, appendAudioRecordingRecoveryChunk, listInterruptedAudioRecordings, deleteInterruptedAudioRecording, beginVideoRecordingRecovery, appendVideoRecordingRecoveryChunk, listInterruptedVideoRecordings, deleteInterruptedVideoRecording } from './storage.js';
 import { detectPitch } from './tuner.js';
 
@@ -600,6 +600,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     const pixelsPerStep=width/totalSteps;
     const visibleBars=totalSteps/16,barWidth=width/visibleBars;
     onTimelineScale?.({barWidth,width,visibleBars});
+    updateSongCycleControlAvailability();
     for(const [index,layer] of project.voice.layers.entries()){
       const row=document.createElement('div');row.className='overdub-wave-row';row.dataset.waveLayer=layer.id;row.style.width=width+'px';
       const title=document.createElement('strong');title.textContent=(index+1)+'. '+layer.name;row.append(title);
@@ -612,10 +613,13 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const add=(tag,attrs)=>{const node=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [key,value] of Object.entries(attrs))node.setAttribute(key,String(value));svg.append(node);return node;};
       for(let step=0;step<=totalSteps;step+=(totalSteps>512?16:4)){const x=step/totalSteps*width;add('line',{x1:x,x2:x,y1:0,y2:height,stroke:step%16===0?'#758a66':'#344b39','stroke-width':step%16===0?1.6:.6});}
       if(source&&clip.duration>0&&layer.startStep<totalSteps){
-        const x=layer.startStep/totalSteps*width;
-        const audibleWidth=Math.max(1,Math.min(width-x,clip.duration/secondsPerStep/totalSteps*width));
+        const instances=songLayerPlaybackEvents(layer,source.duration,project.bpm,songTotalBars(project.song));
+        const first=instances[0],shownStart=layer.repeatEnabled?(first?.startStep??layer.startStep):layer.startStep;
+        const shownDuration=layer.repeatEnabled?(first?.durationSec??0):clip.duration;
+        const x=shownStart/totalSteps*width;
+        const audibleWidth=Math.max(1,Math.min(width-x,shownDuration/secondsPerStep/totalSteps*width));
         add('rect',{x,y:7,width:audibleWidth,height:height-14,rx:3,fill:'#31573a',stroke:'#a9d87b','stroke-width':1});
-        const data=source.getChannelData(0),from=Math.floor(clip.start*source.sampleRate),to=Math.min(data.length,Math.ceil(clip.end*source.sampleRate));
+        const data=source.getChannelData(0),from=Math.floor(clip.start*source.sampleRate),to=Math.min(data.length,Math.ceil((clip.start+shownDuration)*source.sampleRate));
         const count=Math.min(160,Math.max(8,Math.floor(audibleWidth/5)));
         for(let bin=0;bin<count;bin++){
           const lo=from+Math.floor((to-from)*bin/count),hi=from+Math.floor((to-from)*(bin+1)/count);
@@ -625,6 +629,14 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
           add('line',{x1:px,x2:px,y1:height/2-extent,y2:height/2+extent,stroke:'#b9ec94','stroke-width':Math.max(.8,audibleWidth/count-1)});
         }
         add('line',{x1:x+audibleWidth,x2:x+audibleWidth,y1:6,y2:height-6,stroke:'#edce7c','stroke-width':2});
+        if(layer.repeatEnabled){
+          for(const [instanceIndex,instance] of instances.entries()){
+            if(instanceIndex===0&&instance.startStep===shownStart)continue;
+            const repeatX=instance.startStep/totalSteps*width;
+            const repeatWidth=Math.max(1,Math.min(width-repeatX,instance.durationSec/secondsPerStep/totalSteps*width));
+            if(repeatX<width)add('rect',{x:repeatX,y:7,width:repeatWidth,height:height-14,rx:3,fill:'#31573a',opacity:.55,stroke:'#a9d87b','stroke-dasharray':'4 3','stroke-width':1,'data-repeat-instance':instanceIndex});
+          }
+        }
       }
       const stage=document.createElement('div');stage.className='overdub-wave-stage';stage.style.width=width+'px';stage.style.height='106px';stage.append(svg);
       if(source&&clip.duration>0)stage.append(createTrackGestureOverlay(layer,'audio',index,source.duration,secondsPerStep,pixelsPerStep));
@@ -637,8 +649,14 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const start=clamp(layer.startStep,0,totalSteps),rawEnd=layer.trimEndSec==null?layer.durationSec:Math.min(layer.durationSec,layer.trimEndSec);
       const clipSeconds=Math.max(0,rawEnd-clamp(layer.trimStartSec,0,Math.max(0,rawEnd-.01)));
       if(start<totalSteps&&clipSeconds>0){
-        const clip=document.createElement('span');clip.className='overdub-video-clip';clip.style.left=`${start/totalSteps*100}%`;clip.style.width=`${Math.min(100-start/totalSteps*100,clipSeconds/secondsPerStep/totalSteps*100)}%`;clip.textContent=layer.name;
-        clip.setAttribute('aria-label',`${layer.name} video from bar ${Math.floor(start/16)+1} for ${clipSeconds.toFixed(1)} seconds`);lane.append(clip,createTrackGestureOverlay(layer,'video',index,layer.durationSec,secondsPerStep,pixelsPerStep));
+        const instances=songLayerPlaybackEvents(layer,layer.durationSec,project.bpm,songTotalBars(project.song));
+        for(const [instanceIndex,instance] of instances.entries()){
+          const instanceX=clamp(instance.startStep,0,totalSteps)/totalSteps*100;
+          if(instanceX>=100)continue;
+          const clip=document.createElement('span');clip.className='overdub-video-clip'+(instanceIndex?' song-repeat-instance':'');clip.style.left=`${instanceX}%`;clip.style.width=`${Math.min(100-instanceX,instance.durationSec/secondsPerStep/totalSteps*100)}%`;clip.textContent=instanceIndex?`↻ ${layer.name}`:layer.name;
+          clip.setAttribute('aria-label',`${layer.name} video repeat ${instanceIndex+1} from bar ${Math.floor(instance.startStep/16)+1}, playing ${instance.durationSec.toFixed(1)} seconds`);lane.append(clip);
+        }
+        lane.append(createTrackGestureOverlay(layer,'video',index,layer.durationSec,secondsPerStep,pixelsPerStep));
       }
       row.append(lane);host.append(row);
     }
@@ -692,8 +710,10 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
         catch(error){$('song-video-status').textContent=`Could not delete the video track: ${error.message}`;}
       });controls.append(remove);
       const meta=document.createElement('small');meta.className='song-video-meta';const clipStart=layer.trimStartSec||0,clipEnd=layer.trimEndSec??layer.durationSec;const sourceKind=layer.origin==='recording'?'Raw camera take saved locally':'Original video saved on this device';meta.textContent=`${videoFiles.has(layer.id)?sourceKind:'Local video file missing'} · bar ${Math.floor(layer.startStep/16)+1}, step ${layer.startStep%16+1} · ${Math.max(0,clipEnd-clipStart).toFixed(2)} s visible · source audio ${layer.includeAudio?'included':'muted by default'}`;
+      controls.append(createSongCycleControls(layer,'video',index,Math.max(0,clipEnd-clipStart)));
       row.append(name,preview,controls,meta);host.append(row);
     });
+    updateSongCycleControlAvailability();
   }
 
   function releaseSongVideoPlayers(){
@@ -749,7 +769,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     const activeIds=new Set(),frames=[];
     for(const layer of project.voice.videoLayers){
       if(audioOnly&&!layer.includeAudio)continue;
-      const url=videoUrls.get(layer.id),sourceSec=songVideoPositionAtStep(layer,absoluteStep,transport.bpm);
+      const url=videoUrls.get(layer.id),sourceSec=songVideoPositionAtStep(layer,absoluteStep,transport.bpm,songTotalBars(project.song));
       if(!url||!videoFiles.has(layer.id)||sourceSec===null){
         const inactive=videoPlaybackElements.get(layer.id),route=videoAudioRoutes.get(layer.id);
         if(inactive){inactive.pause();inactive.dataset.songVideoActive='false';}
@@ -800,6 +820,53 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     for(const [id,video] of videoPlaybackElements){
       if(project.voice.videoLayers.find(layer=>layer.id===id)?.includeAudio)continue;
       video.pause();video.dataset.songVideoActive='false';
+    }
+  }
+
+  function createSongCycleControls(layer,kind,index,sourceDuration){
+    const details=document.createElement('details');details.className='song-cycle-settings';
+    details.dataset.layerId=layer.id;
+    const summary=document.createElement('summary');summary.textContent=layer.repeatEnabled?`Repeat every ${layer.repeatEveryBars} bar${layer.repeatEveryBars===1?'':'s'}`:'Repeat';details.append(summary);
+    const note=document.createElement('small');note.className='song-cycle-note';note.textContent='Repeat events stop at the end of the arranged Song. Play length can differ from the repeat interval.';details.append(note);
+    const repeat=document.createElement('label');repeat.className='song-cycle-toggle';
+    const enabled=document.createElement('input');enabled.type='checkbox';enabled.checked=Boolean(layer.repeatEnabled);enabled.setAttribute('aria-label',`Repeat ${kind} track ${index+1}`);
+    const repeatLabel=document.createElement('span');repeatLabel.textContent='Repeat this clip in the Song';repeat.append(enabled,repeatLabel);details.append(repeat);
+    const fields=document.createElement('div');fields.className='song-cycle-fields';
+    const secondsPerBar=60/clamp(project.bpm,40,240)*4;
+    const naturalBars=clamp(sourceDuration/secondsPerBar,1/16,MAX_SONG_BARS);
+    const addField=(key,labelText,value,min,max,step)=>{
+      const label=document.createElement('label');label.className='vocal-layer-start';label.append(document.createTextNode(labelText));
+      const input=document.createElement('input');input.type='number';input.min=String(min);input.max=String(max);input.step=String(step);input.value=String(value);input.dataset.cycleField=key;
+      input.setAttribute('aria-label',`${labelText} for ${kind} track ${index+1}`);label.append(input);fields.append(label);return input;
+    };
+    const period=addField('repeatEveryBars','REPEAT EVERY (BARS)',layer.repeatEveryBars??1,1,MAX_SONG_BARS,1);
+    const phase=addField('repeatPhaseBars','FIRST OFFSET (BARS)',layer.repeatPhaseBars??0,0,MAX_SONG_BARS-1,1);
+    const length=addField('audibleLengthBars','PLAY LENGTH (BARS)',layer.audibleLengthBars??Number(naturalBars.toFixed(3)),1/16,MAX_SONG_BARS,1/16);
+    details.append(fields);
+    const update=()=>{
+      if(transportState().running)return;
+      layer.repeatEnabled=enabled.checked;
+      layer.repeatEveryBars=Math.round(clamp(period.value,1,MAX_SONG_BARS));
+      layer.repeatPhaseBars=Math.round(clamp(phase.value,0,MAX_SONG_BARS-1));
+      layer.audibleLengthBars=clamp(length.value,1/16,MAX_SONG_BARS);
+      summary.textContent=layer.repeatEnabled?`Repeat every ${layer.repeatEveryBars} bar${layer.repeatEveryBars===1?'':'s'}`:'Repeat';
+      length.disabled=!layer.repeatEnabled;period.disabled=!layer.repeatEnabled;phase.disabled=!layer.repeatEnabled;
+      save();renderOverdubTimeline();
+      const status=kind==='audio'?'voice-overdub-status':'song-video-status';
+      $(status).textContent=layer.repeatEnabled
+        ?`${layer.name} plays ${layer.audibleLengthBars} bar(s), then repeats every ${layer.repeatEveryBars} bar(s)${layer.repeatPhaseBars?` after a ${layer.repeatPhaseBars}-bar first offset`:''}. Original media stays unchanged.`
+        :`${layer.name} is a one-shot. Original media stays unchanged.`;
+    };
+    enabled.addEventListener('change',update);period.addEventListener('change',update);phase.addEventListener('change',update);length.addEventListener('change',update);
+    if(!enabled.checked){period.disabled=true;phase.disabled=true;length.disabled=true;}
+    return details;
+  }
+
+  function updateSongCycleControlAvailability(){
+    const disabled=transportState().running,hasSong=songTotalBars(project.song)>0;
+    for(const details of document.querySelectorAll('.song-cycle-settings')){
+      const enabled=details.querySelector('input[type="checkbox"]').checked;
+      for(const input of details.querySelectorAll('input'))input.disabled=disabled||(!hasSong&&input.type==='checkbox')||(!hasSong&&!enabled)||(input.type!=='checkbox'&&!enabled);
     }
   }
 
@@ -874,8 +941,10 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const audibleEnd=layer.startStep+crop.duration/(60/clamp(project.bpm,40,240)/4);
       const sourceLabel = layer.origin === 'import' ? 'Imported audio saved locally' : layer.origin === 'harmony' ? 'Harmony source retained locally' : 'Raw take saved locally';
       meta.textContent = `${vocalFiles.has(layer.id) ? sourceLabel : 'Local audio file missing'} · starts at bar ${bar}, step ${step + 1} · ends near bar ${Math.floor(audibleEnd/16)+1}, step ${Math.floor(audibleEnd%16)+1} · ${crop.duration.toFixed(2)} s audible (original retained)`;
-      row.append(name, offset, trimFrom, trimTo, gain, pitch, mute, solo, preview, moveControls, remove, meta); host.append(row);
+      const cycleControls=createSongCycleControls(layer,'audio',index,crop.duration);
+      row.append(name, offset, trimFrom, trimTo, gain, pitch, mute, solo, preview, moveControls, remove, cycleControls, meta); host.append(row);
     });
+    updateSongCycleControlAvailability();
     renderOverdubTimeline();
     updateOverdubControls();
   }
@@ -1490,13 +1559,13 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const bar=Math.floor(absoluteStep/16)%16;
       for(const row of $('rap-bars').children)row.classList.toggle('current',Number(row.dataset.bar)===bar);
     },
-    transportStarted(epoch, bpm) { audio.playVocalLayers(project.voice.layers, epoch, bpm); startSongVideoAudioPlayback();updateOverdubControls(); },
-    transportStopped() { audio.stopVocalLayers();stopSongVideoAudioPlayback(); if (vocalRecording) stopOverdub(); if(videoRecordingActivity.phase==='starting')stopSongVideoRecording(true);else if(videoRecording)stopSongVideoRecording(false);updateOverdubControls(); },
+    transportStarted(epoch, bpm) { audio.playVocalLayers(project.voice.layers, epoch, bpm, songTotalBars(project.song)); startSongVideoAudioPlayback();updateSongCycleControlAvailability();updateOverdubControls(); },
+    transportStopped() { audio.stopVocalLayers();stopSongVideoAudioPlayback(); if (vocalRecording) stopOverdub(); if(videoRecordingActivity.phase==='starting')stopSongVideoRecording(true);else if(videoRecording)stopSongVideoRecording(false);updateSongCycleControlAvailability();updateOverdubControls(); },
     songVideoFramesAtStep,
     stopSongVideoVisualPlayback,
     stopTuner,
     refreshTimeline() { renderOverdubTimeline(); },
-    transportChanged() { updateOverdubControls(); },
+    transportChanged() { updateSongCycleControlAvailability();updateOverdubControls(); },
     isRecording() { return Boolean(vocalRecording||videoRecording||videoRecordingActivity.phase==='starting'); },
     reloadLayers
   };

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withModelReferrerPolicy } from '../site/voice-model-fetch.js';
-import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, songVideoPositionAtStep, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars, reorderSongClips, resizeSongClipBars, editSongTrackOnTimeline, localRecordingBudget, localJournaledRecordingBudget, MAX_MEDIA_BYTES, RECORDING_STORAGE_RESERVE_BYTES, createBoundedRecordingCapture } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, songVideoPositionAtStep, songLayerPlaybackEvents, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars, reorderSongClips, resizeSongClipBars, editSongTrackOnTimeline, localRecordingBudget, localJournaledRecordingBudget, MAX_MEDIA_BYTES, RECORDING_STORAGE_RESERVE_BYTES, createBoundedRecordingCapture } from '../site/core.js';
 
 test('long-form recording budget respects both project and browser storage with headroom', () => {
   assert.equal(localRecordingBudget(10 * 1024 * 1024, {usage:90 * 1024 * 1024,quota:100 * 1024 * 1024}), 10 * 1024 * 1024 - RECORDING_STORAGE_RESERVE_BYTES);
@@ -19,8 +19,8 @@ test('journaled recording budget reserves space for both recovery chunks and the
 
 test('Song video clips normalize stable identity, placement and source trim metadata',()=>{
   const video=normaliseProject({voice:{videoLayers:[{id:'clip_1',name:'Verse visual',startStep:384,trimStartSec:2,trimEndSec:8,durationSec:10,type:'video/mp4'}]}}).voice.videoLayers[0];
-  assert.deepEqual(video,{id:'clip_1',name:'Verse visual',origin:'import',startStep:384,trimStartSec:2,trimEndSec:8,durationSec:10,type:'video/mp4',includeAudio:false,audioGain:1},'video source sound is muted by default while its independent audio gain stays editable');
-  assert.deepEqual(normaliseProject({voice:{videoLayers:[{id:'mix',includeAudio:true,audioGain:3}]}}).voice.videoLayers[0],{id:'mix',name:'Video track 1',origin:'import',startStep:0,trimStartSec:0,trimEndSec:null,durationSec:0,type:'video/webm',includeAudio:true,audioGain:1.5},'video audio inclusion and gain should persist within safe bounds');
+  assert.deepEqual(video,{id:'clip_1',name:'Verse visual',origin:'import',startStep:384,repeatEnabled:false,repeatEveryBars:1,repeatPhaseBars:0,audibleLengthBars:null,trimStartSec:2,trimEndSec:8,durationSec:10,type:'video/mp4',includeAudio:false,audioGain:1},'video source sound is muted by default while its independent audio gain stays editable');
+  assert.deepEqual(normaliseProject({voice:{videoLayers:[{id:'mix',includeAudio:true,audioGain:3}]}}).voice.videoLayers[0],{id:'mix',name:'Video track 1',origin:'import',startStep:0,repeatEnabled:false,repeatEveryBars:1,repeatPhaseBars:0,audibleLengthBars:null,trimStartSec:0,trimEndSec:null,durationSec:0,type:'video/webm',includeAudio:true,audioGain:1.5},'video audio inclusion and gain should persist within safe bounds');
   assert.equal(normaliseProject({voice:{videoLayers:[{id:'take_1',origin:'recording'}]}}).voice.videoLayers[0].origin,'recording','camera take identity should survive project and pack normalization');
   assert.deepEqual(normaliseProject({}).voice.videoLayers,[],'older project packs default to no video tracks');
 });
@@ -32,6 +32,27 @@ test('Song video track source time follows Song placement, tempo and trim bounds
   assert.equal(songVideoPositionAtStep(layer,34,120),2.25,'two Song steps advance by the current tempo');
   assert.equal(songVideoPositionAtStep(layer,80,120),null,'the trim-out boundary is exclusive');
   assert.equal(songVideoPositionAtStep({...layer,startStep:0},8,240),2.5,'faster tempo advances through source time sooner');
+});
+
+test('Song clip cycles keep phrase length separate from repeat period and phase',()=>{
+  const layer={startStep:0,trimStartSec:1,trimEndSec:20,durationSec:20,repeatEnabled:true,repeatEveryBars:8,repeatPhaseBars:0,audibleLengthBars:2};
+  const events=songLayerPlaybackEvents(layer,20,90,24);
+  assert.deepEqual(events.map(event=>event.startStep),[0,128,256],'a two-bar phrase repeats at bars 1, 9 and 17');
+  assert.ok(events.every(event=>Math.abs(event.durationSec-60/90*4*2)<1e-9),'each phrase plays for two bars without stretching the source');
+  assert.deepEqual(songLayerPlaybackEvents({...layer,repeatPhaseBars:1},20,90,24).map(event=>event.startStep),[16,144,272],'the first-offset phase is independent from the repeat period');
+  assert.equal(songVideoPositionAtStep(layer,31,90,24),1+31*(60/90/4),'the first two-bar phrase remains continuous');
+  assert.equal(songVideoPositionAtStep(layer,32,90,24),null,'no source plays during bars 3 through 8');
+  assert.equal(songVideoPositionAtStep(layer,127,90,24),null,'the rest gap continues until the independent cycle begins');
+  assert.equal(songVideoPositionAtStep(layer,128,90,24),1,'the original source trim restarts at bar 9');
+  assert.equal(songVideoPositionAtStep({...layer,repeatPhaseBars:1},0,90,24),null,'a positive phase delays the first onset');
+  assert.equal(songVideoPositionAtStep({...layer,repeatPhaseBars:1},16,90,24),1,'the phase-shifted first onset preserves the source in-point');
+  assert.equal(songVideoPositionAtStep(layer,384,90,24),null,'repeat instances stop at the end of the arranged Song');
+  assert.equal(songVideoPositionAtStep(layer,128,90),null,'a malformed repeat setting cannot loop video outside an arranged Song');
+  const restored=normaliseProject({voice:{layers:[layer],videoLayers:[layer]}}).voice;
+  assert.equal(restored.layers[0].repeatEveryBars,8);
+  assert.equal(restored.layers[0].audibleLengthBars,2);
+  assert.equal(restored.videoLayers[0].repeatPhaseBars,0);
+  assert.equal(normaliseProject({voice:{layers:[{id:'legacy'}]}}).voice.layers[0].repeatEnabled,false,'older local projects remain one-shot by default');
 });
 
 test('storage-bounded recording keeps only chunks inside its limit and records the stop reason', () => {
@@ -235,7 +256,7 @@ test('voice projects add bounded transcripts, phrases, vocal layers, melody, tun
   assert.equal(harmony.harmonyInterval,7);
   assert.equal(harmony.notes[0].layer,'harmony');
   const vocal=normaliseProject({voice:{layers:[{id:'vocal/one',name:'Lead',startStep:-2,gain:2,muted:true}]}}).voice.layers[0];
-  assert.deepEqual(vocal,{id:'vocalone',name:'Lead',origin:'recording',startStep:0,trimStartSec:0,trimEndSec:null,gain:1.5,muted:true,solo:false,sourceId:'vocalone',pitch:0});
+  assert.deepEqual(vocal,{id:'vocalone',name:'Lead',origin:'recording',startStep:0,repeatEnabled:false,repeatEveryBars:1,repeatPhaseBars:0,audibleLengthBars:null,trimStartSec:0,trimEndSec:null,gain:1.5,muted:true,solo:false,sourceId:'vocalone',pitch:0});
   const imported=normaliseProject({voice:{layers:[{id:'audio-1',name:'Beat stem',origin:'import',sourceId:'audio-1'}]}}).voice.layers[0];
   assert.equal(imported.origin,'import','imported Song audio must retain its local source kind across project normalization');
   assert.equal(voice.rap.scheme,'AABB');
