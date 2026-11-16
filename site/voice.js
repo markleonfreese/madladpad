@@ -361,7 +361,7 @@ function renderRap(project, save, audio, notify) {
   });
 }
 
-export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTransport, notify, save, assignWordsToPads }) {
+export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTransport, notify, save, assignWordsToPads, onTimelineScale }) {
   const project = getProject(), audio = getAudio();
   let activeTranscript = null;
   let worker = null;
@@ -381,7 +381,17 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   const videoPlaybackElements = new Map();
   const videoAudioRoutes = new Map();
   let songVideoAudioFrameId=null;
-  let overdubZoom=2;
+  let overdubZoom=1;
+  const songTimelineSteps=()=>{
+    const secondsPerStep=60/clamp(project.bpm,40,240)/4;
+    const songSteps=Math.min(4096,songTotalBars(project.song)*16);
+    const maxEnd=Math.max(16,songSteps,...project.voice.layers.map(layer=>{
+      const raw=audio.vocalSources.get(layer.id)?.buffer?.duration||0;
+      return layer.startStep+vocalLayerClip(layer,raw).duration/secondsPerStep;
+    }),...project.voice.videoLayers.map(layer=>layer.startStep+Math.max(0,(layer.durationSec-(layer.trimStartSec||0)-(layer.trimEndSec==null?0:Math.max(0,layer.durationSec-layer.trimEndSec)))/secondsPerStep)));
+    return Math.max(16,Math.min(4096,Math.ceil(maxEnd/16)*16));
+  };
+  const zoomLabel=()=>Number.isInteger(overdubZoom)?overdubZoom+'×':Math.round(overdubZoom*100)+'%';
   const updateConsentState = () => { $('voice-transcribe').disabled = transcriptionActivity.phase!=='idle' || !$('voice-source-pad').value || !$('voice-consent').checked; };
   const cancelTranscription = (message = null) => {
     transcriptionActivity.cancel();
@@ -561,49 +571,35 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
 
   for(const [name,change] of [['overdub-zoom-in',1],['overdub-zoom-out',-1]]){
     $(name).addEventListener('click',()=>{
-      const options=[1,2,4],index=options.indexOf(overdubZoom);
+      const options=[.03,.05,.1,.25,.5,1,2,4],index=options.reduce((closest,value,candidate)=>Math.abs(value-overdubZoom)<Math.abs(options[closest]-overdubZoom)?candidate:closest,0);
       overdubZoom=options[Math.max(0,Math.min(options.length-1,index+change))];
-      $('overdub-zoom-label').textContent=overdubZoom+'×';
+      $('overdub-zoom-label').textContent=zoomLabel();
       $('overdub-zoom-in').disabled=overdubZoom===4;
-      $('overdub-zoom-out').disabled=overdubZoom===1;
+      $('overdub-zoom-out').disabled=overdubZoom===.03;
       renderOverdubTimeline();
     });
   }
+  $('overdub-zoom-fit').addEventListener('click',()=>{
+    const width=$('overdub-timeline').parentElement.clientWidth||320;
+    const bars=Math.max(1,songTimelineSteps()/16);
+    overdubZoom=clamp(width/(bars*28),.03,4);
+    $('overdub-zoom-label').textContent=zoomLabel();
+    $('overdub-zoom-in').disabled=overdubZoom>=4;
+    $('overdub-zoom-out').disabled=overdubZoom<=.03;
+    renderOverdubTimeline();
+  });
 
   function renderOverdubTimeline(){
     const host=$('overdub-timeline');
     host.replaceChildren();
     const secondsPerStep=60/clamp(project.bpm,40,240)/4;
-    const songSteps=Math.min(4096,songTotalBars(project.song)*16);
-    const maxEnd=Math.max(16,songSteps,...project.voice.layers.map(layer=>{
-      const raw=audio.vocalSources.get(layer.id)?.buffer?.duration||0;
-      return layer.startStep+vocalLayerClip(layer,raw).duration/secondsPerStep;
-    }),...project.voice.videoLayers.map(layer=>layer.startStep+Math.max(0,(layer.durationSec-(layer.trimStartSec||0)-(layer.trimEndSec==null?0:Math.max(0,layer.durationSec-layer.trimEndSec)))/secondsPerStep)));
     // Vocal placements support up to 256 bars; keep the full arrangement compact
     // and scrollable inside this component rather than widening the page.
-    const totalSteps=Math.max(16,Math.min(4096,Math.ceil(maxEnd/16)*16));
-    const width=Math.max(680,Math.min(32768,totalSteps*4*overdubZoom)),height=64;
+    const totalSteps=songTimelineSteps();
+    const width=Math.max(host.parentElement.clientWidth,Math.min(32768,totalSteps*1.75*overdubZoom)),height=64;
     const pixelsPerStep=width/totalSteps;
-    const ruler=document.createElement('div');ruler.className='overdub-ruler';ruler.style.width=width+'px';
-    for(let step=0;step<totalSteps;step+=16){
-      const mark=document.createElement('span');mark.style.width=(16/totalSteps*100)+'%';
-      mark.textContent='Bar '+(step/16+1);ruler.append(mark);
-    }
-    host.append(ruler);
-    if(project.song?.clips?.length){
-      const arrangement=document.createElement('div');arrangement.className='overdub-song-sections';arrangement.style.width=width+'px';
-      arrangement.setAttribute('role','group');arrangement.setAttribute('aria-label','Song sections aligned to the overdub bar ruler');
-      let startStep=0;
-      for(const clip of project.song.clips){
-        const scene=project.scenes.find(item=>item.id===clip.sceneId),sectionSteps=clip.bars*16;
-        const segment=document.createElement('div');segment.className='overdub-song-section';
-        segment.style.left=(startStep/totalSteps*100)+'%';segment.style.width=(sectionSteps/totalSteps*100)+'%';
-        segment.textContent=(scene?.name||'Missing pattern')+' · '+clip.bars+' bars';
-        segment.setAttribute('aria-label',(scene?.name||'Missing pattern')+' from bar '+(Math.floor(startStep/16)+1)+' through bar '+Math.ceil((startStep+sectionSteps)/16));
-        arrangement.append(segment);startStep+=sectionSteps;
-      }
-      host.append(arrangement);
-    }
+    const visibleBars=totalSteps/16,barWidth=width/visibleBars;
+    onTimelineScale?.({barWidth,width,visibleBars});
     for(const [index,layer] of project.voice.layers.entries()){
       const row=document.createElement('div');row.className='overdub-wave-row';row.dataset.waveLayer=layer.id;row.style.width=width+'px';
       const title=document.createElement('strong');title.textContent=(index+1)+'. '+layer.name;row.append(title);

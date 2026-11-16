@@ -292,8 +292,7 @@
           <button type="button" class="accent-button" id="song-add-section">ADD SECTION</button>
           <button type="button" class="quiet-button" id="song-back-to-patterns">Edit patterns</button>
         </div>
-        <p class="song-drag-help">Select a section to edit it. Drag its move handle to rearrange; drag its right edge to change length. Keyboard users can use the arrow handles and the controls underneath. For short sections, use the bar-length input.</p>
-        <div class="song-timeline-scroll" tabindex="0" aria-label="Song timeline, scroll horizontally to view all bars"><div id="song-bar-ruler" class="song-bar-ruler" aria-hidden="true"></div><div id="song-timeline" role="group" aria-label="Saved pattern sections in song order"></div></div>
+        <p class="song-drag-help">Select a section to edit it. Zoom in to drag its move or resize handle. Use the Move earlier/later buttons and bar-length field below for precise edits at any zoom.</p>
         <div id="song-clip-editor" class="song-clip-editor" role="group" aria-label="Edit or reorder song sections"></div>
         <p id="song-status" class="pattern-record-status" role="status" aria-live="polite"></p>
       </section>
@@ -307,10 +306,14 @@
         <p class="voice-note">Generated harmony layers reference the original local take; no raw recording is overwritten. A pitch processor is required to keep timing aligned. Edit harmony pitch, gain, mute and solo independently.</p>
         <div class="overdub-timeline-section">
           <h4>Track arrangement · bars and waveforms</h4>
-          <div class="overdub-zoom-controls" role="group" aria-label="Timeline zoom"><button type="button" id="overdub-zoom-out" aria-label="Zoom out of track arrangement">−</button><output id="overdub-zoom-label" aria-live="polite">2×</output><button type="button" id="overdub-zoom-in" aria-label="Zoom into track arrangement">+</button></div>
+          <div class="overdub-zoom-controls" role="group" aria-label="Song timeline controls"><button type="button" id="overdub-zoom-out" aria-label="Zoom out of track arrangement" disabled>−</button><output id="overdub-zoom-label" aria-live="polite">1×</output><button type="button" id="overdub-zoom-in" aria-label="Zoom into track arrangement">+</button><button type="button" id="overdub-zoom-fit">FIT SONG</button><label for="song-seek-bar">GO TO BAR</label><input id="song-seek-bar" type="number" min="1" max="1" value="1" inputmode="numeric"><button type="button" id="song-go-to-bar">GO</button></div>
+          <p id="song-position-status" class="voice-note" role="status" aria-live="polite"></p>
           <p class="voice-note">Drag a waveform or video clip to move it. Pull its left or right edge to trim without deleting source audio. Use zoom for fine edits; precision fields remain below.</p>
-          <div class="overdub-timeline-scroll" tabindex="0" aria-label="Scrollable overdub arrangement showing bar markers and audible waveforms">
-            <div id="overdub-timeline" role="group" aria-label="Overdub tracks aligned with Sequence"></div>
+          <div class="overdub-timeline-scroll" tabindex="0" aria-label="Song timeline. Pattern sections, audio tracks and video tracks share one bar ruler and horizontal scroll">
+            <div id="song-bar-ruler" class="song-bar-ruler" aria-hidden="true"></div>
+            <div id="song-timeline" role="group" aria-label="Editable saved pattern sections aligned to the shared Song ruler"></div>
+            <div id="overdub-timeline" role="group" aria-label="Audio and video clips aligned to the shared Song ruler"></div>
+            <div id="song-playhead" aria-hidden="true"></div>
           </div>
           <p id="overdub-timeline-status" class="voice-note" role="status" aria-live="polite">Recorded waveforms will appear here.</p>
         </div>

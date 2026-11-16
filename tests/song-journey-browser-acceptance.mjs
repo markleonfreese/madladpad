@@ -104,7 +104,7 @@ try{
   await page.locator('#project-input').setInputFiles({name:'full-song.madladpad',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(pack))});
   await page.waitForFunction(()=>document.querySelector('#toast').textContent.includes('Project restored'));
   await page.reload();await openScreen('sounds');await page.locator('.pad-hit').first().waitFor();await openScreen('overdub');
-  await page.waitForFunction(()=>document.querySelectorAll('#overdub-timeline .overdub-song-section').length===4,null,{timeout:10000});
+  await page.waitForFunction(()=>document.querySelectorAll('#song-timeline .song-section-clip').length===4,null,{timeout:10000});
   const after=await page.evaluate(async({audioId,videoId})=>{
     const {getValue}=await import('/storage.js');
     const audio=await getValue(`voice-layer:${audioId}`),video=await getValue(`video-layer:${videoId}`);
@@ -112,7 +112,9 @@ try{
     return {audioBytes:audio?.size,videoBytes:video?.size,audioHash:await digest(audio),videoHash:await digest(video)};
   },{audioId,videoId});
   assert.deepEqual(after,before,'pack import and reload preserve both original local media blobs');
-  assert.equal(await page.locator('#overdub-timeline .overdub-song-section').count(),4,'restored overdubs remain on the four-section Song timeline');
+  assert.equal(await page.locator('#song-timeline .song-section-clip').count(),4,'restored Song sections remain on the shared timeline');
+  await page.waitForFunction(()=>document.querySelectorAll('#voice-overdub-layers .vocal-layer').length===1&&document.querySelectorAll('#song-video-layers .song-video-track').length===1,null,{timeout:10000});
+  assert.equal(await page.locator('#song-bar-ruler .song-bar-tick').last().getAttribute('title'),'Bar 240','the shared ruler must include the full imported media tail beyond the 36-bar arrangement');
   assert.equal(await page.locator('#voice-overdub-layers .vocal-layer').count(),1);
   assert.equal(await page.locator('#song-video-layers .song-video-track').count(),1);
 

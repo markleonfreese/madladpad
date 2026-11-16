@@ -13,7 +13,10 @@ let sampleEditorTrigger = null;
 let trackGridVisible = true;
 let sequenceView = 'patterns';
 let selectedSongClipId = null;
-const SONG_BAR_WIDTH = 28;
+let SONG_BAR_WIDTH = 28;
+let songTimelineView = { width: 680, visibleBars: 24 };
+let songPlayheadStep = 0;
+let requestedSongStartStep = 0;
 let selectedSampleNote = null;
 let notePointer = null;
 let audio;
@@ -1048,15 +1051,21 @@ function renderSong(){
   }
   if(project.scenes.some(scene=>scene.id===selectedId))source.value=selectedId;
   const clips=project.song.clips,barCount=songTotalBars(project.song);
+  $('song-seek-bar').max=String(Math.max(1,barCount));
+  $('song-seek-bar').value=String(Math.min(Math.max(1,barCount),Math.floor(requestedSongStartStep/16)+1));
   if(!clips.some(clip=>clip.id===selectedSongClipId))selectedSongClipId=null;
   $('song-add-section').disabled=!project.scenes.length||clips.length>=MAX_SONG_CLIPS||barCount>=MAX_SONG_BARS;
   const timeline=$('song-timeline'),editor=$('song-clip-editor'),ruler=$('song-bar-ruler');
   timeline.replaceChildren();editor.replaceChildren();ruler.replaceChildren();
-  ruler.style.width=barCount*SONG_BAR_WIDTH+'px';
-  for(let n=1;n<=barCount;n++){
+  const displayedBars=Math.max(barCount,songTimelineView.visibleBars);
+  ruler.parentElement?.classList.toggle('song-fit-compact',SONG_BAR_WIDTH<14);
+  ruler.style.width=songTimelineView.width+'px';
+  timeline.style.width=songTimelineView.width+'px';
+  for(let n=1;n<=displayedBars;n++){
     const tick=document.createElement('span');tick.className='song-bar-tick'+((n-1)%4===0?' major':'');
-    tick.textContent=n===1||(n-1)%4===0?String(n):'';
-    tick.title='Bar '+n;ruler.append(tick);
+    const labelEvery=SONG_BAR_WIDTH<12?32:4;
+    tick.textContent=n===1||(n-1)%labelEvery===0?String(n):'';
+    tick.title='Bar '+n;tick.style.flexBasis=SONG_BAR_WIDTH+'px';ruler.append(tick);
   }
   let bar=1;
   for(const [index,clip] of clips.entries()){
@@ -1114,6 +1123,18 @@ function renderSong(){
   $('song-status').textContent=clips.length
     ?clips.length+' sections · '+barCount+' bars · approx '+minutes+':'+String(remain).padStart(2,'0')+' at '+project.bpm+' BPM. Patterns remain linked to their saved scene.'
     :'No song sections yet. Save pattern A, B and C, then add each one in the order you want.';
+  updateSongPlayhead(songPlayheadStep);
+}
+
+function updateSongPlayhead(step,follow=false){
+  songPlayheadStep=Math.max(0,Math.min(MAX_SONG_BARS*16-1,Math.floor(step)));
+  const marker=$('song-playhead'),scroll=$('song-bar-ruler')?.parentElement;
+  if(!marker||!scroll)return;
+  const x=songPlayheadStep*SONG_BAR_WIDTH/16;
+  marker.style.left=x+'px';
+  marker.style.height=Math.max(120,scroll.scrollHeight-36)+'px';
+  if(follow&&(x<scroll.scrollLeft||x>scroll.scrollLeft+scroll.clientWidth-24))
+    scroll.scrollLeft=clamp(x-scroll.clientWidth*.6,0,Math.max(0,scroll.scrollWidth-scroll.clientWidth));
 }
 
 function renderScenes(){
@@ -1373,7 +1394,10 @@ function startSequencer() {
     const secondsPerStep=60/project.bpm/4;
     audio.setEpoch(audio.context.currentTime+.08);
     nextStepTime=audio.transportEpoch;
-    nextStep=0;
+    const songEndStep=songTotalBars(project.song)*16;
+    nextStep=sequenceView==='song'&&requestedSongStartStep<songEndStep?requestedSongStartStep:0;
+    if(sequenceView==='song'){requestedSongStartStep=nextStep;updateSongPlayhead(nextStep,true);}
+    else nextStep=0;
     let priorSongClipId=null;
     const tick=() => {
       while (nextStepTime<audio.context.currentTime+.12) {
@@ -1428,6 +1452,7 @@ function startSequencer() {
         voiceLab?.scheduleMelodyStep(absoluteStep,time,project.bpm);
         setTimeout(()=>{
           if(!transportActivity.current(token) || !transportTimer)return;
+          if(section)updateSongPlayhead(absoluteStep,true);
           showDirectorPlayingStep(step);
           voiceLab?.highlightRapBar(absoluteStep);
           updateBeatIndicator(Math.floor(step/stride));
@@ -1456,6 +1481,7 @@ function updateBeatIndicator(step) {
 }
 
 function stopSequencer() {
+  if(sequenceView==='song')requestedSongStartStep=songPlayheadStep;
   transportActivity.cancel();
   if(songEndTimer!==null){clearTimeout(songEndTimer);songEndTimer=null;}
   $('song-timeline').querySelectorAll('.current').forEach(node=>node.classList.remove('current'));
@@ -2199,6 +2225,14 @@ function bindControls() {
     if(project.song.clips.length>=MAX_SONG_CLIPS||songTotalBars(project.song)+bars>MAX_SONG_BARS)return notify('Song capacity reached. Reduce bar lengths before adding another section.');
     editSong(clips=>clips.push({id:'song-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),sceneId,bars}));
   });
+  $('song-go-to-bar').addEventListener('click',()=>{
+    if(transportActivity.phase!=='idle')stopSequencer();
+    const bar=Math.round(clamp($('song-seek-bar').value,1,Math.max(1,songTotalBars(project.song))));
+    $('song-seek-bar').value=String(bar);
+    requestedSongStartStep=(bar-1)*16;
+    updateSongPlayhead(requestedSongStartStep,true);
+    $('song-position-status').textContent=`Song position set to bar ${bar}. Press Play Song to continue from here.`;
+  });
   $('track-view').addEventListener('click',()=>{if(compactSequenceOverview()&&trackGridVisible){openSequenceFocus(selected);return;}setTrackView(!trackGridVisible);});
   $('sequence-focus-close').addEventListener('click',closeSequenceFocus);
   $('open-focused-notes').addEventListener('click',()=>openSampleNoteEditor(selected));
@@ -2290,7 +2324,7 @@ async function initialise() {
       } catch(error){console.warn(`Failed to restore pad ${id+1}`,error);}
     }
     renderSession();
-    voiceLab=await initVoiceLab({ getProject: () => project, getMediaFiles: () => mediaFiles, getAudio: () => audio, getTransport: () => ({running:Boolean(transportTimer||songEndTimer!==null),epoch:audio.transportEpoch,bpm:project.bpm}), notify, save: queueSave, assignWordsToPads: assignVoiceWordsToPads });
+    voiceLab=await initVoiceLab({ getProject: () => project, getMediaFiles: () => mediaFiles, getAudio: () => audio, getTransport: () => ({running:Boolean(transportTimer||songEndTimer!==null),epoch:audio.transportEpoch,bpm:project.bpm}), notify, save: queueSave, assignWordsToPads: assignVoiceWordsToPads, onTimelineScale:({barWidth,width,visibleBars})=>{SONG_BAR_WIDTH=barWidth;songTimelineView={width,visibleBars};renderSong();updateSongPlayhead(songPlayheadStep);} });
     await restoreSavedTakes();
     if(restored)notify(`Restored ${restored} locally saved samples.`);
     if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost'))navigator.serviceWorker.register('/sw.js').catch(()=>{});
