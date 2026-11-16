@@ -156,7 +156,7 @@ try {
   await page.locator('#toast.show').waitFor();
   const firstRunToastOverlapsPlay=await page.evaluate(()=>{
     const toast=document.querySelector('#toast').getBoundingClientRect();
-    const play=[...document.querySelectorAll('#sequencer button')].find(button=>button.textContent.toLowerCase().includes('play')).getBoundingClientRect();
+    const play=document.querySelector('#studio-play').getBoundingClientRect();
     return toast.left<play.right&&toast.right>play.left&&toast.top<play.bottom&&toast.bottom>play.top;
   });
   assert.equal(firstRunToastOverlapsPlay,false,'first-run guidance should not cover Play at a narrow phone viewport');
