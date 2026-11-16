@@ -4,6 +4,7 @@ export const STEP_COUNT = 16;
 export const MAX_SCENES = 8;
 export const MAX_SONG_CLIPS = 64;
 export const MAX_SONG_BARS = 256;
+export const MAX_MELODY_STEPS = MAX_SONG_BARS * STEP_COUNT;
 export const MAX_REVERSED_AUDIO_BYTES = 64 * 1024 * 1024;
 export const MAX_MEDIA_BYTES = 80 * 1024 * 1024;
 export const RECORDING_STORAGE_RESERVE_BYTES = 256 * 1024;
@@ -159,13 +160,16 @@ function normaliseVoice(value) {
     includeAudio:Boolean(layer?.includeAudio),audioGain:clamp(layer?.audioGain ?? 1,0,1.5)
   })) : [];
   const melodySource = source.melody && typeof source.melody === 'object' ? source.melody : {};
-  const notes = Array.isArray(melodySource.notes) ? melodySource.notes.slice(0, MAX_MELODY_NOTES).map(note => ({
-    midi: clamp(Math.round(note?.midi ?? 60), 24, 108),
-    step: clamp(Math.round(note?.step ?? 0), 0, 255),
-    duration: clamp(note?.duration ?? 1, .125, 16),
-    word: String(note?.word || '').slice(0, 120),
-    layer: note?.layer === 'harmony' ? 'harmony' : 'lead'
-  })) : [];
+  const notes = Array.isArray(melodySource.notes) ? melodySource.notes.slice(0, MAX_MELODY_NOTES).map(note => {
+    const step=clamp(Math.round(note?.step ?? 0),0,MAX_MELODY_STEPS-1);
+    return {
+      midi: clamp(Math.round(note?.midi ?? 60), 24, 108),
+      step,
+      duration: clamp(note?.duration ?? 1, .125, MAX_MELODY_STEPS-step),
+      word: String(note?.word || '').slice(0, 120),
+      layer: note?.layer === 'harmony' ? 'harmony' : 'lead'
+    };
+  }) : [];
   const rapSource = source.rap && typeof source.rap === 'object' ? source.rap : {};
   return {
     transcripts, phrases, layers, videoLayers,
@@ -502,7 +506,7 @@ export function snapMidiToScale(note, root = 0, scale = 'major') {
   return best;
 }
 export const melodyPositionLabel = step => {
-  const position = Math.round(clamp(step, 0, 255));
+  const position = Math.round(clamp(step, 0, MAX_MELODY_STEPS-1));
   return `Bar ${Math.floor(position / 16) + 1} · Beat ${Math.floor(position % 16 / 4) + 1} · 16th ${position % 4 + 1}`;
 };
 
@@ -540,7 +544,8 @@ export function midiFile(notes, bpm = 120, tuning = 440) {
   const tempo = Math.round(60000000 / clamp(bpm, 40, 240));
   const events = [[0, [255, 81, 3, tempo >> 16 & 255, tempo >> 8 & 255, tempo & 255]]];
   for (const note of notes.slice(0, MAX_MELODY_NOTES)) {
-    const start = Math.round(clamp(note.step, 0, 255) * 120), end = start + Math.max(1, Math.round(clamp(note.duration, .125, 16) * 120));
+    const step=clamp(Math.round(note.step),0,MAX_MELODY_STEPS-1);
+    const start = step * 120, end = start + Math.max(1, Math.round(clamp(note.duration, .125, MAX_MELODY_STEPS-step) * 120));
     const pitch = clamp(Math.round(note.midi), 24, 108);
     events.push([start, [0x90, pitch, 96]], [end, [0x80, pitch, 0]]);
   }
