@@ -522,3 +522,6 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
 .pattern-library-controls .pattern-setting select{max-width:100%;width:100%}
 .pattern-library-controls .scene-name-input{flex:1 1 100%;min-width:0;max-width:100%;width:100%}
 .pattern-library-controls .pill-button{white-space:normal;overflow-wrap:anywhere;flex:1 1 120px;max-width:100%;text-align:center}
+
+/* Beat Maker pad-gallery toggle must wrap rather than extending the page at 320px. */
+@media(max-width:380px){.seq-buttons>#sequence-pad-toggle{white-space:normal;overflow-wrap:break-word;min-width:0;min-height:44px;font-size:10px;line-height:1.25;padding:8px 5px}}
