@@ -179,11 +179,11 @@ try {
   assert.equal(await page.locator('#beat-advanced').evaluate(element=>element.open),false,'specialist beat controls should start collapsed');
   const narrowBeatGrid=()=>page.evaluate(()=>({viewport:document.documentElement.clientWidth,content:document.documentElement.scrollWidth,pad:(()=>{const rect=document.querySelector('#pad-grid .pad:not([hidden])').getBoundingClientRect();return {width:rect.width,height:rect.height};})()}));
   let narrowLayout=await narrowBeatGrid();
-  if(narrowLayout.content>narrowLayout.viewport){
-    const offenders=await page.evaluate(()=>[...document.querySelectorAll('body,body *')].filter(node=>node.getClientRects().length).map(node=>{const rect=node.getBoundingClientRect(),style=getComputedStyle(node);return {name:node.tagName.toLowerCase()+(node.id?'#'+node.id:'')+(typeof node.className==='string'&&node.className?'.'+node.className.trim().split(' ').slice(0,2).join('.'):''),x:Math.round(rect.left),right:Math.round(rect.right),width:Math.round(rect.width),scrollWidth:node.scrollWidth,clientWidth:node.clientWidth,overflowX:style.overflowX};}).filter(node=>node.x< -1||node.right>innerWidth+1||node.scrollWidth>node.clientWidth+3).sort((a,b)=>(b.scrollWidth-b.clientWidth)-(a.scrollWidth-a.clientWidth)).slice(0,35));
-    console.error('NARROW BEAT OVERFLOW',JSON.stringify({viewport:narrowLayout.viewport,content:narrowLayout.content,offenders}));
-  }
   assert.equal(narrowLayout.content,narrowLayout.viewport,'the 3-column Beat Grid should not cause horizontal overflow at 320px');
+  const padToggle=await page.locator('#sequence-pad-toggle').evaluate(node=>({client:node.clientWidth,scroll:node.scrollWidth,height:node.getBoundingClientRect().height}));
+  assert.ok(padToggle.scroll<=padToggle.client+1,'Beat Maker pad-gallery toggle must wrap without text overflow');
+  assert.ok(padToggle.height>=44,'Beat Maker pad-gallery toggle must remain touch-sized');
+
   assert.ok(narrowLayout.pad.width>=48&&narrowLayout.pad.height>=48,'narrow Beat Grid pads should retain touch-sized targets');
   await page.locator('#loop-settings > summary').click();
   await page.locator('#layout-select').selectOption('4x4');
