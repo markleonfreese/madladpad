@@ -257,6 +257,24 @@ export function songVideoPositionAtStep(layer, absoluteStep, bpm, songBars=0) {
   return sourceTime<trimEnd?sourceTime:null;
 }
 
+/** Return source-local playback positions for the audio tracks that should be visible now. */
+export function activeSongAudioVisuals(layers, sourceDurations, absoluteStep, bpm, songBars=0) {
+  if(!Array.isArray(layers)||!Number.isFinite(absoluteStep))return [];
+  const hasSolo=layers.some(layer=>layer?.solo&&!layer?.muted);
+  return layers.flatMap(layer=>{
+    if(!layer||layer.muted||(hasSolo&&!layer.solo)||Number(layer.gain??1)<=0)return [];
+    const duration=sourceDurations instanceof Map?sourceDurations.get(layer.id):sourceDurations?.[layer.id];
+    if(!Number.isFinite(duration)||duration<=0)return [];
+    const positioned={...layer,trimEndSec:layer.trimEndSec??duration};
+    const positionSec=songVideoPositionAtStep(positioned,absoluteStep,bpm,songBars);
+    if(positionSec===null)return [];
+    const start=clamp(layer.trimStartSec??0,0,duration),end=clamp(layer.trimEndSec??duration,start,duration);
+    if(end<=start)return [];
+    const sourceProgress=clamp((positionSec-start)/(end-start),0,1),reverse=Boolean(layer.reverseEnabled);
+    return [{id:layer.id,name:String(layer.name||'Audio track'),positionSec:reverse?end-(positionSec-start):positionSec,progress:reverse?1-sourceProgress:sourceProgress,reverse}];
+  });
+}
+
 /** Build non-destructive one-shot or repeated playback events for a placed audio clip. */
 export function songLayerPlaybackEvents(layer, rawDuration, bpm, songBars=0){
   const crop=vocalLayerClip(layer,rawDuration);

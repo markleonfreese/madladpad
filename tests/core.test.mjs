@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withModelReferrerPolicy } from '../site/voice-model-fetch.js';
-import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, MAX_MELODY_STEPS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, songVideoPositionAtStep, songLayerPlaybackEvents, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars, reorderSongClips, resizeSongClipBars, editSongTrackOnTimeline, localRecordingBudget, localJournaledRecordingBudget, MAX_MEDIA_BYTES, RECORDING_STORAGE_RESERVE_BYTES, createBoundedRecordingCapture } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, MAX_MELODY_STEPS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, songVideoPositionAtStep, activeSongAudioVisuals, songLayerPlaybackEvents, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars, reorderSongClips, resizeSongClipBars, editSongTrackOnTimeline, localRecordingBudget, localJournaledRecordingBudget, MAX_MEDIA_BYTES, RECORDING_STORAGE_RESERVE_BYTES, createBoundedRecordingCapture } from '../site/core.js';
 
 test('long-form recording budget respects both project and browser storage with headroom', () => {
   assert.equal(localRecordingBudget(10 * 1024 * 1024, {usage:90 * 1024 * 1024,quota:100 * 1024 * 1024}), 10 * 1024 * 1024 - RECORDING_STORAGE_RESERVE_BYTES);
@@ -59,6 +59,29 @@ test('Song clip cycles keep phrase length separate from repeat period and phase'
   assert.equal(restored.layers[0].placementEndBar,null,'legacy clips default to the Song end');
   assert.equal(restored.videoLayers[0].repeatPhaseBars,0);
   assert.equal(normaliseProject({voice:{layers:[{id:'legacy'}]}}).voice.layers[0].repeatEnabled,false,'older local projects remain one-shot by default');
+});
+
+test('live Song visuals include only audible audio clips at their independent cycle positions',()=>{
+  const layers=[
+    {id:'verse',name:'Verse vocal',startStep:0,trimStartSec:1,repeatEnabled:true,repeatEveryBars:8,repeatPhaseBars:0,audibleLengthBars:2,gain:1},
+    {id:'adlib',name:'Ad-lib',startStep:16,trimStartSec:0,repeatEnabled:false,gain:1},
+    {id:'muted',name:'Muted layer',startStep:0,gain:1,muted:true},
+    {id:'silent',name:'Zero-gain layer',startStep:0,gain:0}
+  ];
+  const durations=new Map([['verse',20],['adlib',5],['muted',20],['silent',20]]);
+  assert.deepEqual(activeSongAudioVisuals(layers,durations,0,90,24),[
+    {id:'verse',name:'Verse vocal',positionSec:1,progress:0,reverse:false}
+  ],'the first vocal image starts at its trim point while muted and silent parts stay hidden');
+  assert.deepEqual(activeSongAudioVisuals(layers,durations,32,90,24),[
+    {id:'adlib',name:'Ad-lib',positionSec:16*(60/90/4),progress:16*(60/90/4)/5,reverse:false}
+  ],'audio visuals disappear in the repeated vocal gap but show a one-shot that is playing');
+  assert.deepEqual(activeSongAudioVisuals(layers,durations,128,90,24),[
+    {id:'verse',name:'Verse vocal',positionSec:1,progress:0,reverse:false}
+  ],'a repeated phrase re-enters with its waveform playhead at the trimmed source start');
+  assert.deepEqual(activeSongAudioVisuals([{...layers[0],solo:true},layers[1]],durations,32,90,24),[],'solo state hides non-solo tracks and the solo vocal is silent in its cycle gap');
+  assert.deepEqual(activeSongAudioVisuals([{...layers[1],reverseEnabled:true}],durations,16,90,24),[
+    {id:'adlib',name:'Ad-lib',positionSec:5,progress:1,reverse:true}
+  ],'a reversed one-shot places its waveform playhead at the source end when playback begins');
 });
 
 test('storage-bounded recording keeps only chunks inside its limit and records the stop reason', () => {

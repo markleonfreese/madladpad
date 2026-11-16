@@ -56,6 +56,15 @@ test('beat selection and recording are clear, video framing defaults to followin
   assert.match(html,/<summary>Video framing &amp; formats<\/summary>/);
 });
 
+test('live Song video discloses and represents active local audio tracks',()=>{
+  assert.match(html,/audio tracks appear as local waveforms/);
+  assert.match(html,/not a deterministic full-Song render/);
+  assert.match(html,/aria-label="Live performance composition with pad, audio waveform and video tiles"/);
+  assert.match(app,/songAudioFramesAtStep\?\.\(songStep\)/,'live capture should ask the Song timeline for active audio clips');
+  assert.match(app,/AUDIO · \$\{cell\.track\.name\}/,'audio waveform tiles should identify the source track');
+  assert.match(app,/cell\.track\.peaks/,'waveform tiles should use the locally decoded source waveform');
+});
+
 test('one Song arrangement owner, visible named patterns and no redundant action buttons',()=>{
   const beat=html.indexOf('id="sequencer"');
   const tracks=html.indexOf('id="overdub-lab"');
