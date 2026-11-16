@@ -1,4 +1,4 @@
-import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_MELODY_STEPS, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, MAX_SONG_BARS, MAX_REVERSED_AUDIO_BYTES, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, findRecorderMime, extensionForAudioMime, extensionForMime, vocalLayerClip, songVideoPositionAtStep, activeSongAudioVisuals, songLayerPlaybackEvents, songTotalBars, editSongTrackOnTimeline, AsyncActivity, localRecordingBudget, localJournaledRecordingBudget, createBoundedRecordingCapture } from './core.js';
+import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_MELODY_STEPS, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, MAX_SONG_BARS, MAX_REVERSED_AUDIO_BYTES, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, findRecorderMime, extensionForAudioMime, extensionForMime, vocalLayerClip, songVideoPositionAtStep, activeSongAudioVisuals, songMelodyVisualTracks, songLayerPlaybackEvents, songTotalBars, editSongTrackOnTimeline, AsyncActivity, localRecordingBudget, localJournaledRecordingBudget, createBoundedRecordingCapture } from './core.js';
 import { getValue, saveVoiceLayer, deleteVoiceLayer, saveSongVideoLayer, deleteSongVideoLayer, beginAudioRecordingRecovery, appendAudioRecordingRecoveryChunk, listInterruptedAudioRecordings, deleteInterruptedAudioRecording, beginVideoRecordingRecovery, appendVideoRecordingRecoveryChunk, listInterruptedVideoRecordings, deleteInterruptedVideoRecording } from './storage.js';
 import { detectPitch } from './tuner.js';
 import { renderMelodyRoll } from './melody-roll.js';
@@ -848,6 +848,10 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     }));
   }
 
+  function songMelodyVisualTracksAtStep(absoluteStep){
+    return songMelodyVisualTracks(project.voice.melody,absoluteStep,songTotalBars(project.song));
+  }
+
   function songVideoAudioPlaybackFrame(){
     songVideoAudioFrameId=null;
     const transport=transportState();
@@ -1644,6 +1648,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     transportStopped() { audio.stopVocalLayers();stopSongVideoAudioPlayback(); if (vocalRecording) stopOverdub(); if(videoRecordingActivity.phase==='starting')stopSongVideoRecording(true);else if(videoRecording)stopSongVideoRecording(false);updateSongCycleControlAvailability();updateOverdubControls(); },
     songVideoFramesAtStep,
     songAudioFramesAtStep,
+    songMelodyVisualTracksAtStep,
     stopSongVideoVisualPlayback,
     stopTuner,
     refreshTimeline() { renderOverdubTimeline(); },

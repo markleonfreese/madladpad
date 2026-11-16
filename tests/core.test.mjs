@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withModelReferrerPolicy } from '../site/voice-model-fetch.js';
-import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, MAX_MELODY_STEPS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, songVideoPositionAtStep, activeSongAudioVisuals, songLayerPlaybackEvents, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars, reorderSongClips, resizeSongClipBars, editSongTrackOnTimeline, localRecordingBudget, localJournaledRecordingBudget, MAX_MEDIA_BYTES, RECORDING_STORAGE_RESERVE_BYTES, createBoundedRecordingCapture } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, MAX_MELODY_STEPS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, songVideoPositionAtStep, activeSongAudioVisuals, songMelodyVisualTracks, songLayerPlaybackEvents, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars, reorderSongClips, resizeSongClipBars, editSongTrackOnTimeline, localRecordingBudget, localJournaledRecordingBudget, MAX_MEDIA_BYTES, RECORDING_STORAGE_RESERVE_BYTES, createBoundedRecordingCapture } from '../site/core.js';
 
 test('long-form recording budget respects both project and browser storage with headroom', () => {
   assert.equal(localRecordingBudget(10 * 1024 * 1024, {usage:90 * 1024 * 1024,quota:100 * 1024 * 1024}), 10 * 1024 * 1024 - RECORDING_STORAGE_RESERVE_BYTES);
@@ -82,6 +82,23 @@ test('live Song visuals include only audible audio clips at their independent cy
   assert.deepEqual(activeSongAudioVisuals([{...layers[1],reverseEnabled:true}],durations,16,90,24),[
     {id:'adlib',name:'Ad-lib',positionSec:5,progress:1,reverse:true}
   ],'a reversed one-shot places its waveform playhead at the source end when playback begins');
+});
+
+test('live Song visuals render beat-following Melody and harmony across the arranged timeline',()=>{
+  const melody={followBeat:true,notes:[
+    {midi:60,step:0,duration:2,velocity:110,layer:'lead'},
+    {midi:67,step:15,duration:3,velocity:80,layer:'harmony'},
+    {midi:72,step:80,duration:2,velocity:96,layer:'lead'}
+  ]};
+  assert.deepEqual(songMelodyVisualTracks({...melody,followBeat:false},0,8),[],'independent Melody playback is not falsely shown as a Song part');
+  assert.deepEqual(songMelodyVisualTracks(melody,32,4),[
+    {layer:'lead',name:'Melody',notes:[{step:0,duration:2,midi:60,velocity:110}],totalSteps:64,progress:.5},
+    {layer:'harmony',name:'Harmony',notes:[{step:15,duration:3,midi:67,velocity:80}],totalSteps:64,progress:.5}
+  ],'lead and harmony remain separately named; notes outside the arrangement are omitted');
+  assert.deepEqual(songMelodyVisualTracks(melody,64,4),[],'a note lane stops at the exclusive Song boundary');
+  const ending=songMelodyVisualTracks({followBeat:true,notes:[{midi:60,step:15,duration:4}]},0,1)[0];
+  assert.equal(ending.notes[0].duration,1,'a sustained note is clipped visually at the arranged end');
+  assert.deepEqual(songMelodyVisualTracks(melody,0,0).map(track=>track.totalSteps),[82,82],'without a Song the melody visual fits its note range');
 });
 
 test('storage-bounded recording keeps only chunks inside its limit and records the stop reason', () => {
