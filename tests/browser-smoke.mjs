@@ -1148,6 +1148,7 @@ try {
     assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.[1]?.startStep),0,'the accessible one-bar move control should return an audio clip to its original placement');
     assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Move audio track 2 later by one bar','when the audio track reaches its start, keyboard focus should move to the available direction');
     const importedId=await importedTrack.getAttribute('data-layer');
+    await page.waitForFunction(async id=>(await (await import('/storage.js')).getValue('project'))?.voice?.layers?.find(layer=>layer.id===id)?.startStep===0,importedId);
 
     // Timeline edit commits are disabled while the Song is actually playing.
     // Stop before dragging; resume afterward for the existing export and capture checks.
@@ -1185,7 +1186,7 @@ try {
     await page.mouse.move(blockedMoveRect.x+blockedMoveRect.width/2+2*blockedStepPx,blockedMoveRect.y+blockedMoveRect.height/2);
     await page.mouse.up();
     await page.waitForFunction(()=>/Stop Song playback before dragging or trimming/.test(document.querySelector('#voice-overdub-status').textContent));
-    assert.equal(await page.evaluate(id=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.find(layer=>layer.id===id)?.startStep,importedId),0,'track edits must be rejected while Song playback is running');
+    assert.equal(await page.evaluate(async id=>(await (await import('/storage.js')).getValue('project'))?.voice?.layers?.find(layer=>layer.id===id)?.startStep,importedId),0,'track edits must be rejected while Song playback is running');
     await page.locator('#studio-play').click();
     await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='false');
     await dragWave('move',2);
