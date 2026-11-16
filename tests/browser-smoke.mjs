@@ -1139,6 +1139,11 @@ try {
   assert.equal(await page.locator('#melody-notes .melody-note').count(),legacyMelodyCount,'editing a separate clip must leave standalone Melody notes intact');
   const midiClipId=await page.locator('#melody-lane-select option').nth(1).getAttribute('value');
   await page.locator('#melody-lane-select').selectOption(midiClipId);
+  await page.waitForFunction(async clipId=>{
+    const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('madladpad-local-v1',1);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
+    try{return await new Promise((resolve,reject)=>{const request=db.transaction('items','readonly').objectStore('items').get('project');request.onsuccess=()=>resolve(request.result?.voice?.melody?.activeClipId===clipId);request.onerror=()=>reject(request.error);});}
+    finally{db.close();}
+  },midiClipId,{timeout:5000});
   assert.equal(await page.locator('#melody-notes .melody-note').count(),legacyMelodyCount+1,'the new clip note should remain on its selected lane');
   assert.equal(await page.locator('#melody-clip-repeat').isChecked(),true,'the independently repeating MIDI lane should remain selected');
   await page.reload();await page.locator('[data-voice-jump="melody-title"]').click();
