@@ -60,7 +60,7 @@ try{
   await openScreen('beats');
   await openDetails('#loop-settings');
   await page.locator('#bpm-input').fill('240');await page.locator('#bpm-input').press('Tab');
-  await page.locator('#pattern-view').click();
+  await openScreen('beats');
   if(!await page.locator('#steps').isVisible())await page.locator('#track-view').click();
   await page.locator('#beat-advanced').evaluate(el=>{el.open=true;});
   assert.equal(await page.locator('#beat-advanced').evaluate(el=>el.open),true,'pattern and scene controls should be open');
@@ -71,7 +71,7 @@ try{
     sceneIds.push(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.scenes?.at(-1)?.id));
   }
   assert.ok(sceneIds.every(Boolean),'A, B and C should each be saved as stable local scenes');
-  await page.locator('#song-view').click();
+  await openScreen('overdub');
   for(const [sceneId,bars] of [[sceneIds[0],'8'],[sceneIds[1],'16'],[sceneIds[2],'4'],[sceneIds[0],'8']]){
     await page.locator('#song-scene-select').selectOption(sceneId);await page.locator('#song-bars').selectOption(bars);await page.locator('#song-add-section').click();
   }
@@ -117,10 +117,10 @@ try{
   assert.equal(await page.locator('#song-video-layers .song-video-track').count(),1);
 
   await openScreen('beats');
-  await page.locator('#song-view').click();
-  assert.match(await page.locator('#play-seq').textContent(),/PLAY SONG/,'the microphone take should be captured against the arranged Song transport');
+  await openScreen('overdub');
+  assert.match(await page.locator('#studio-play').textContent(),/PLAY SONG/,'the microphone take should be captured against the arranged Song transport');
   await page.locator('#studio-play').click();
-  await page.waitForFunction(()=>document.querySelector('#play-seq').textContent.includes('STOP'));
+  await page.waitForFunction(()=>document.querySelector('#studio-play').textContent.includes('STOP'));
   // At 240 BPM the first eight-bar A section lasts eight seconds. Start the
   // synthetic microphone take after that boundary and verify it is placed on
   // the shared Song ruler rather than silently restarting at bar one.
@@ -184,7 +184,7 @@ try{
   },audioBytes.toString('base64'));
   assert.ok(mixStats.rms>.01,`the exported audio should contain the imported vocal tone (RMS ${mixStats.rms})`);
   assert.ok(mixStats.duration>=8,`the exported mix should continue across the first eight-bar section boundary, got ${mixStats.duration} seconds`);
-  if((await page.locator('#play-seq').textContent()).includes('STOP')){await openScreen('beats');await page.locator('#studio-play').click();}
+  if((await page.locator('#studio-play').textContent()).includes('STOP')){await openScreen('beats');await page.locator('#studio-play').click();}
 
   await openScreen('beats');
   await page.locator('#studio-play').click();
