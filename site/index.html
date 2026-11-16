@@ -178,15 +178,15 @@
         <h3 id="pattern-library-title">Your beat patterns</h3>
         <p>Name and save loops A, B or C. Reuse them in Tracks to arrange a complete song.</p>
         <div class="pattern-library-controls">
-              <label class="pattern-setting">SCENE<select id="scene-select" aria-label="Select scene"><option value="" disabled selected>No saved scenes</option></select></label>
-              <input id="scene-name" class="scene-name-input" maxlength="32" placeholder="Scene name" aria-label="Scene name">
-              <button class="pill-button" id="save-scene" disabled>SAVE NEW</button>
+              <label class="pattern-setting">PATTERN<select id="scene-select" aria-label="Select saved beat pattern"><option value="" disabled selected>No saved patterns</option></select></label>
+              <input id="scene-name" class="scene-name-input" maxlength="32" placeholder="Pattern name (A, B, C)" aria-label="Pattern name">
+              <button class="pill-button" id="save-scene" disabled>SAVE PATTERN</button>
               <button class="pill-button" id="update-scene" disabled>UPDATE</button>
-              <button class="pill-button" id="launch-scene" disabled>LOAD SCENE</button>
+              <button class="pill-button" id="launch-scene" disabled>LOAD PATTERN</button>
               <button class="pill-button" id="delete-scene" disabled>DELETE</button>
         </div>
       </section>
-      <p id="scene-status" class="pattern-record-status" role="status" aria-live="polite">Save the current pattern as a named scene.</p>
+      <p id="scene-status" class="pattern-record-status" role="status" aria-live="polite">Save this beat as a reusable pattern, then arrange it in Tracks.</p>
       <p id="pattern-record-status" class="pattern-record-status" role="status" aria-live="polite">Ready to record pad taps into the 16-step loop. Coarser grids hide finer steps but keep them saved.</p>
       <div class="steps" id="steps" hidden role="group" aria-label="Pattern steps for selected pad"></div>
       <div class="track-grid" id="track-grid" role="group" aria-label="Patterns for all pads"></div>
