@@ -2440,6 +2440,14 @@ try {
   assert.ok(songSceneIds.every(Boolean),'each newly saved song pattern should receive a stable scene id');
   await openScreen('overdub');
   assert.equal(await page.locator('#song-arranger').isVisible(),true,'Song view should expose the arrangement instead of drum-step grid');
+  // Earlier microphone-recording coverage created a 16-bar backing section in
+  // this same browser profile. Remove that fixture so this arrangement check
+  // starts from an empty Song and measures only the four sections below.
+  const priorSongSections=page.locator('#song-clip-editor .song-section-editor');
+  while(await priorSongSections.count()){
+    await priorSongSections.first().getByRole('button',{name:'REMOVE'}).click();
+  }
+  assert.equal(await page.locator('#song-timeline .song-section-clip').count(),0,'the A-B-C-A arrangement scenario should start with an empty Song');
   for(const [sceneId,bars] of [[songSceneIds[0],'8'],[songSceneIds[1],'16'],[songSceneIds[2],'4'],[songSceneIds[0],'8']]){
     await page.locator('#song-scene-select').selectOption(sceneId);
     await page.locator('#song-bars').selectOption(bars);
