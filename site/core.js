@@ -132,6 +132,9 @@ function normaliseVoice(value) {
     name: String(layer?.name || `Vocal take ${index + 1}`).slice(0, 48),
     origin: ['recording','import','harmony'].includes(layer?.origin) ? layer.origin : (layer?.sourceId && layer.sourceId !== layer.id ? 'harmony' : 'recording'),
     startStep: clamp(layer?.startStep ?? 0, 0, 4096),
+    repeatEnabled:Boolean(layer?.repeatEnabled), repeatEveryBars:clamp(Math.round(layer?.repeatEveryBars??1),1,MAX_SONG_BARS),
+    repeatPhaseBars:clamp(Math.round(layer?.repeatPhaseBars??0),0,MAX_SONG_BARS-1),
+    audibleLengthBars:Number.isFinite(layer?.audibleLengthBars)?clamp(layer.audibleLengthBars,1/16,MAX_SONG_BARS):null,
     trimStartSec: clamp(layer?.trimStartSec ?? 0, 0, 3599.99),
     trimEndSec: layer?.trimEndSec==null?null:clamp(layer.trimEndSec, 0.01, 3600),
     gain: clamp(layer?.gain ?? 1, 0, 1.5),
@@ -143,6 +146,9 @@ function normaliseVoice(value) {
     id:String(layer?.id || `video-${index+1}`).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,64) || `video-${index+1}`,
     name:String(layer?.name || `Video track ${index+1}`).slice(0,48),
     origin:['recording','import'].includes(layer?.origin)?layer.origin:'import', startStep:clamp(layer?.startStep ?? 0,0,4096),
+    repeatEnabled:Boolean(layer?.repeatEnabled), repeatEveryBars:clamp(Math.round(layer?.repeatEveryBars??1),1,MAX_SONG_BARS),
+    repeatPhaseBars:clamp(Math.round(layer?.repeatPhaseBars??0),0,MAX_SONG_BARS-1),
+    audibleLengthBars:Number.isFinite(layer?.audibleLengthBars)?clamp(layer.audibleLengthBars,1/16,MAX_SONG_BARS):null,
     trimStartSec:clamp(layer?.trimStartSec ?? 0,0,10799.99),
     trimEndSec:layer?.trimEndSec==null?null:clamp(layer.trimEndSec,0.01,10800),
     durationSec:clamp(layer?.durationSec ?? 0,0,10800), type:String(layer?.type || 'video/webm').slice(0,80),
@@ -216,15 +222,46 @@ export function vocalLayerClip(layer, rawDuration) {
   return {start,end,duration:end-start};
 }
 
-export function songVideoPositionAtStep(layer, absoluteStep, bpm) {
+export function songVideoPositionAtStep(layer, absoluteStep, bpm, songBars=0) {
   if (!layer || !Number.isFinite(absoluteStep)) return null;
   const startStep=clamp(layer.startStep ?? 0,0,4096);
   const trimStart=clamp(layer.trimStartSec ?? 0,0,10799.99);
   const trimEnd=clamp(layer.trimEndSec ?? layer.durationSec ?? 0,0.01,10800);
-  if(absoluteStep<startStep||trimEnd<=trimStart)return null;
   const secondsPerStep=60/clamp(bpm,40,240)/4;
-  const sourceTime=trimStart+(absoluteStep-startStep)*secondsPerStep;
+  if(trimEnd<=trimStart)return null;
+  let elapsedSteps=absoluteStep-startStep;
+  if(layer.repeatEnabled&&songBars>0){
+    if(absoluteStep>=clamp(Math.round(songBars),0,MAX_SONG_BARS)*STEP_COUNT)return null;
+    const firstStart=startStep+clamp(Math.round(layer.repeatPhaseBars??0),0,MAX_SONG_BARS-1)*STEP_COUNT;
+    if(absoluteStep<firstStart)return null;
+    const period=clamp(Math.round(layer.repeatEveryBars??1),1,MAX_SONG_BARS)*STEP_COUNT;
+    elapsedSteps=(absoluteStep-firstStart)%period;
+    const audibleBars=Number.isFinite(layer.audibleLengthBars)?clamp(layer.audibleLengthBars,1/16,MAX_SONG_BARS):(trimEnd-trimStart)/(secondsPerStep*STEP_COUNT);
+    if(elapsedSteps>=audibleBars*STEP_COUNT)return null;
+  } else if(absoluteStep<startStep)return null;
+  const sourceTime=trimStart+elapsedSteps*secondsPerStep;
   return sourceTime<trimEnd?sourceTime:null;
+}
+
+/** Build non-destructive one-shot or repeated playback events for a placed audio clip. */
+export function songLayerPlaybackEvents(layer, rawDuration, bpm, songBars=0){
+  const crop=vocalLayerClip(layer,rawDuration);
+  if(!crop.duration)return [];
+  const startStep=clamp(Math.round(layer?.startStep??0),0,4096);
+  if(!layer?.repeatEnabled)return [{startStep,sourceStartSec:crop.start,durationSec:crop.duration}];
+  const totalBars=clamp(Math.round(songBars),0,MAX_SONG_BARS);
+  if(!totalBars)return [{startStep,sourceStartSec:crop.start,durationSec:crop.duration}];
+  const secondsPerBar=60/clamp(bpm,40,240)*4;
+  const periodSteps=clamp(Math.round(layer.repeatEveryBars??1),1,MAX_SONG_BARS)*STEP_COUNT;
+  const firstStart=startStep+clamp(Math.round(layer.repeatPhaseBars??0),0,MAX_SONG_BARS-1)*STEP_COUNT;
+  const audibleSec=Number.isFinite(layer.audibleLengthBars)?clamp(layer.audibleLengthBars,1/16,MAX_SONG_BARS)*secondsPerBar:crop.duration;
+  const durationSec=Math.min(crop.duration,audibleSec),endStep=totalBars*STEP_COUNT;
+  const events=[];
+  for(let onset=firstStart;onset<endStep&&events.length<MAX_SONG_BARS;onset+=periodSteps){
+    if(onset<startStep)continue;
+    events.push({startStep:onset,sourceStartSec:crop.start,durationSec});
+  }
+  return events;
 }
 
 export const videoVisualDurationMs = (start, end, speed) => Math.max(180, (Number(end) - Number(start)) / clamp(speed ?? 1, 0.5, 2) * 1000);

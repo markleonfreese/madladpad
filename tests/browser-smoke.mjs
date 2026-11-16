@@ -1105,7 +1105,7 @@ try {
     assert.match(await vocalRow.locator('.vocal-layer-meta').textContent(),/Raw take saved locally.*bar/,'a microphone overdub should save its raw local recording and sequencer position');
     await vocalRow.locator('.vocal-layer-name').fill('Lead take');
     await vocalRow.locator('.vocal-layer-name').press('Tab');
-    const layerStartInput=vocalRow.locator('.vocal-layer-start input');
+    const layerStartInput=vocalRow.locator('input[aria-label$="start step"]');
     await layerStartInput.fill('18');
     await layerStartInput.press('Tab');
     await layerStartInput.fill('4095');
@@ -1207,7 +1207,8 @@ try {
     const audioInputs=importedTrack.locator('.vocal-layer-trim input');
     await audioInputs.nth(0).fill('0');await audioInputs.nth(0).press('Tab');
     await audioInputs.nth(1).fill(sourceTrimEnd);await audioInputs.nth(1).press('Tab');
-    await importedTrack.locator('.vocal-layer-start input').fill('0');await importedTrack.locator('.vocal-layer-start input').press('Tab');
+    const importedStartInput=importedTrack.locator('input[aria-label$="start step"]');
+    await importedStartInput.fill('0');await importedStartInput.press('Tab');
     assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.voice?.layers?.[1]?.startStep),0,'precision numeric controls remain an accessible fallback');
 
     const cancelSelector=gestureSelector('move'),cancelHandle=page.locator(cancelSelector);
@@ -2259,10 +2260,10 @@ try {
   },null,{timeout:8000});
   await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
   checkpoint('service worker ready');
-  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v29')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
-  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v29')).match('/audio.js')).text()),/pendingStarts/,'the current fallback retrigger fix should be cached before offline use');
-  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v29')).match('/voice.js')).text()),/Use rhyme idea/,'the current Rap Lab writing aid should be cached before offline use');
-  const cachedFonts=await page.evaluate(async()=>Promise.all(['/fonts/dm-sans-variable-latin.woff2','/fonts/dm-sans-variable-latin-ext.woff2','/fonts/dm-mono-400-latin.woff2','/fonts/dm-mono-400-latin-ext.woff2','/fonts/dm-mono-500-latin.woff2','/fonts/dm-mono-500-latin-ext.woff2'].map(async path=>Boolean(await (await caches.open('madladpad-shell-v29')).match(path)))));
+  assert.equal(await page.evaluate(async()=>Boolean(await (await caches.open('madladpad-shell-v30')).match('/voice-inference-worker.bundle.js'))),true,'the local transcription worker should be cached before the app is used offline');
+  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v30')).match('/audio.js')).text()),/pendingStarts/,'the current fallback retrigger fix should be cached before offline use');
+  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v30')).match('/voice.js')).text()),/Use rhyme idea/,'the current Rap Lab writing aid should be cached before offline use');
+  const cachedFonts=await page.evaluate(async()=>Promise.all(['/fonts/dm-sans-variable-latin.woff2','/fonts/dm-sans-variable-latin-ext.woff2','/fonts/dm-mono-400-latin.woff2','/fonts/dm-mono-400-latin-ext.woff2','/fonts/dm-mono-500-latin.woff2','/fonts/dm-mono-500-latin-ext.woff2'].map(async path=>Boolean(await (await caches.open('madladpad-shell-v30')).match(path)))));
   assert.ok(cachedFonts.every(Boolean),'both local UI fonts and their Latin/extended subsets should be cached for offline use');
   await page.reload();
   await page.waitForFunction(()=>Boolean(navigator.serviceWorker.controller));
