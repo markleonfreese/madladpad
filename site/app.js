@@ -1118,17 +1118,17 @@ function renderSong(){
 
 function renderScenes(){
   const select=$('scene-select');select.replaceChildren();
-  if(!project.scenes.length){const option=document.createElement('option');option.value='';option.textContent='No saved scenes';option.disabled=true;select.append(option);selectedSceneIndex=-1;$('scene-status').textContent=pendingScene?`Queued: ${pendingScene.scene.name} · next bar`:'Save the current pattern as a named scene.';}
+  if(!project.scenes.length){const option=document.createElement('option');option.value='';option.textContent='No saved patterns';option.disabled=true;select.append(option);selectedSceneIndex=-1;$('scene-status').textContent=pendingScene?`Queued: ${pendingScene.scene.name} · next bar`:'Save the current pattern as a named scene.';}
   else {
     selectedSceneIndex=clamp(selectedSceneIndex<0?0:selectedSceneIndex,0,project.scenes.length-1);
     project.scenes.forEach((scene,index)=>{const option=document.createElement('option');option.value=String(index);option.textContent=scene.name;select.append(option);});
     select.value=String(selectedSceneIndex);$('scene-name').value=project.scenes[selectedSceneIndex].name;
-    $('scene-status').textContent=pendingScene?`Queued: ${pendingScene.scene.name} · next bar`:`${project.scenes.length} of ${MAX_SCENES} scenes saved.`;
+    $('scene-status').textContent=pendingScene?`Queued: ${pendingScene.scene.name} · next bar`:`${project.scenes.length} of ${MAX_SCENES} patterns saved.`;
   }
   $('save-scene').disabled=project.scenes.length>=MAX_SCENES||!$('scene-name').value.trim();
   $('update-scene').disabled=selectedSceneIndex<0;
   $('launch-scene').disabled=selectedSceneIndex<0;
-  $('launch-scene').textContent=transportTimer?'QUEUE NEXT BAR':'LOAD SCENE';
+  $('launch-scene').textContent=transportTimer?'QUEUE NEXT BAR':'LOAD PATTERN';
   $('delete-scene').disabled=selectedSceneIndex<0;
   renderSong();
 }
@@ -1151,15 +1151,15 @@ function applyScene(scene,atTime=audio.context.currentTime){
 
 function saveScene(){
   const name=$('scene-name').value.trim().slice(0,32);
-  if(!name)return notify('Give this scene a name first.');
-  if(project.scenes.length>=MAX_SCENES)return notify(`You can save up to ${MAX_SCENES} scenes in a project.`);
-  project.scenes.push(sceneSnapshot(name));selectedSceneIndex=project.scenes.length-1;renderScenes();queueSave();notify(`Scene “${name}” saved.`);
+  if(!name)return notify('Give this pattern a name first.');
+  if(project.scenes.length>=MAX_SCENES)return notify(`You can save up to ${MAX_SCENES} patterns in a project.`);
+  project.scenes.push(sceneSnapshot(name));selectedSceneIndex=project.scenes.length-1;renderScenes();queueSave();notify(`Pattern “${name}” saved.`);
 }
 
 function updateScene(){
   if(selectedSceneIndex<0)return;
   const name=$('scene-name').value.trim().slice(0,32)||project.scenes[selectedSceneIndex].name;
-  project.scenes[selectedSceneIndex]=sceneSnapshot(name,project.scenes[selectedSceneIndex].id);renderScenes();queueSave();notify(`Scene “${name}” updated.`);
+  project.scenes[selectedSceneIndex]=sceneSnapshot(name,project.scenes[selectedSceneIndex].id);renderScenes();queueSave();notify(`Pattern “${name}” updated.`);
 }
 
 function deleteScene(){
@@ -1174,13 +1174,13 @@ function deleteScene(){
 
 function launchScene(){
   if(selectedSceneIndex<0)return;
-  if(transportTimer&&sequenceView==='song')return notify('Stop song playback before launching a standalone scene.');
+  if(transportTimer&&sequenceView==='song')return notify('Stop Song playback before loading a standalone pattern.');
   const scene=JSON.parse(JSON.stringify(project.scenes[selectedSceneIndex]));
   if(transportTimer){
     const earliest=Math.max(audio.context.currentTime+.14,nextStepTime);
     pendingScene={scene,at:nextBarTime(earliest,audio.transportEpoch,project.bpm)};
-    renderScenes();notify(`Scene “${scene.name}” queued for the next bar.`);
-  } else {applyScene(scene);notify(`Scene “${scene.name}” loaded.`);}
+    renderScenes();notify(`Pattern “${scene.name}” queued for the next bar.`);
+  } else {applyScene(scene);notify(`Pattern “${scene.name}” loaded.`);}
 }
 
 async function playPad(id, scheduledAt, momentary=false) {
@@ -1378,7 +1378,7 @@ function startSequencer() {
     const tick=() => {
       while (nextStepTime<audio.context.currentTime+.12) {
         const time=nextStepTime;
-        if(!playbackSong&&pendingScene&&time>=pendingScene.at-1e-4){const queued=pendingScene;pendingScene=null;applyScene(queued.scene,time);renderScenes();notify(`Scene “${queued.scene.name}” launched.`);}
+        if(!playbackSong&&pendingScene&&time>=pendingScene.at-1e-4){const queued=pendingScene;pendingScene=null;applyScene(queued.scene,time);renderScenes();notify(`Pattern “${queued.scene.name}” launched.`);}
         const absoluteStep=nextStep;
         const section=playbackSong?songSectionAtStep(playbackSong.song,playbackSong.scenes,absoluteStep):null;
         if(playbackSong&&!section){
@@ -1466,7 +1466,7 @@ function stopSequencer() {
   voiceLab?.transportStopped();
   directorPlayingStep=null;
   $('director-steps').querySelectorAll('.current').forEach(node=>node.classList.remove('current'));
-  if(pendingScene){pendingScene=null;renderScenes();notify('Queued scene canceled because the sequencer stopped.');}
+  if(pendingScene){pendingScene=null;renderScenes();notify('Queued pattern cancelled because playback stopped.');}
   else renderScenes();
   updateTransportButton();
   [...$('steps').children].forEach(el=>el.classList.remove('current'));
