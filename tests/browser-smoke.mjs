@@ -1082,6 +1082,11 @@ try {
   const vocalOverdubSupported=await page.evaluate(()=>Boolean(window.MediaRecorder&&navigator.mediaDevices?.getUserMedia));
   if(vocalOverdubSupported){
     await openScreen('overdub');
+    // Tracks now owns the Song: prepare a long backing section before recording.
+    assert.ok(await page.locator('#song-scene-select option').count()>0,'recording requires a previously saved Beat Maker pattern');
+    await page.locator('#song-bars').selectOption('16');
+    await page.locator('#song-add-section').click();
+    await page.waitForFunction(()=>document.querySelectorAll('#song-clip-editor .song-section-editor').length>0);
     await page.locator('#studio-play').click();
     await page.waitForFunction(()=>document.querySelector('#studio-play').textContent.includes('STOP'));
     await page.waitForFunction(()=>!document.querySelector('#voice-overdub-record').disabled);
