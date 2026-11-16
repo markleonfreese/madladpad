@@ -1980,10 +1980,15 @@ function bindControls() {
   });
   window.addEventListener('scroll',()=>{
     const settings=$('loop-settings');
-    // Scrolling an opened disclosure into view can focus its summary; that
-    // is still inside Settings and must not immediately dismiss the menu.
+    // Programmatic focus scrolling on the Settings summary is not a dismissal.
     if(settings.open&&!settings.contains(document.activeElement))settings.open=false;
   },{passive:true});
+  const dismissSettingsOnScrollGesture=event=>{
+    const settings=$('loop-settings');
+    if(settings.open&&!settings.contains(event.target))settings.open=false;
+  };
+  window.addEventListener('wheel',dismissSettingsOnScrollGesture,{passive:true});
+  window.addEventListener('touchmove',dismissSettingsOnScrollGesture,{passive:true});
   $('close-sample-editor').addEventListener('click',closeSampleEditor);
   $('sample-editor-dialog').addEventListener('close',restoreSampleEditorFocus);
   $('sample-editor-dialog').addEventListener('close',()=>{cancelOnsetAnalysis(false);$('region-preview').pause();});
