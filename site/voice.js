@@ -1,4 +1,4 @@
-import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, MAX_SONG_BARS, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, findRecorderMime, extensionForAudioMime, extensionForMime, vocalLayerClip, songVideoPositionAtStep, songLayerPlaybackEvents, songTotalBars, editSongTrackOnTimeline, AsyncActivity, localRecordingBudget, localJournaledRecordingBudget, createBoundedRecordingCapture } from './core.js';
+import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, MAX_SONG_BARS, MAX_REVERSED_AUDIO_BYTES, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, findRecorderMime, extensionForAudioMime, extensionForMime, vocalLayerClip, songVideoPositionAtStep, songLayerPlaybackEvents, songTotalBars, editSongTrackOnTimeline, AsyncActivity, localRecordingBudget, localJournaledRecordingBudget, createBoundedRecordingCapture } from './core.js';
 import { getValue, saveVoiceLayer, deleteVoiceLayer, saveSongVideoLayer, deleteSongVideoLayer, beginAudioRecordingRecovery, appendAudioRecordingRecoveryChunk, listInterruptedAudioRecordings, deleteInterruptedAudioRecording, beginVideoRecordingRecovery, appendVideoRecordingRecoveryChunk, listInterruptedVideoRecordings, deleteInterruptedVideoRecording } from './storage.js';
 import { detectPitch } from './tuner.js';
 
@@ -619,10 +619,12 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
         const x=shownStart/totalSteps*width;
         const audibleWidth=Math.max(1,Math.min(width-x,shownDuration/secondsPerStep/totalSteps*width));
         add('rect',{x,y:7,width:audibleWidth,height:height-14,rx:3,fill:'#31573a',stroke:'#a9d87b','stroke-width':1});
-        const data=source.getChannelData(0),from=Math.floor(clip.start*source.sampleRate),to=Math.min(data.length,Math.ceil((clip.start+shownDuration)*source.sampleRate));
+        const data=source.getChannelData(0),waveStart=layer.reverseEnabled?Math.max(clip.start,clip.end-shownDuration):clip.start;
+        const from=Math.floor(waveStart*source.sampleRate),to=Math.min(data.length,Math.ceil((waveStart+shownDuration)*source.sampleRate));
         const count=Math.min(160,Math.max(8,Math.floor(audibleWidth/5)));
         for(let bin=0;bin<count;bin++){
-          const lo=from+Math.floor((to-from)*bin/count),hi=from+Math.floor((to-from)*(bin+1)/count);
+          const lo=layer.reverseEnabled?to-Math.floor((to-from)*(bin+1)/count):from+Math.floor((to-from)*bin/count);
+          const hi=layer.reverseEnabled?to-Math.floor((to-from)*bin/count):from+Math.floor((to-from)*(bin+1)/count);
           let peak=0;
           for(let position=lo;position<hi;position+=Math.max(1,Math.floor((hi-lo)/96)))peak=Math.max(peak,Math.abs(data[position]||0));
           const px=x+(bin+.5)*audibleWidth/count,extent=Math.max(.7,peak*23);
@@ -867,6 +869,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
 
   function updateSongCycleControlAvailability(){
     const disabled=transportState().running,hasSong=songTotalBars(project.song)>0;
+    for(const input of document.querySelectorAll('.song-audio-reverse input'))input.disabled=disabled||input.dataset.reverseSupported!=='true';
     for(const details of document.querySelectorAll('.song-cycle-settings')){
       const enabled=details.querySelector('input[type="checkbox"]').checked;
       for(const input of details.querySelectorAll('input')){
@@ -905,7 +908,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const control = (text, label, active, action) => { const button = document.createElement('button'); button.type = 'button'; button.className = `pill-button${active ? ' active' : ''}`; button.textContent = text; button.setAttribute('aria-label', label); button.setAttribute('aria-pressed', String(active)); button.addEventListener('click', action); return button; };
       const mute = control(layer.muted ? 'UNMUTE' : 'MUTE', `${layer.muted ? 'Unmute' : 'Mute'} audio track ${index + 1}`, layer.muted, () => { layer.muted = !layer.muted; audio.updateVocalLayerStates(project.voice.layers); save(); renderVocalLayers(); });
       const solo = control(layer.solo ? 'SOLO ON' : 'SOLO', `${layer.solo ? 'Disable solo' : 'Solo'} audio track ${index + 1}`, layer.solo, () => { layer.solo = !layer.solo; audio.updateVocalLayerStates(project.voice.layers); save(); renderVocalLayers(); });
-      const preview = control('▶', `Preview audio track ${index + 1}`, false, async () => { await audio.unlock(); if (!audio.previewVocalLayer(layer.id, layer.gain,layer.pitch,layer)) $('voice-overdub-status').textContent = 'Pitch processor or audio decoder unavailable for this track.'; });
+      const preview = control('▶', `Preview audio track ${index + 1}`, false, async () => { await audio.unlock(); if (!audio.previewVocalLayer(layer.id, layer.gain,layer.pitch,layer)) $('voice-overdub-status').textContent = layer.reverseEnabled?'This reversed clip exceeds the local memory budget or could not be decoded.':'Pitch processor or audio decoder unavailable for this track.'; });
       preview.disabled = !audio.vocalSources.get(layer.id)?.buffer;
       const pitch=document.createElement('label');pitch.className='vocal-layer-pitch';pitch.append(document.createTextNode('PITCH (ST)'));
       const pitchInput=document.createElement('input');pitchInput.type='number';pitchInput.min='-12';pitchInput.max='12';pitchInput.step='.1';pitchInput.value=String(layer.pitch||0);pitchInput.setAttribute('aria-label',`Pitch for audio track ${index+1}`);
@@ -927,6 +930,20 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       };
       const trimFrom=trimField('trimStartSec','TRIM START (S)',crop.start);
       const trimTo=trimField('trimEndSec','TRIM END (S)',crop.end);
+      const reverseLabel=document.createElement('label');reverseLabel.className='song-audio-reverse';
+      const reverseInput=document.createElement('input');reverseInput.type='checkbox';reverseInput.checked=Boolean(layer.reverseEnabled);reverseInput.setAttribute('aria-label',`Reverse audio track ${index+1}`);
+      const reverseSource=audio.vocalSources.get(layer.id)?.buffer;
+      const reverseFrames=reverseSource?Math.max(0,Math.ceil(crop.end*reverseSource.sampleRate)-Math.floor(crop.start*reverseSource.sampleRate)):0;
+      const reverseSupported=Boolean(reverseSource&&reverseFrames*reverseSource.numberOfChannels*4<=MAX_REVERSED_AUDIO_BYTES);
+      reverseInput.disabled=!reverseSupported||transportState().running;
+      reverseInput.dataset.reverseSupported=String(reverseSupported);
+      reverseInput.title=reverseSupported?'Reverse this trimmed clip in playback without changing its saved source.':'This trimmed clip is too large for the local reverse memory budget.';
+      const reverseText=document.createElement('span');reverseText.textContent=reverseSupported?'REVERSE PLAYBACK':'REVERSE UNAVAILABLE · LOCAL MEMORY LIMIT';reverseLabel.append(reverseInput,reverseText);
+      reverseInput.addEventListener('change',()=>{
+        if(transportState().running){reverseInput.checked=Boolean(layer.reverseEnabled);return;}
+        layer.reverseEnabled=reverseInput.checked;audio.stopVocalLayer(layer.id);save();renderVocalLayers();
+        $('voice-overdub-status').textContent=layer.reverseEnabled?`${layer.name} plays in reverse from its selected trim. The original local media stays unchanged.`:`${layer.name} plays forward from its selected trim.`;
+      });
       const remove = control('DELETE', `Delete audio track ${index + 1} and its saved local audio file`, false, async () => {
         if (!confirm(`Delete ${layer.name} and its saved local audio file?`)) return;
         const nextLayers = project.voice.layers.filter(item => item.id !== layer.id);
@@ -948,7 +965,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const sourceLabel = layer.origin === 'import' ? 'Imported audio saved locally' : layer.origin === 'harmony' ? 'Harmony source retained locally' : 'Raw take saved locally';
       meta.textContent = `${vocalFiles.has(layer.id) ? sourceLabel : 'Local audio file missing'} · starts at bar ${bar}, step ${step + 1} · ends near bar ${Math.floor(audibleEnd/16)+1}, step ${Math.floor(audibleEnd%16)+1} · ${crop.duration.toFixed(2)} s audible (original retained)`;
       const cycleControls=createSongCycleControls(layer,'audio',index,crop.duration);
-      row.append(name, offset, trimFrom, trimTo, gain, pitch, mute, solo, preview, moveControls, remove, cycleControls, meta); host.append(row);
+      row.append(name, offset, trimFrom, trimTo, gain, pitch, mute, solo, preview, reverseLabel, moveControls, remove, cycleControls, meta); host.append(row);
     });
     updateSongCycleControlAvailability();
     renderOverdubTimeline();

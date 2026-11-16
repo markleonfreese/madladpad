@@ -4,6 +4,7 @@ export const STEP_COUNT = 16;
 export const MAX_SCENES = 8;
 export const MAX_SONG_CLIPS = 64;
 export const MAX_SONG_BARS = 256;
+export const MAX_REVERSED_AUDIO_BYTES = 64 * 1024 * 1024;
 export const MAX_MEDIA_BYTES = 80 * 1024 * 1024;
 export const RECORDING_STORAGE_RESERVE_BYTES = 256 * 1024;
 export const MAX_TRANSCRIPT_WORDS = 1000;
@@ -136,6 +137,7 @@ function normaliseVoice(value) {
     repeatEnabled:Boolean(layer?.repeatEnabled), repeatEveryBars:clamp(Math.round(layer?.repeatEveryBars??1),1,MAX_SONG_BARS),
     repeatPhaseBars:clamp(Math.round(layer?.repeatPhaseBars??0),0,MAX_SONG_BARS-1),
     audibleLengthBars:Number.isFinite(layer?.audibleLengthBars)?clamp(layer.audibleLengthBars,1/16,MAX_SONG_BARS):null,
+    reverseEnabled:Boolean(layer?.reverseEnabled),
     trimStartSec: clamp(layer?.trimStartSec ?? 0, 0, 3599.99),
     trimEndSec: layer?.trimEndSec==null?null:clamp(layer.trimEndSec, 0.01, 3600),
     gain: clamp(layer?.gain ?? 1, 0, 1.5),
