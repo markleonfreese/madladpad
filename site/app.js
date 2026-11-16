@@ -1979,8 +1979,10 @@ function bindControls() {
     if($('session-menu').open&&!$('session-menu').contains(event.target))$('session-menu').open=false;
   });
   window.addEventListener('scroll',()=>{
-    const settings=$('loop-settings'),fields=settings.querySelector('.transport-settings');
-    if(settings.open&&!fields.contains(document.activeElement))settings.open=false;
+    const settings=$('loop-settings');
+    // Scrolling an opened disclosure into view can focus its summary; that
+    // is still inside Settings and must not immediately dismiss the menu.
+    if(settings.open&&!settings.contains(document.activeElement))settings.open=false;
   },{passive:true});
   $('close-sample-editor').addEventListener('click',closeSampleEditor);
   $('sample-editor-dialog').addEventListener('close',restoreSampleEditorFocus);
