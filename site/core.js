@@ -166,6 +166,7 @@ function normaliseVoice(value) {
       midi: clamp(Math.round(note?.midi ?? 60), 24, 108),
       step,
       duration: clamp(note?.duration ?? 1, .125, MAX_MELODY_STEPS-step),
+      velocity: clamp(Math.round(note?.velocity ?? 96), 1, 127),
       word: String(note?.word || '').slice(0, 120),
       layer: note?.layer === 'harmony' ? 'harmony' : 'lead'
     };
@@ -547,7 +548,7 @@ export function midiFile(notes, bpm = 120, tuning = 440) {
     const step=clamp(Math.round(note.step),0,MAX_MELODY_STEPS-1);
     const start = step * 120, end = start + Math.max(1, Math.round(clamp(note.duration, .125, MAX_MELODY_STEPS-step) * 120));
     const pitch = clamp(Math.round(note.midi), 24, 108);
-    events.push([start, [0x90, pitch, 96]], [end, [0x80, pitch, 0]]);
+    events.push([start, [0x90, pitch, clamp(Math.round(note.velocity??96),1,127)]], [end, [0x80, pitch, 0]]);
   }
   // At a shared tick, release a note before retriggering the same pitch.
   // Some MIDI players stop the newly started note if its note-off comes last.

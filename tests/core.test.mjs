@@ -257,7 +257,7 @@ test('voice projects add bounded transcripts, phrases, vocal layers, melody, tun
   assert.deepEqual([defaultPhrase.gapMs,defaultPhrase.crossfadeMs],[35,0]);
   assert.equal(voice.melody.tuning,480);
   assert.equal(voice.melody.harmonyInterval,3);
-  assert.deepEqual(voice.melody.notes[0],{midi:108,step:0,duration:99,word:'',layer:'lead'});
+  assert.deepEqual(voice.melody.notes[0],{midi:108,step:0,duration:99,velocity:96,word:'',layer:'lead'});
   const fullSong=normaliseProject({voice:{melody:{notes:[{step:MAX_MELODY_STEPS-1,duration:16}]}}}).voice.melody.notes[0];
   assert.deepEqual([fullSong.step,fullSong.duration],[MAX_MELODY_STEPS-1,1],'the final sixteenth of a 256-bar Song remains editable without extending beyond the project limit');
   const harmony=normaliseProject({voice:{melody:{harmonyInterval:7,notes:[{midi:67,layer:'harmony'}]}}}).voice.melody;
@@ -315,12 +315,15 @@ test('melody uses A4 tuning and exports a MIDI track; rap syllable counts remain
   assert.equal(estimateSyllables('wishes boxes dances'),6,'common sibilant -es endings should keep their pronounced syllable');
   assert.equal(estimateSyllables('wanted needed'),4,'-ed should add a syllable after t or d');
   assert.equal(estimateSyllables('played waved'),2,'-ed should remain silent after other consonants');
-  const file=midiFile([{midi:69,step:0,duration:4}],120,440);
+  const file=midiFile([{midi:69,step:0,duration:4,velocity:83}],120,440);
   assert.equal(file.type,'audio/midi');
   const bytes=new Uint8Array(await file.arrayBuffer());
   assert.equal(new TextDecoder().decode(bytes.slice(0,4)),'MThd');
   assert.ok(new TextDecoder().decode(bytes).includes('MTrk'));
   assert.ok(bytes.includes(0x90)&&bytes.includes(0x80));
+  const noteOn=bytes.findIndex((value,index)=>value===0x90&&bytes[index+1]===69);
+  assert.equal(bytes[noteOn+2],83,'MIDI note-on velocity should match the editable Melody dynamics');
+  assert.equal(normaliseProject({voice:{melody:{notes:[{midi:69,velocity:180}]}}}).voice.melody.notes[0].velocity,127,'Melody velocity should be bounded to the MIDI range');
 });
 test('MIDI ends an adjacent repeated pitch before retriggering it at the same tick',async()=>{
   const bytes=new Uint8Array(await midiFile([
