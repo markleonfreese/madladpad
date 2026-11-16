@@ -8,27 +8,28 @@ const svgElement=(name,attrs={})=>{
   return node;
 };
 
-export function renderMelodyRoll(host,notes,onChange,onAudition,focusIndex){
+export function renderMelodyRoll(host,notes,onChange,onAudition,focusIndex,maxSteps=MAX_MELODY_STEPS){
   host.replaceChildren();
+  const maxBars=Math.max(1,Math.ceil(maxSteps/STEP));view.bars=Math.min(view.bars,maxBars);view.firstBar=Math.min(view.firstBar,maxBars-view.bars+1);
   const toolbar=document.createElement('div');toolbar.className='melody-roll-toolbar';toolbar.setAttribute('role','group');toolbar.setAttribute('aria-label','Melody piano roll view');
   const barLabel=document.createElement('label');barLabel.textContent='FIRST BAR';
-  const firstBar=document.createElement('input');firstBar.type='number';firstBar.min='1';firstBar.max=String(257-view.bars);firstBar.value=String(view.firstBar);firstBar.inputMode='numeric';firstBar.setAttribute('aria-label','Piano roll first bar');barLabel.append(firstBar);
+  const firstBar=document.createElement('input');firstBar.type='number';firstBar.min='1';firstBar.max=String(maxBars-view.bars+1);firstBar.value=String(view.firstBar);firstBar.inputMode='numeric';firstBar.setAttribute('aria-label','Piano roll first bar');barLabel.append(firstBar);
   const rangeLabel=document.createElement('label');rangeLabel.textContent='LOW NOTE';
   const range=document.createElement('select');range.setAttribute('aria-label','Piano roll lowest pitch');
   for(const midi of [24,36,48,60,72,84]){const option=document.createElement('option');option.value=String(midi);option.textContent=`${midiNoteName(midi)} · MIDI ${midi}`;range.append(option);}
   range.value=String(view.lowestMidi);rangeLabel.append(range);
   const barsLabel=document.createElement('label');barsLabel.textContent='VIEW';
   const bars=document.createElement('select');bars.setAttribute('aria-label','Piano roll bars in view');
-  for(const count of [1,2,4]){const option=document.createElement('option');option.value=String(count);option.textContent=`${count} ${count===1?'bar':'bars'}`;bars.append(option);}
+  for(const count of [1,2,3,4].filter(count=>count<=maxBars)){const option=document.createElement('option');option.value=String(count);option.textContent=`${count} ${count===1?'bar':'bars'}`;bars.append(option);}
   bars.value=String(view.bars);barsLabel.append(bars);
   const back=document.createElement('button');back.type='button';back.className='pill-button';back.textContent='‹';back.setAttribute('aria-label','Show earlier piano roll bars');
   const forward=document.createElement('button');forward.type='button';forward.className='pill-button';forward.textContent='›';forward.setAttribute('aria-label','Show later piano roll bars');
   const rangeText=document.createElement('output');rangeText.className='melody-roll-range';
   const render=focusIndex=>{
-    view.firstBar=clamp(Math.round(view.firstBar),1,257-view.bars);
+    view.firstBar=clamp(Math.round(view.firstBar),1,maxBars-view.bars+1);
     const lastBar=view.firstBar+view.bars-1,start=(view.firstBar-1)*16,end=start+view.bars*16,width=AXIS+view.bars*16*STEP;
-    firstBar.value=String(view.firstBar);firstBar.max=String(257-view.bars);range.value=String(view.lowestMidi);bars.value=String(view.bars);
-    back.disabled=view.firstBar===1;forward.disabled=lastBar===256;
+    firstBar.value=String(view.firstBar);firstBar.max=String(maxBars-view.bars+1);range.value=String(view.lowestMidi);bars.value=String(view.bars);
+    back.disabled=view.firstBar===1;forward.disabled=lastBar===maxBars;
     rangeText.textContent=`Bars ${view.firstBar}–${lastBar}`;
     const svg=svgElement('svg',{class:'melody-roll-svg',viewBox:`0 0 ${width} ${HEIGHT}`,preserveAspectRatio:'none',role:'group','aria-label':`Melody piano roll, bars ${view.firstBar} through ${lastBar}, pitches ${midiNoteName(view.lowestMidi)} to ${midiNoteName(view.lowestMidi+ROWS-1)}`});
     svg.append(svgElement('rect',{x:AXIS,y:TOP,width:width-AXIS,height:HEIGHT-TOP,fill:'#111812','data-roll-grid':'true'}));
@@ -59,7 +60,7 @@ export function renderMelodyRoll(host,notes,onChange,onAudition,focusIndex){
     status.textContent=shown.length?`${shown.length} note${shown.length===1?'':'s'} in this view. Tap an empty row to add a note. Drag a note to move it and its right handle to resize it.`:'No notes in this view. Tap an empty row to add a note.';
     status.setAttribute('aria-label',status.textContent);
     if(Number.isInteger(focusIndex))host.querySelector(`[data-note-index="${focusIndex}"]`)?.focus();
-    attachInteractions(svg,{notes,start,end,visibleSteps,width,high,onChange,onAudition});
+    attachInteractions(svg,{notes,start,end,visibleSteps,width,high,onChange,onAudition,maxSteps});
   };
   toolbar.append(barLabel,rangeLabel,barsLabel,back,forward,rangeText);
   const scroll=document.createElement('div');scroll.className='melody-roll-scroll';
@@ -73,7 +74,7 @@ export function renderMelodyRoll(host,notes,onChange,onAudition,focusIndex){
   render(focusIndex);
 }
 
-function attachInteractions(svg,{notes,start,end,visibleSteps,width,high,onChange,onAudition}){
+function attachInteractions(svg,{notes,start,end,visibleSteps,width,high,onChange,onAudition,maxSteps}){
   const position=event=>{const rect=svg.getBoundingClientRect();return {x:clamp((event.clientX-rect.left)/rect.width*width,AXIS,width),y:clamp((event.clientY-rect.top)/rect.height*HEIGHT,TOP,HEIGHT-1)};};
   let gesture=null;
   svg.addEventListener('pointerdown',event=>{
@@ -87,13 +88,13 @@ function attachInteractions(svg,{notes,start,end,visibleSteps,width,high,onChang
     if(!event.target.closest('[data-roll-grid]'))return;
     const point=position(event),row=clamp(Math.floor((point.y-TOP)/ROW),0,ROWS-1),step=clamp(start+Math.floor((point.x-AXIS)/STEP),start,end-1);
     if(notes.length>=MAX_MELODY_NOTES){const status=svg.parentElement.parentElement.querySelector('.melody-roll-status');status.textContent=`The melody has reached its ${MAX_MELODY_NOTES}-note limit.`;return;}
-    notes.push({midi:high-row,step,duration:Math.min(4,MAX_MELODY_STEPS-step),velocity:96,word:'',layer:'lead'});
+    notes.push({midi:high-row,step,duration:Math.min(4,maxSteps-step),velocity:96,word:'',layer:'lead'});
     onChange(notes.length-1);
   });
   svg.addEventListener('pointermove',event=>{
     if(!gesture)return;const point=position(event),deltaStep=Math.round((point.x-gesture.x)/width*visibleSteps);
-    if(gesture.kind==='resize')gesture.note.duration=clamp(gesture.duration+deltaStep,.125,MAX_MELODY_STEPS-gesture.note.step);
-    else {gesture.note.step=clamp(gesture.step+deltaStep,0,MAX_MELODY_STEPS-1);gesture.note.midi=clamp(gesture.midi-Math.round((point.y-gesture.y)/HEIGHT*HEIGHT/ROW),24,108);gesture.note.duration=clamp(gesture.duration,.125,MAX_MELODY_STEPS-gesture.note.step);}
+    if(gesture.kind==='resize')gesture.note.duration=clamp(gesture.duration+deltaStep,.125,maxSteps-gesture.note.step);
+    else {gesture.note.step=clamp(gesture.step+deltaStep,0,maxSteps-1);gesture.note.midi=clamp(gesture.midi-Math.round((point.y-gesture.y)/HEIGHT*HEIGHT/ROW),24,108);gesture.note.duration=clamp(gesture.duration,.125,maxSteps-gesture.note.step);}
     const group=svg.querySelector(`[data-note-group="${gesture.index}"]`);if(!group)return;
     const note=gesture.note,clippedStart=Math.max(start,note.step),clippedEnd=Math.min(end,note.step+note.duration),x=AXIS+(clippedStart-start)*STEP,y=TOP+(high-note.midi)*ROW,w=Math.max(3,(clippedEnd-clippedStart)*STEP-2);
     const shape=group.querySelector('[data-note-index]'),handle=group.querySelector('[data-resize-index]');
@@ -110,7 +111,7 @@ function attachInteractions(svg,{notes,start,end,visibleSteps,width,high,onChang
     const resize=handle||event.shiftKey;
     if(event.key==='ArrowLeft'||event.key==='ArrowRight'){
       event.preventDefault();const delta=event.key==='ArrowLeft'?-1:1;
-      if(resize)note.duration=clamp(note.duration+delta,.125,MAX_MELODY_STEPS-note.step);else note.step=clamp(note.step+delta,0,MAX_MELODY_STEPS-1);
+      if(resize)note.duration=clamp(note.duration+delta,.125,maxSteps-note.step);else note.step=clamp(note.step+delta,0,maxSteps-1);
     }else if(!handle&&(event.key==='ArrowUp'||event.key==='ArrowDown')){
       event.preventDefault();note.midi=clamp(note.midi+(event.key==='ArrowUp'?1:-1),24,108);
     }else return;
