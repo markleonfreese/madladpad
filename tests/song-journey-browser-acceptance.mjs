@@ -184,9 +184,11 @@ try{
   },audioBytes.toString('base64'));
   assert.ok(mixStats.rms>.01,`the exported audio should contain the imported vocal tone (RMS ${mixStats.rms})`);
   assert.ok(mixStats.duration>=8,`the exported mix should continue across the first eight-bar section boundary, got ${mixStats.duration} seconds`);
-  if((await page.locator('#studio-play').textContent()).includes('STOP')){await openScreen('beats');await page.locator('#studio-play').click();}
-
   await openScreen('beats');
+  if(await page.locator('#studio-play').getAttribute('aria-pressed')==='true'){
+    await page.locator('#studio-play').click();
+    await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='false');
+  }
   await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='true');
   await openScreen('export');
