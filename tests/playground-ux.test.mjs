@@ -55,3 +55,24 @@ test('beat selection and recording are clear, video framing defaults to followin
   assert.match(app,/\$\('export-lab'\)\.append\(\$\('video-director-details'\)\)/);
   assert.match(html,/<summary>Video framing &amp; formats<\/summary>/);
 });
+
+test('one Song arrangement owner, visible named patterns and no redundant action buttons',()=>{
+  const beat=html.indexOf('id="sequencer"');
+  const tracks=html.indexOf('id="overdub-lab"');
+  const exportStage=html.indexOf('id="export-lab"');
+  const patternLibrary=html.indexOf('id="pattern-library-title"');
+  const song=html.indexOf('id="song-arranger"');
+  assert.ok(beat<patternLibrary&&patternLibrary<tracks,'saved A/B/C patterns must be visible in Beat Maker');
+  assert.ok(tracks<song&&song<exportStage,'the single editable Song arrangement must sit in Tracks');
+  const advancedEnd=html.indexOf('</details>',html.indexOf('id="beat-advanced"'));
+  assert.ok(patternLibrary>advancedEnd,'saved patterns should not require opening Advanced beats');
+  for(const id of ['play-seq','make-video','export-pack-action','song-view','pattern-view']){
+    assert.doesNotMatch(html,new RegExp('id="'+id+'"'),'duplicate or redundant '+id+' action');
+  }
+  for(const id of ['song-arranger','scene-select','studio-play','export-button']){
+    assert.equal((html.match(new RegExp('id="'+id+'"','g'))||[]).length,1,'exactly one primary '+id+' control');
+  }
+  assert.match(app,/if\(screen==='overdub'&&sequenceView!=='song'\)setSequenceView\('song'\)/);
+  assert.match(app,/if\(screen==='beats'&&sequenceView!=='patterns'\)setSequenceView\('patterns'\)/);
+  assert.match(app,/renderSong\(\);voiceLab\?\.refreshTimeline\?\.\(\);queueSave\(\)/,'song changes should update the waveform ruler');
+});

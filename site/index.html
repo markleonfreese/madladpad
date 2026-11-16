@@ -156,7 +156,6 @@
       <div class="sequencer-head">
         <div><h2>Make it a loop.</h2><p>Tap a step to add a sound. Press Play when you’re ready.</p></div>
         <div class="seq-buttons">
-          <button class="play-button" id="play-seq" aria-pressed="false">▶ PLAY</button>
           <label class="beat-pad-choice">PAD TO SEQUENCE<select id="beat-pad-select" aria-label="Pad to edit in Sequence"></select></label>
           <button class="pill-button" id="track-view" aria-pressed="true">FOCUS A PAD</button>
           <button class="pill-button" id="auto-beat">SURPRISE ME</button>
@@ -170,41 +169,28 @@
               <label class="pattern-setting">QUANTISE<select id="pattern-quantize"><option value="nearest">NEAREST GRID</option><option value="off">FREE</option></select></label>
               <button class="pill-button record-pattern-button" id="record-pattern" aria-pressed="false">● RECORD PATTERN</button>
               <button class="pill-button" id="undo-pattern" disabled>UNDO TAKE</button>
-              <label class="pattern-setting">SCENE<select id="scene-select" aria-label="Select scene"><option value="" disabled selected>No saved scenes</option></select></label>
-              <input id="scene-name" class="scene-name-input" maxlength="32" placeholder="Scene name" aria-label="Scene name">
-              <button class="pill-button" id="save-scene" disabled>SAVE NEW</button>
-              <button class="pill-button" id="update-scene" disabled>UPDATE</button>
-              <button class="pill-button" id="launch-scene" disabled>LOAD SCENE</button>
-              <button class="pill-button" id="delete-scene" disabled>DELETE</button>
             </div>
           </details>
         </div>
       </div>
-      <div class="sequence-view-tabs" role="group" aria-label="Sequence editing view">
-        <button id="pattern-view" class="pill-button" type="button" aria-pressed="true">PATTERNS</button>
-        <button id="song-view" class="pill-button" type="button" aria-pressed="false">SONG</button>
-      </div>
-      <section id="song-arranger" class="song-arranger" hidden aria-labelledby="song-title">
-        <h3 id="song-title">Arrange a full song.</h3>
-        <p>Create a beat, save it as A, B or C, then arrange repeating sections on a longer timeline. Change bar lengths without copying any audio.</p>
-        <div class="song-add-controls">
-          <label>SECTION <select id="song-scene-select" aria-label="Pattern to add to Song"></select></label>
-          <label>NUMBER OF BARS <select id="song-bars"><option value="1">1</option><option value="2">2</option><option value="4" selected>4</option><option value="8">8</option><option value="16">16</option><option value="32">32</option><option value="64">64</option></select></label>
-          <button type="button" class="accent-button" id="song-add-section">ADD SECTION</button>
-          <button type="button" class="quiet-button" id="song-back-to-patterns">Edit patterns</button>
-        </div>
-        <p class="song-drag-help">Select a section to edit it. Drag its move handle to rearrange; drag its right edge to change length. Keyboard users can use the arrow handles and the controls underneath. For short sections, use the bar-length input.</p>
-        <div class="song-timeline-scroll" tabindex="0" aria-label="Song timeline, scroll horizontally to view all bars"><div id="song-bar-ruler" class="song-bar-ruler" aria-hidden="true"></div><div id="song-timeline" role="group" aria-label="Saved pattern sections in song order"></div></div>
-        <div id="song-clip-editor" class="song-clip-editor" role="group" aria-label="Edit or reorder song sections"></div>
-        <p id="song-status" class="pattern-record-status" role="status" aria-live="polite"></p>
-      </section>
       <div id="sequence-pattern-content">
-      <p id="scene-status" class="pattern-record-status" role="status" aria-live="polite">Save the current pattern as a named scene.</p>
+      <section class="pattern-library" aria-labelledby="pattern-library-title">
+        <h3 id="pattern-library-title">Your beat patterns</h3>
+        <p>Name and save loops A, B or C. Reuse them in Tracks to arrange a complete song.</p>
+        <div class="pattern-library-controls">
+              <label class="pattern-setting">PATTERN<select id="scene-select" aria-label="Select saved beat pattern"><option value="" disabled selected>No saved patterns</option></select></label>
+              <input id="scene-name" class="scene-name-input" maxlength="32" placeholder="Pattern name (A, B, C)" aria-label="Pattern name">
+              <button class="pill-button" id="save-scene" disabled>SAVE PATTERN</button>
+              <button class="pill-button" id="update-scene" disabled>UPDATE</button>
+              <button class="pill-button" id="launch-scene" disabled>LOAD PATTERN</button>
+              <button class="pill-button" id="delete-scene" disabled>DELETE</button>
+        </div>
+      </section>
+      <p id="scene-status" class="pattern-record-status" role="status" aria-live="polite">Save this beat as a reusable pattern, then arrange it in Tracks.</p>
       <p id="pattern-record-status" class="pattern-record-status" role="status" aria-live="polite">Ready to record pad taps into the 16-step loop. Coarser grids hide finer steps but keep them saved.</p>
       <div class="steps" id="steps" hidden role="group" aria-label="Pattern steps for selected pad"></div>
       <div class="track-grid" id="track-grid" role="group" aria-label="Patterns for all pads"></div>
       <div class="timeline"><span>1</span><span>2</span><span>3</span><span>4</span></div>
-      <div class="beat-next-step"><p>Happy with your loop?</p><button class="pill-button" id="make-video">Make a video</button></div>
       </div>
     </section>
 
@@ -295,8 +281,22 @@
 
     <section id="overdub-lab" class="studio-stage" aria-labelledby="overdub-title" hidden>
       <div class="section-label"><span>04 / TRACKS</span><span>RECORD · IMPORT · MIX</span></div>
-      <h2 id="overdub-title">Arrange and edit your recordings.</h2>
-      <p class="voice-intro">Record or import an audio/video take. Move it directly on the timeline, drag its edges to trim, and adjust its mix. Original files remain untouched.</p>
+      <h2 id="overdub-title">Arrange your song, record and mix.</h2>
+      <p class="voice-intro">Arrange A/B/C sections here, then record or import vocals, instruments and video over the full Song. Move or trim clips on the shared timeline; original media remains untouched.</p>
+      <section id="song-arranger" class="song-arranger" hidden aria-labelledby="song-title">
+        <h3 id="song-title">Build the whole song.</h3>
+        <p>Arrange the A, B and C patterns you made in Beat Maker. Select each section’s length; audio and video below share the same Song ruler. Each section can span 1–64 bars, with a 256-bar Song limit.</p>
+        <div class="song-add-controls">
+          <label>SECTION <select id="song-scene-select" aria-label="Pattern to add to Song"></select></label>
+          <label>NUMBER OF BARS <select id="song-bars"><option value="1">1</option><option value="2">2</option><option value="4" selected>4</option><option value="8">8</option><option value="16">16</option><option value="32">32</option><option value="64">64</option></select></label>
+          <button type="button" class="accent-button" id="song-add-section">ADD SECTION</button>
+          <button type="button" class="quiet-button" id="song-back-to-patterns">Edit patterns</button>
+        </div>
+        <p class="song-drag-help">Select a section to edit it. Drag its move handle to rearrange; drag its right edge to change length. Keyboard users can use the arrow handles and the controls underneath. For short sections, use the bar-length input.</p>
+        <div class="song-timeline-scroll" tabindex="0" aria-label="Song timeline, scroll horizontally to view all bars"><div id="song-bar-ruler" class="song-bar-ruler" aria-hidden="true"></div><div id="song-timeline" role="group" aria-label="Saved pattern sections in song order"></div></div>
+        <div id="song-clip-editor" class="song-clip-editor" role="group" aria-label="Edit or reorder song sections"></div>
+        <p id="song-status" class="pattern-record-status" role="status" aria-live="polite"></p>
+      </section>
       <section class="voice-card" aria-labelledby="vocal-layers-title">
         <h3 id="vocal-layers-title">Audio tracks</h3>
         <p class="voice-note">Use the Song arrangement as your backing track. Original files stay local; edits change track placement and trim, not the source.</p>
@@ -338,7 +338,6 @@
         <label class="field">ASPECT RATIO<select id="video-aspect"><option value="4:3">4:3</option><option value="16:9">16:9 · wide</option><option value="9:16">9:16 · vertical</option><option value="1:1">1:1 · square</option></select></label>
         <label class="field">VIDEO FORMAT<select id="record-video-format"><option value="auto">Browser's best supported</option><option value="mp4">MP4 (if supported)</option><option value="webm">WebM (if supported)</option></select></label>
         <label class="field">AUDIO FORMAT<select id="record-audio-format"><option value="auto">Browser's best supported</option><option value="m4a">M4A (if supported)</option><option value="webm">WebM (if supported)</option><option value="ogg">Ogg (if supported)</option></select></label>
-        <button class="quiet-button" id="export-pack-action" type="button">Export project pack</button>
         </div></details>
       </div>
       <p id="export-record-status" class="voice-status" role="status">Record a video or audio take to preview it here. Completed takes also download automatically.</p>
