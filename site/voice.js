@@ -1,4 +1,4 @@
-import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, MAX_SONG_BARS, MAX_REVERSED_AUDIO_BYTES, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, findRecorderMime, extensionForAudioMime, extensionForMime, vocalLayerClip, songVideoPositionAtStep, songLayerPlaybackEvents, songTotalBars, editSongTrackOnTimeline, AsyncActivity, localRecordingBudget, localJournaledRecordingBudget, createBoundedRecordingCapture } from './core.js';
+import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_MELODY_STEPS, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, MAX_SONG_BARS, MAX_REVERSED_AUDIO_BYTES, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, findRecorderMime, extensionForAudioMime, extensionForMime, vocalLayerClip, songVideoPositionAtStep, songLayerPlaybackEvents, songTotalBars, editSongTrackOnTimeline, AsyncActivity, localRecordingBudget, localJournaledRecordingBudget, createBoundedRecordingCapture } from './core.js';
 import { getValue, saveVoiceLayer, deleteVoiceLayer, saveSongVideoLayer, deleteSongVideoLayer, beginAudioRecordingRecovery, appendAudioRecordingRecoveryChunk, listInterruptedAudioRecordings, deleteInterruptedAudioRecording, beginVideoRecordingRecovery, appendVideoRecordingRecoveryChunk, listInterruptedVideoRecordings, deleteInterruptedVideoRecording } from './storage.js';
 import { detectPitch } from './tuner.js';
 
@@ -283,12 +283,23 @@ function renderMelody(project, save) {
       pitch.lastElementChild.append(option);
     }
     pitch.value = String(note.midi);
-    const step = document.createElement('input'); step.type = 'number'; step.min = '0'; step.max = '255'; step.value = note.step; step.setAttribute('aria-label', `${noteLabel} sixteenth step`);
-    const duration = document.createElement('input'); duration.type = 'number'; duration.min = '.125'; duration.max = '16'; duration.step = '.125'; duration.value = note.duration; duration.setAttribute('aria-label', `${noteLabel} duration in sixteenth steps`);
+    const step = document.createElement('input'); step.type = 'number'; step.min = '0'; step.max = String(MAX_MELODY_STEPS-1); step.value = note.step; step.setAttribute('aria-label', `${noteLabel} sixteenth step`);
+    const duration = document.createElement('input'); duration.type = 'number'; duration.min = '.125'; duration.max = String(MAX_MELODY_STEPS-note.step); duration.step = '.125'; duration.value = note.duration; duration.setAttribute('aria-label', `${noteLabel} duration in sixteenth steps`);
     const word = document.createElement('select'); word.setAttribute('aria-label', `Assign phrase word to ${noteLabel.toLowerCase()}`);
     wordOptions.forEach(value => { const option = document.createElement('option'); option.value = value; option.textContent = value || 'No word cue'; word.append(option); }); word.value = note.word;
     for (const [input, key] of [[pitch, 'midi'], [step, 'step'], [duration, 'duration'], [word, 'word']]) input.addEventListener('change', () => {
       note[key] = key === 'word' ? input.value : Number(input.value);
+      if(key==='step'){
+        note.step=clamp(Math.round(note.step),0,MAX_MELODY_STEPS-1);
+        input.value=String(note.step);
+        duration.max=String(MAX_MELODY_STEPS-note.step);
+        note.duration=clamp(note.duration,.125,MAX_MELODY_STEPS-note.step);
+        duration.value=String(note.duration);
+      }
+      if(key==='duration'){
+        note.duration=clamp(note.duration,.125,MAX_MELODY_STEPS-note.step);
+        input.value=String(note.duration);
+      }
       if (key === 'midi') noteName.textContent = `${noteLabel} · ${midiNoteName(note.midi)} · ${midiFrequency(note.midi, project.voice.melody.tuning).toFixed(1)} Hz`;
       if (key === 'step') positionName.textContent = melodyPositionLabel(note.step);
       save();
@@ -1575,7 +1586,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   return {
     scheduleMelodyStep(absoluteStep,time,bpm){
       if(!project.voice.melody.followBeat)return;
-      const position=absoluteStep%256,secondsPerStep=60/bpm/4;
+      const position=absoluteStep%MAX_MELODY_STEPS,secondsPerStep=60/bpm/4;
       for(const note of project.voice.melody.notes)if(note.step===position)scheduleMelodyNote(note,time,secondsPerStep);
     },
     highlightRapBar(absoluteStep){

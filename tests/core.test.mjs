@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withModelReferrerPolicy } from '../site/voice-model-fetch.js';
-import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, songVideoPositionAtStep, songLayerPlaybackEvents, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars, reorderSongClips, resizeSongClipBars, editSongTrackOnTimeline, localRecordingBudget, localJournaledRecordingBudget, MAX_MEDIA_BYTES, RECORDING_STORAGE_RESERVE_BYTES, createBoundedRecordingCapture } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, MAX_MELODY_STEPS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, songVideoPositionAtStep, songLayerPlaybackEvents, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars, reorderSongClips, resizeSongClipBars, editSongTrackOnTimeline, localRecordingBudget, localJournaledRecordingBudget, MAX_MEDIA_BYTES, RECORDING_STORAGE_RESERVE_BYTES, createBoundedRecordingCapture } from '../site/core.js';
 
 test('long-form recording budget respects both project and browser storage with headroom', () => {
   assert.equal(localRecordingBudget(10 * 1024 * 1024, {usage:90 * 1024 * 1024,quota:100 * 1024 * 1024}), 10 * 1024 * 1024 - RECORDING_STORAGE_RESERVE_BYTES);
@@ -257,7 +257,9 @@ test('voice projects add bounded transcripts, phrases, vocal layers, melody, tun
   assert.deepEqual([defaultPhrase.gapMs,defaultPhrase.crossfadeMs],[35,0]);
   assert.equal(voice.melody.tuning,480);
   assert.equal(voice.melody.harmonyInterval,3);
-  assert.deepEqual(voice.melody.notes[0],{midi:108,step:0,duration:16,word:'',layer:'lead'});
+  assert.deepEqual(voice.melody.notes[0],{midi:108,step:0,duration:99,word:'',layer:'lead'});
+  const fullSong=normaliseProject({voice:{melody:{notes:[{step:MAX_MELODY_STEPS-1,duration:16}]}}}).voice.melody.notes[0];
+  assert.deepEqual([fullSong.step,fullSong.duration],[MAX_MELODY_STEPS-1,1],'the final sixteenth of a 256-bar Song remains editable without extending beyond the project limit');
   const harmony=normaliseProject({voice:{melody:{harmonyInterval:7,notes:[{midi:67,layer:'harmony'}]}}}).voice.melody;
   assert.equal(harmony.harmonyInterval,7);
   assert.equal(harmony.notes[0].layer,'harmony');
@@ -307,6 +309,8 @@ test('melody uses A4 tuning and exports a MIDI track; rap syllable counts remain
   assert.equal(melodyPositionLabel(15),'Bar 1 · Beat 4 · 16th 4');
   assert.equal(melodyPositionLabel(16),'Bar 2 · Beat 1 · 16th 1');
   assert.equal(melodyPositionLabel(255),'Bar 16 · Beat 4 · 16th 4');
+  assert.equal(melodyPositionLabel(1024),'Bar 65 · Beat 1 · 16th 1','the melody position readout should continue through the full 256-bar Song');
+  assert.equal(melodyPositionLabel(MAX_MELODY_STEPS-1),'Bar 256 · Beat 4 · 16th 4');
   assert.equal(estimateSyllables('Hello little music maker'),8);
   assert.equal(estimateSyllables('wishes boxes dances'),6,'common sibilant -es endings should keep their pronounced syllable');
   assert.equal(estimateSyllables('wanted needed'),4,'-ed should add a syllable after t or d');
@@ -342,6 +346,23 @@ test('MIDI ends an adjacent repeated pitch before retriggering it at the same ti
     events.push({tick,status,pitch,velocity});
   }
   assert.deepEqual(events.filter(event=>event.tick===480&&event.pitch===69).map(event=>event.status),[0x80,0x90]);
+});
+test('MIDI notes export their full multi-bar positions and stop at the 256-bar project limit',async()=>{
+  const project=normaliseProject({voice:{melody:{notes:[{midi:48,step:1024,duration:8},{midi:50,step:MAX_MELODY_STEPS-1,duration:16}]}}});
+  const bytes=new Uint8Array(await midiFile(project.voice.melody.notes,90).arrayBuffer());
+  let offset=22,tick=0;const events=[];
+  while(offset<bytes.length){
+    let delta=0,byte;
+    do{byte=bytes[offset++];delta=(delta<<7)|(byte&0x7f);}while(byte&0x80);
+    tick+=delta;
+    const status=bytes[offset++];
+    if(status===0xff){const type=bytes[offset++];let length=0,next;do{next=bytes[offset++];length=(length<<7)|(next&0x7f);}while(next&0x80);if(type===0x2f)break;offset+=length;continue;}
+    const pitch=bytes[offset++];offset++;
+    events.push({tick,status,pitch});
+  }
+  assert.ok(events.some(event=>event.tick===1024*120&&event.status===0x90&&event.pitch===48),'Bar 65 note-on should export at its absolute MIDI tick');
+  assert.ok(events.some(event=>event.tick===(1024+8)*120&&event.status===0x80&&event.pitch===48),'Bar 65 note-off should preserve its duration');
+  assert.ok(events.some(event=>event.tick===MAX_MELODY_STEPS*120&&event.status===0x80&&event.pitch===50),'final-bar note duration should stop exactly at the 256-bar boundary');
 });
 test('WAV encoder writes bounded little-endian 16-bit PCM for mono and stereo buffers',async()=>{
   const stereo={sampleRate:44100,numberOfChannels:2,length:2,getChannelData:channel=>channel===0?Float32Array.from([-1,.5]):Float32Array.from([1,-.5])};
