@@ -1,6 +1,7 @@
 import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_MELODY_STEPS, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, MAX_SONG_BARS, MAX_REVERSED_AUDIO_BYTES, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, findRecorderMime, extensionForAudioMime, extensionForMime, vocalLayerClip, songVideoPositionAtStep, songLayerPlaybackEvents, songTotalBars, editSongTrackOnTimeline, AsyncActivity, localRecordingBudget, localJournaledRecordingBudget, createBoundedRecordingCapture } from './core.js';
 import { getValue, saveVoiceLayer, deleteVoiceLayer, saveSongVideoLayer, deleteSongVideoLayer, beginAudioRecordingRecovery, appendAudioRecordingRecoveryChunk, listInterruptedAudioRecordings, deleteInterruptedAudioRecording, beginVideoRecordingRecovery, appendVideoRecordingRecoveryChunk, listInterruptedVideoRecordings, deleteInterruptedVideoRecording } from './storage.js';
 import { detectPitch } from './tuner.js';
+import { renderMelodyRoll } from './melody-roll.js';
 
 const $ = id => document.getElementById(id);
 const rhymes = {
@@ -253,7 +254,7 @@ function renderPhrases(project, audio, notify, save, assignWordsToPads) {
   });
 }
 
-function renderMelody(project, save) {
+function renderMelody(project, save, onAudition, rollFocusIndex) {
   const host = $('melody-notes'); host.replaceChildren();
   $('melody-follow-beat').checked=project.voice.melody.followBeat;
   $('melody-tuning').value = project.voice.melody.tuning;
@@ -263,6 +264,9 @@ function renderMelody(project, save) {
   keySelect.value = String(project.voice.melody.key);
   $('melody-scale').value = project.voice.melody.scale;
   const wordOptions = [''].concat(project.voice.phrases.flatMap(phrase => phrase.words.map(word => word.text)));
+  const drawRoll = focusIndex => renderMelodyRoll($('melody-roll'),project.voice.melody.notes,index=>{
+    save();renderMelody(project,save,onAudition,index);
+  },onAudition,focusIndex);
   project.voice.melody.notes.forEach((note, index) => {
     const row = document.createElement('div'); row.className = 'melody-note';
     const noteLabel = `${note.layer === 'harmony' ? 'Harmony' : 'Note'} ${index + 1}`;
@@ -285,9 +289,10 @@ function renderMelody(project, save) {
     pitch.value = String(note.midi);
     const step = document.createElement('input'); step.type = 'number'; step.min = '0'; step.max = String(MAX_MELODY_STEPS-1); step.value = note.step; step.setAttribute('aria-label', `${noteLabel} sixteenth step`);
     const duration = document.createElement('input'); duration.type = 'number'; duration.min = '.125'; duration.max = String(MAX_MELODY_STEPS-note.step); duration.step = '.125'; duration.value = note.duration; duration.setAttribute('aria-label', `${noteLabel} duration in sixteenth steps`);
+    const velocity = document.createElement('input'); velocity.type='number'; velocity.min='1'; velocity.max='127'; velocity.step='1'; velocity.value=note.velocity; velocity.setAttribute('aria-label',`${noteLabel} MIDI velocity`);
     const word = document.createElement('select'); word.setAttribute('aria-label', `Assign phrase word to ${noteLabel.toLowerCase()}`);
     wordOptions.forEach(value => { const option = document.createElement('option'); option.value = value; option.textContent = value || 'No word cue'; word.append(option); }); word.value = note.word;
-    for (const [input, key] of [[pitch, 'midi'], [step, 'step'], [duration, 'duration'], [word, 'word']]) input.addEventListener('change', () => {
+    for (const [input, key] of [[pitch, 'midi'], [step, 'step'], [duration, 'duration'], [velocity,'velocity'], [word, 'word']]) input.addEventListener('change', () => {
       note[key] = key === 'word' ? input.value : Number(input.value);
       if(key==='step'){
         note.step=clamp(Math.round(note.step),0,MAX_MELODY_STEPS-1);
@@ -300,15 +305,21 @@ function renderMelody(project, save) {
         note.duration=clamp(note.duration,.125,MAX_MELODY_STEPS-note.step);
         input.value=String(note.duration);
       }
+      if(key==='velocity'){
+        note.velocity=clamp(Math.round(note.velocity),1,127);
+        input.value=String(note.velocity);
+      }
       if (key === 'midi') noteName.textContent = `${noteLabel} · ${midiNoteName(note.midi)} · ${midiFrequency(note.midi, project.voice.melody.tuning).toFixed(1)} Hz`;
       if (key === 'step') positionName.textContent = melodyPositionLabel(note.step);
       save();
+      drawRoll();
     });
-    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'pill-button'; remove.textContent = '×'; remove.setAttribute('aria-label', `Delete ${noteLabel.toLowerCase()}`); remove.addEventListener('click', () => { project.voice.melody.notes.splice(index, 1); save(); renderMelody(project, save); });
-    row.append(description, pitch, step, duration, word, remove); host.append(row);
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'pill-button'; remove.textContent = '×'; remove.setAttribute('aria-label', `Delete ${noteLabel.toLowerCase()}`); remove.addEventListener('click', () => { project.voice.melody.notes.splice(index, 1); save(); renderMelody(project, save, onAudition); });
+    row.append(description, pitch, step, duration, velocity, word, remove); host.append(row);
   });
   $('melody-add').disabled = project.voice.melody.notes.length >= MAX_MELODY_NOTES;
   $('melody-harmony-add').disabled = project.voice.melody.notes.length >= MAX_MELODY_NOTES;
+  drawRoll(rollFocusIndex);
 }
 
 function renderRap(project, save, audio, notify) {
@@ -1001,7 +1012,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     for (const [id, file] of getMediaFiles()) if (/^(audio|video)\//.test(file.type)) { const option = document.createElement('option'); option.value = id; option.textContent = `${project.pads[id].name} · ${file.name || file.type}`; select.append(option); }
     if ([...select.options].some(option => option.value === selected)) select.value = selected;
     updateConsentState(); updateManualEntryState(); renderTranscriptPicker();
-    renderWords(project, save, activeTranscript); renderPhrases(project, audio, notify, save, assignWordsToPads); renderMelody(project, save); renderRap(project, save, audio, notify); renderVocalLayers();renderVideoLayers();
+    renderWords(project, save, activeTranscript); renderPhrases(project, audio, notify, save, assignWordsToPads); renderMelody(project, save,auditionMelodyNote); renderRap(project, save, audio, notify); renderVocalLayers();renderVideoLayers();
   }
   const stopOverdub = () => {
     const take = vocalRecording;
@@ -1470,7 +1481,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     project.voice.phrases.push({ id: `${Date.now()}`, name: `Phrase ${project.voice.phrases.length + 1}`, gapMs: 35, crossfadeMs: 0, words });
     transcript.words.forEach(word => { word.selected = false; }); save(); render();
   });
-  $('melody-tuning').addEventListener('change', () => { project.voice.melody.tuning = clamp($('melody-tuning').value, 400, 480); save(); renderMelody(project, save); });
+  $('melody-tuning').addEventListener('change', () => { project.voice.melody.tuning = clamp($('melody-tuning').value, 400, 480); save(); renderMelody(project, save,auditionMelodyNote); });
   $('melody-key').addEventListener('change', () => { project.voice.melody.key = clamp(Math.round($('melody-key').value), 0, 11); save(); });
   $('melody-scale').addEventListener('change', () => { const scale = $('melody-scale').value; if (Object.hasOwn(MELODY_SCALES, scale)) { project.voice.melody.scale = scale; save(); } });
   $('melody-snap-scale').addEventListener('click', () => {
@@ -1489,6 +1500,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       if (noteName) noteName.textContent = `${note.layer === 'harmony' ? 'Harmony' : 'Note'} ${index + 1} · ${midiNoteName(pitch)} · ${midiFrequency(pitch, project.voice.melody.tuning).toFixed(1)} Hz`;
     });
     save();
+    renderMelody(project,save,auditionMelodyNote);
     const scaleName = $('melody-scale').selectedOptions[0]?.textContent || 'major';
     $('melody-scale-status').textContent = changed ? `${changed} note${changed === 1 ? '' : 's'} moved into ${MELODY_ROOTS[project.voice.melody.key]} ${scaleName}. Timing and word cues were kept.` : `All notes already fit ${MELODY_ROOTS[project.voice.melody.key]} ${scaleName}.`;
   });
@@ -1537,11 +1549,11 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     const originals=[...project.voice.phrases],words=originals.flatMap(phrase=>phrase.words.map(word=>({...word})));
     if(words.length>MAX_TRANSCRIPT_WORDS)return notify('The combined story exceeds the word limit. Use shorter phrases.');
     project.voice.phrases.push({id:`story-${Date.now()}`,name:'Story montage',gapMs:35,crossfadeMs:0,words});
-    save();renderPhrases(project,audio,notify,save,assignWordsToPads);renderMelody(project,save);
+    save();renderPhrases(project,audio,notify,save,assignWordsToPads);renderMelody(project,save,auditionMelodyNote);
     notify('Story montage created from the current phrase order; the original phrases remain intact.');
   });
   $('melody-harmony-interval').addEventListener('change', () => { const interval = Number($('melody-harmony-interval').value); if (!HARMONY_INTERVALS.includes(interval)) return; project.voice.melody.harmonyInterval = interval; save(); });
-  $('melody-add').addEventListener('click', () => { if (project.voice.melody.notes.length >= MAX_MELODY_NOTES) return; const notes = project.voice.melody.notes; notes.push({ midi: 60 + project.voice.melody.key, step: notes.length ? notes.at(-1).step + 4 : 0, duration: 4, word: '', layer: 'lead' }); save(); renderMelody(project, save); });
+  $('melody-add').addEventListener('click', () => { if (project.voice.melody.notes.length >= MAX_MELODY_NOTES) return; const notes = project.voice.melody.notes; notes.push({ midi: 60 + project.voice.melody.key, step: notes.length ? notes.at(-1).step + 4 : 0, duration: 4, velocity:96, word: '', layer: 'lead' }); save(); renderMelody(project, save,auditionMelodyNote); });
   $('melody-harmony-add').addEventListener('click', () => {
     const notes = project.voice.melody.notes;
     if (!notes.some(note => note.layer !== 'harmony')) return notify('Add a lead melody note before creating a harmony line.');
@@ -1554,7 +1566,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       notes.push({ ...note, midi, layer: 'harmony' }); existing.add(key); added++;
     }
     if (!added) return notify(skipped ? 'No harmony notes fit the current pitch range or available note limit.' : 'There are no lead notes to harmonize.');
-    save(); renderMelody(project, save);
+    save(); renderMelody(project, save,auditionMelodyNote);
     notify(`${added} harmony note${added === 1 ? '' : 's'} added at ${interval > 0 ? '+' : ''}${interval} semitones${skipped ? `; ${skipped} skipped` : ''}.`);
   });
   function scheduleMelodyNote(note,start,secondsPerStep){
@@ -1562,15 +1574,21 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     const cue=note.word&&project.voice.phrases.flatMap(phrase=>phrase.words).find(word=>word.text===note.word&&audio.sources.get(word.sourcePad)?.file);
     if(cue){
       const sourcePad=project.pads[cue.sourcePad];
-      audio.trigger(cue.sourcePad,{...sourcePad,start:cue.start,end:Math.min(cue.end,cue.start+length),pitch:clamp(note.midi-60,-12,12),speed:1},undefined,start);
+      audio.trigger(cue.sourcePad,{...sourcePad,start:cue.start,end:Math.min(cue.end,cue.start+length),pitch:clamp(note.midi-60,-12,12),speed:1,volume:clamp(sourcePad.volume*clamp(note.velocity??96,1,127)/96,0,1.5)},undefined,start);
       return;
     }
     const ctx=audio.context,oscillator=ctx.createOscillator(),gain=ctx.createGain();
     oscillator.type='triangle';oscillator.frequency.setValueAtTime(midiFrequency(note.midi,project.voice.melody.tuning),start);
-    gain.gain.setValueAtTime(.0001,start);gain.gain.linearRampToValueAtTime(.16,start+.015);
-    gain.gain.setValueAtTime(.16,Math.max(start+.016,start+length-.02));gain.gain.linearRampToValueAtTime(.0001,start+length);
+    const peak=.16*clamp(note.velocity??96,1,127)/127;
+    const attack=Math.min(.015,length*.35),release=Math.min(.02,length*.45),sustainEnd=Math.max(start+attack,start+length-release);
+    gain.gain.setValueAtTime(.0001,start);gain.gain.linearRampToValueAtTime(peak,start+attack);
+    gain.gain.setValueAtTime(peak,sustainEnd);gain.gain.linearRampToValueAtTime(.0001,start+length);
     oscillator.connect(gain).connect(audio.master);oscillator.start(start);oscillator.stop(start+length+.01);
     oscillator.onended=()=>{oscillator.disconnect();gain.disconnect();};
+  }
+  async function auditionMelodyNote(note){
+    await audio.unlock();
+    scheduleMelodyNote(note,audio.context.currentTime+.01,60/clamp(project.bpm,40,240)/4);
   }
   $('melody-play').addEventListener('click', async () => {
     if (!project.voice.melody.notes.length) return notify('Add a note to write your melody first.');

@@ -264,6 +264,12 @@
           <p class="voice-status" id="melody-scale-status" role="status" aria-live="polite">Choose a root and scale, then snap notes when you want a tonal starting point.</p>
           <div class="voice-actions"><button class="pill-button" id="melody-add">ADD NOTE</button><label class="voice-label">HARMONY INTERVAL<select id="melody-harmony-interval"><option value="3">+3 · minor third</option><option value="4">+4 · major third</option><option value="5">+5 · fourth</option><option value="7">+7 · fifth</option><option value="12">+12 · octave</option><option value="-3">−3 · minor third</option><option value="-4">−4 · major third</option><option value="-5">−5 · fourth</option><option value="-7">−7 · fifth</option><option value="-12">−12 · octave</option></select></label><button class="pill-button" id="melody-harmony-add">ADD HARMONY LINE</button><button class="pill-button" id="melody-play">▶ PLAY MELODY</button><button class="pill-button" id="melody-export">EXPORT MIDI</button></div>
           <label class="consent-line"><input id="melody-follow-beat" type="checkbox"> Loop the melody and harmony automatically with Sequence and include them in recorded mixes.</label>
+          <section class="melody-roll-panel" aria-labelledby="melody-roll-title">
+            <h4 id="melody-roll-title">Piano roll · up to 256 bars</h4>
+            <p class="voice-note">Tap an empty lane to add a note. Drag notes to move them; pull the right edge to resize. Focus a note and use arrows to edit, Enter to audition or Delete to remove. Set dynamics and exact values in Note details below.</p>
+            <div id="melody-roll" aria-label="Interactive Melody piano roll"></div>
+          </section>
+          <h4 class="melody-note-list-title">Note details</h4>
           <div id="melody-notes" class="melody-notes" role="group" aria-label="Melody notes"></div>
         </section>
 
