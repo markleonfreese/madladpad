@@ -84,6 +84,10 @@ let activeVoiceTool='transcript-title';
 function showStudioScreen() {
   const requested = location.hash.slice(1);
   const screen = STUDIO_SCREENS.has(requested) ? requested : 'sounds';
+  // Pattern editor and Song arrangement have distinct homes. Switching these
+  // transport modes stops a running take rather than silently changing it.
+  if(screen==='beats'&&sequenceView!=='patterns')setSequenceView('patterns');
+  if(screen==='overdub'&&sequenceView!=='song')setSequenceView('song');
   $('loop-settings').open = false;
   // Menus opened on a previous screen must never cover the current controls.
   $('session-menu').open = false;
@@ -201,9 +205,6 @@ function updateTransportButton() {
   $('studio-play').textContent = transportActivity.phase==='starting' ? '■ CANCEL START' : running ? '■ STOP' : sequenceView==='song'?'▶ PLAY SONG':'▶ PLAY LOOP';
   $('studio-play').setAttribute('aria-pressed',String(running));
   $('studio-play').classList.toggle('active',running);
-  $('play-seq').textContent = transportActivity.phase==='starting' ? '■ CANCEL' : running ? '■ STOP' : sequenceView==='song'?'▶ PLAY SONG':'▶ PLAY';
-  $('play-seq').setAttribute('aria-pressed',String(running));
-  $('play-seq').classList.toggle('active',running);
 }
 
 function rememberTake(kind,blob,durationSeconds=null) {
@@ -965,8 +966,6 @@ function setSequenceView(view,stopOnSwitch=true){
   const next=view==='song'?'song':'patterns';
   if(next!==sequenceView&&stopOnSwitch&&transportActivity.phase!=='idle')stopSequencer();
   sequenceView=next;
-  $('pattern-view').setAttribute('aria-pressed',String(next==='patterns'));
-  $('song-view').setAttribute('aria-pressed',String(next==='song'));
   $('sequence-pattern-content').hidden=next!=='patterns';
   $('song-arranger').hidden=next!=='song';
   if(next==='song')renderSong();
@@ -975,7 +974,7 @@ function setSequenceView(view,stopOnSwitch=true){
 function editSong(mutator){
   if(transportActivity.phase!=='idle')stopSequencer();
   mutator(project.song.clips);
-  renderSong();queueSave();
+  renderSong();voiceLab?.refreshTimeline?.();queueSave();
 }
 
 function bindSongClipHandle(handle,{kind,clip,index,barCount,timeline,wrapper,label}){
@@ -2012,7 +2011,6 @@ function bindControls() {
     queueSave();renderVideoDirector();
   });
   $('video-aspect').addEventListener('change',event=>{project.video.aspect=event.target.value;queueSave();});
-  $('export-pack-action').addEventListener('click',()=>$('export-button').click());
   $('export-video-download').addEventListener('click',()=>{if(lastTakes.video)download(lastTakes.video.blob,lastTakes.video.name);});
   $('export-audio-download').addEventListener('click',()=>{if(lastTakes.audio)download(lastTakes.audio.blob,lastTakes.audio.name);});
   $('export-audio-wav').addEventListener('click',downloadAudioWavCopy);
@@ -2175,9 +2173,7 @@ function bindControls() {
     for(const button of [$('demo-button'),$('quick-demo')]){button.classList.toggle('active',audio.demoEnabled);button.setAttribute('aria-pressed',String(audio.demoEnabled));}
     renderGrid();renderTrackGrid();renderControls();notify(audio.demoEnabled?'Demo synth sounds enabled on empty pads.':'Demo sounds off.');
   });
-  $('play-seq').addEventListener('click',()=>transportActivity.phase!=='idle'?stopSequencer():startSequencer());
   $('sequence-pad-toggle').addEventListener('click',()=>{sequencePadsVisible=!sequencePadsVisible;showStudioScreen();});
-  $('make-video').addEventListener('click',()=>{location.hash='#export';});
   $('auto-beat').addEventListener('click',surpriseBeat);
   $('clear-steps').addEventListener('click',()=>{releasePad(selected);project.pads[selected].steps.fill(false);project.pads[selected].stepOffsets.fill(0);patternUndoSnapshot=null;renderSteps();renderPatternRecordingState();queueSave();});
   $('record-pattern').addEventListener('click',togglePatternRecording);
@@ -2188,9 +2184,7 @@ function bindControls() {
   $('update-scene').addEventListener('click',updateScene);
   $('launch-scene').addEventListener('click',launchScene);
   $('delete-scene').addEventListener('click',deleteScene);
-  $('pattern-view').addEventListener('click',()=>setSequenceView('patterns'));
-  $('song-view').addEventListener('click',()=>setSequenceView('song'));
-  $('song-back-to-patterns').addEventListener('click',()=>{setSequenceView('patterns');$('beat-advanced').open=true;});
+  $('song-back-to-patterns').addEventListener('click',()=>{location.hash='#beats';showStudioScreen();const heading=$('pattern-library-title');heading.tabIndex=-1;heading.focus();});
   $('song-add-section').addEventListener('click',()=>{
     const sceneId=$('song-scene-select').value,scene=project.scenes.find(item=>item.id===sceneId);
     if(!scene)return notify('Save a pattern first, then add it to the song.');
