@@ -505,3 +505,12 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
  .overdub-zoom-controls{margin-top:6px}
 }
 @media(max-width:380px){.studio-nav>a{font-size:9px;min-height:66px}}
+
+/* Named beat patterns are a first-class Beat Maker tool, not an advanced option. */
+.pattern-library{display:grid;gap:8px;padding:14px;border:1px solid #456148;border-radius:10px;margin:8px 0 16px;background:#19251c}
+.pattern-library h3{margin:0;font-size:17px}
+.pattern-library p{margin:0;color:var(--muted);font-size:12px}
+.pattern-library-controls{display:flex;flex-wrap:wrap;gap:8px;align-items:end}
+.pattern-library-controls>.pattern-setting{min-width:125px}
+.pattern-library-controls .scene-name-input{min-height:44px;flex:1 1 140px}
+.pattern-library-controls button{min-height:44px}
