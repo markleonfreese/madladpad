@@ -19,8 +19,8 @@ test('journaled recording budget reserves space for both recovery chunks and the
 
 test('Song video clips normalize stable identity, placement and source trim metadata',()=>{
   const video=normaliseProject({voice:{videoLayers:[{id:'clip_1',name:'Verse visual',startStep:384,trimStartSec:2,trimEndSec:8,durationSec:10,type:'video/mp4'}]}}).voice.videoLayers[0];
-  assert.deepEqual(video,{id:'clip_1',name:'Verse visual',origin:'import',startStep:384,repeatEnabled:false,repeatEveryBars:1,repeatPhaseBars:0,audibleLengthBars:null,trimStartSec:2,trimEndSec:8,durationSec:10,type:'video/mp4',includeAudio:false,audioGain:1},'video source sound is muted by default while its independent audio gain stays editable');
-  assert.deepEqual(normaliseProject({voice:{videoLayers:[{id:'mix',includeAudio:true,audioGain:3}]}}).voice.videoLayers[0],{id:'mix',name:'Video track 1',origin:'import',startStep:0,repeatEnabled:false,repeatEveryBars:1,repeatPhaseBars:0,audibleLengthBars:null,trimStartSec:0,trimEndSec:null,durationSec:0,type:'video/webm',includeAudio:true,audioGain:1.5},'video audio inclusion and gain should persist within safe bounds');
+  assert.deepEqual(video,{id:'clip_1',name:'Verse visual',origin:'import',startStep:384,placementEndBar:null,repeatEnabled:false,repeatEveryBars:1,repeatPhaseBars:0,audibleLengthBars:null,trimStartSec:2,trimEndSec:8,durationSec:10,type:'video/mp4',includeAudio:false,audioGain:1},'video source sound is muted by default while its independent audio gain stays editable');
+  assert.deepEqual(normaliseProject({voice:{videoLayers:[{id:'mix',includeAudio:true,audioGain:3}]}}).voice.videoLayers[0],{id:'mix',name:'Video track 1',origin:'import',startStep:0,placementEndBar:null,repeatEnabled:false,repeatEveryBars:1,repeatPhaseBars:0,audibleLengthBars:null,trimStartSec:0,trimEndSec:null,durationSec:0,type:'video/webm',includeAudio:true,audioGain:1.5},'video audio inclusion and gain should persist within safe bounds');
   assert.equal(normaliseProject({voice:{videoLayers:[{id:'take_1',origin:'recording'}]}}).voice.videoLayers[0].origin,'recording','camera take identity should survive project and pack normalization');
   assert.deepEqual(normaliseProject({}).voice.videoLayers,[],'older project packs default to no video tracks');
 });
@@ -32,6 +32,8 @@ test('Song video track source time follows Song placement, tempo and trim bounds
   assert.equal(songVideoPositionAtStep(layer,34,120),2.25,'two Song steps advance by the current tempo');
   assert.equal(songVideoPositionAtStep(layer,80,120),null,'the trim-out boundary is exclusive');
   assert.equal(songVideoPositionAtStep({...layer,startStep:0},8,240),2.5,'faster tempo advances through source time sooner');
+  assert.equal(songVideoPositionAtStep({...layer,repeatEnabled:false,placementEndBar:4},63,90,8),2+31*(60/90/4),'a one-shot can play through its last placed bar');
+  assert.equal(songVideoPositionAtStep({...layer,repeatEnabled:false,placementEndBar:4},64,90,8),null,'a one-shot stops at its exclusive placement end');
 });
 
 test('Song clip cycles keep phrase length separate from repeat period and phase',()=>{
@@ -47,10 +49,14 @@ test('Song clip cycles keep phrase length separate from repeat period and phase'
   assert.equal(songVideoPositionAtStep({...layer,repeatPhaseBars:1},0,90,24),null,'a positive phase delays the first onset');
   assert.equal(songVideoPositionAtStep({...layer,repeatPhaseBars:1},16,90,24),1,'the phase-shifted first onset preserves the source in-point');
   assert.equal(songVideoPositionAtStep(layer,384,90,24),null,'repeat instances stop at the end of the arranged Song');
+  assert.deepEqual(songLayerPlaybackEvents({...layer,placementEndBar:18},20,90,24).map(event=>event.startStep),[0,128,256],'an explicit placement end clips cycles independently of Song section changes');
+  assert.ok(Math.abs(songLayerPlaybackEvents({...layer,placementEndBar:17},20,90,24).at(-1).durationSec-60/90*4)<1e-9,'the final event is truncated at its placement boundary');
+  assert.deepEqual(songLayerPlaybackEvents({...layer,startStep:128,placementEndBar:8},20,90,24),[],'a clip placed after its end boundary stays silent');
   assert.equal(songVideoPositionAtStep(layer,128,90),null,'a malformed repeat setting cannot loop video outside an arranged Song');
   const restored=normaliseProject({voice:{layers:[layer],videoLayers:[layer]}}).voice;
   assert.equal(restored.layers[0].repeatEveryBars,8);
   assert.equal(restored.layers[0].audibleLengthBars,2);
+  assert.equal(restored.layers[0].placementEndBar,null,'legacy clips default to the Song end');
   assert.equal(restored.videoLayers[0].repeatPhaseBars,0);
   assert.equal(normaliseProject({voice:{layers:[{id:'legacy'}]}}).voice.layers[0].repeatEnabled,false,'older local projects remain one-shot by default');
 });
@@ -256,7 +262,7 @@ test('voice projects add bounded transcripts, phrases, vocal layers, melody, tun
   assert.equal(harmony.harmonyInterval,7);
   assert.equal(harmony.notes[0].layer,'harmony');
   const vocal=normaliseProject({voice:{layers:[{id:'vocal/one',name:'Lead',startStep:-2,gain:2,muted:true}]}}).voice.layers[0];
-  assert.deepEqual(vocal,{id:'vocalone',name:'Lead',origin:'recording',startStep:0,repeatEnabled:false,repeatEveryBars:1,repeatPhaseBars:0,audibleLengthBars:null,trimStartSec:0,trimEndSec:null,gain:1.5,muted:true,solo:false,sourceId:'vocalone',pitch:0});
+  assert.deepEqual(vocal,{id:'vocalone',name:'Lead',origin:'recording',startStep:0,placementEndBar:null,repeatEnabled:false,repeatEveryBars:1,repeatPhaseBars:0,audibleLengthBars:null,trimStartSec:0,trimEndSec:null,gain:1.5,muted:true,solo:false,sourceId:'vocalone',pitch:0});
   const imported=normaliseProject({voice:{layers:[{id:'audio-1',name:'Beat stem',origin:'import',sourceId:'audio-1'}]}}).voice.layers[0];
   assert.equal(imported.origin,'import','imported Song audio must retain its local source kind across project normalization');
   assert.equal(voice.rap.scheme,'AABB');

@@ -132,6 +132,7 @@ function normaliseVoice(value) {
     name: String(layer?.name || `Vocal take ${index + 1}`).slice(0, 48),
     origin: ['recording','import','harmony'].includes(layer?.origin) ? layer.origin : (layer?.sourceId && layer.sourceId !== layer.id ? 'harmony' : 'recording'),
     startStep: clamp(layer?.startStep ?? 0, 0, 4096),
+    placementEndBar:Number.isFinite(layer?.placementEndBar)?clamp(Math.round(layer.placementEndBar),1,MAX_SONG_BARS):null,
     repeatEnabled:Boolean(layer?.repeatEnabled), repeatEveryBars:clamp(Math.round(layer?.repeatEveryBars??1),1,MAX_SONG_BARS),
     repeatPhaseBars:clamp(Math.round(layer?.repeatPhaseBars??0),0,MAX_SONG_BARS-1),
     audibleLengthBars:Number.isFinite(layer?.audibleLengthBars)?clamp(layer.audibleLengthBars,1/16,MAX_SONG_BARS):null,
@@ -146,6 +147,7 @@ function normaliseVoice(value) {
     id:String(layer?.id || `video-${index+1}`).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,64) || `video-${index+1}`,
     name:String(layer?.name || `Video track ${index+1}`).slice(0,48),
     origin:['recording','import'].includes(layer?.origin)?layer.origin:'import', startStep:clamp(layer?.startStep ?? 0,0,4096),
+    placementEndBar:Number.isFinite(layer?.placementEndBar)?clamp(Math.round(layer.placementEndBar),1,MAX_SONG_BARS):null,
     repeatEnabled:Boolean(layer?.repeatEnabled), repeatEveryBars:clamp(Math.round(layer?.repeatEveryBars??1),1,MAX_SONG_BARS),
     repeatPhaseBars:clamp(Math.round(layer?.repeatPhaseBars??0),0,MAX_SONG_BARS-1),
     audibleLengthBars:Number.isFinite(layer?.audibleLengthBars)?clamp(layer.audibleLengthBars,1/16,MAX_SONG_BARS):null,
@@ -229,6 +231,11 @@ export function songVideoPositionAtStep(layer, absoluteStep, bpm, songBars=0) {
   const trimEnd=clamp(layer.trimEndSec ?? layer.durationSec ?? 0,0.01,10800);
   const secondsPerStep=60/clamp(bpm,40,240)/4;
   if(trimEnd<=trimStart)return null;
+  if(songBars>0){
+    const songEndBar=clamp(Math.round(songBars),0,MAX_SONG_BARS);
+    const endBar=Math.min(songEndBar,Number.isFinite(layer.placementEndBar)?clamp(Math.round(layer.placementEndBar),1,MAX_SONG_BARS):songEndBar);
+    if(absoluteStep>=endBar*STEP_COUNT)return null;
+  }
   let elapsedSteps=absoluteStep-startStep;
   if(layer.repeatEnabled&&songBars>0){
     if(absoluteStep>=clamp(Math.round(songBars),0,MAX_SONG_BARS)*STEP_COUNT)return null;
@@ -248,18 +255,23 @@ export function songLayerPlaybackEvents(layer, rawDuration, bpm, songBars=0){
   const crop=vocalLayerClip(layer,rawDuration);
   if(!crop.duration)return [];
   const startStep=clamp(Math.round(layer?.startStep??0),0,4096);
-  if(!layer?.repeatEnabled)return [{startStep,sourceStartSec:crop.start,durationSec:crop.duration}];
   const totalBars=clamp(Math.round(songBars),0,MAX_SONG_BARS);
   if(!totalBars)return [{startStep,sourceStartSec:crop.start,durationSec:crop.duration}];
+  const endBar=Math.min(totalBars,Number.isFinite(layer?.placementEndBar)?clamp(Math.round(layer.placementEndBar),1,MAX_SONG_BARS):totalBars);
+  const endStep=endBar*STEP_COUNT;
+  if(startStep>=endStep)return [];
+  const secondsPerStep=60/clamp(bpm,40,240)/4;
+  const oneShotDuration=Math.min(crop.duration,(endStep-startStep)*secondsPerStep);
+  if(!layer?.repeatEnabled)return [{startStep,sourceStartSec:crop.start,durationSec:oneShotDuration}];
   const secondsPerBar=60/clamp(bpm,40,240)*4;
   const periodSteps=clamp(Math.round(layer.repeatEveryBars??1),1,MAX_SONG_BARS)*STEP_COUNT;
   const firstStart=startStep+clamp(Math.round(layer.repeatPhaseBars??0),0,MAX_SONG_BARS-1)*STEP_COUNT;
   const audibleSec=Number.isFinite(layer.audibleLengthBars)?clamp(layer.audibleLengthBars,1/16,MAX_SONG_BARS)*secondsPerBar:crop.duration;
-  const durationSec=Math.min(crop.duration,audibleSec),endStep=totalBars*STEP_COUNT;
+  const durationSec=Math.min(crop.duration,audibleSec);
   const events=[];
   for(let onset=firstStart;onset<endStep&&events.length<MAX_SONG_BARS;onset+=periodSteps){
     if(onset<startStep)continue;
-    events.push({startStep:onset,sourceStartSec:crop.start,durationSec});
+    events.push({startStep:onset,sourceStartSec:crop.start,durationSec:Math.min(durationSec,(endStep-onset)*secondsPerStep)});
   }
   return events;
 }

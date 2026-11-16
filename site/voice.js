@@ -827,7 +827,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     const details=document.createElement('details');details.className='song-cycle-settings';
     details.dataset.layerId=layer.id;
     const summary=document.createElement('summary');summary.textContent=layer.repeatEnabled?`Repeat every ${layer.repeatEveryBars} bar${layer.repeatEveryBars===1?'':'s'}`:'Repeat';details.append(summary);
-    const note=document.createElement('small');note.className='song-cycle-note';note.textContent='Repeat events stop at the end of the arranged Song. Play length can differ from the repeat interval.';details.append(note);
+    const note=document.createElement('small');note.className='song-cycle-note';note.textContent='Cycles continue across section changes. Play length can differ from the repeat interval; playback stops after the chosen bar or at Song end.';details.append(note);
     const repeat=document.createElement('label');repeat.className='song-cycle-toggle';
     const enabled=document.createElement('input');enabled.type='checkbox';enabled.checked=Boolean(layer.repeatEnabled);enabled.setAttribute('aria-label',`Repeat ${kind} track ${index+1}`);
     const repeatLabel=document.createElement('span');repeatLabel.textContent='Repeat this clip in the Song';repeat.append(enabled,repeatLabel);details.append(repeat);
@@ -842,6 +842,8 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     const period=addField('repeatEveryBars','REPEAT EVERY (BARS)',layer.repeatEveryBars??1,1,MAX_SONG_BARS,1);
     const phase=addField('repeatPhaseBars','FIRST OFFSET (BARS)',layer.repeatPhaseBars??0,0,MAX_SONG_BARS-1,1);
     const length=addField('audibleLengthBars','PLAY LENGTH (BARS)',layer.audibleLengthBars??Number(naturalBars.toFixed(3)),1/16,MAX_SONG_BARS,1/16);
+    const placementEnd=addField('placementEndBar','STOP AFTER BAR',layer.placementEndBar??'',1,MAX_SONG_BARS,1);
+    placementEnd.value=layer.placementEndBar==null?'':String(layer.placementEndBar);placementEnd.placeholder='SONG END';
     details.append(fields);
     const update=()=>{
       if(transportState().running)return;
@@ -849,15 +851,16 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       layer.repeatEveryBars=Math.round(clamp(period.value,1,MAX_SONG_BARS));
       layer.repeatPhaseBars=Math.round(clamp(phase.value,0,MAX_SONG_BARS-1));
       layer.audibleLengthBars=clamp(length.value,1/16,MAX_SONG_BARS);
+      layer.placementEndBar=placementEnd.value.trim()===''?null:Math.round(clamp(placementEnd.value,1,MAX_SONG_BARS));
       summary.textContent=layer.repeatEnabled?`Repeat every ${layer.repeatEveryBars} bar${layer.repeatEveryBars===1?'':'s'}`:'Repeat';
       length.disabled=!layer.repeatEnabled;period.disabled=!layer.repeatEnabled;phase.disabled=!layer.repeatEnabled;
       save();renderOverdubTimeline();
       const status=kind==='audio'?'voice-overdub-status':'song-video-status';
       $(status).textContent=layer.repeatEnabled
-        ?`${layer.name} plays ${layer.audibleLengthBars} bar(s), then repeats every ${layer.repeatEveryBars} bar(s)${layer.repeatPhaseBars?` after a ${layer.repeatPhaseBars}-bar first offset`:''}. Original media stays unchanged.`
+        ?`${layer.name} plays ${layer.audibleLengthBars} bar(s), then repeats every ${layer.repeatEveryBars} bar(s)${layer.repeatPhaseBars?` after a ${layer.repeatPhaseBars}-bar first offset`:''}${layer.placementEndBar?`, stopping after bar ${layer.placementEndBar}`:''}. Original media stays unchanged.`
         :`${layer.name} is a one-shot. Original media stays unchanged.`;
     };
-    enabled.addEventListener('change',update);period.addEventListener('change',update);phase.addEventListener('change',update);length.addEventListener('change',update);
+    enabled.addEventListener('change',update);period.addEventListener('change',update);phase.addEventListener('change',update);length.addEventListener('change',update);placementEnd.addEventListener('change',update);
     if(!enabled.checked){period.disabled=true;phase.disabled=true;length.disabled=true;}
     return details;
   }
@@ -866,7 +869,10 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     const disabled=transportState().running,hasSong=songTotalBars(project.song)>0;
     for(const details of document.querySelectorAll('.song-cycle-settings')){
       const enabled=details.querySelector('input[type="checkbox"]').checked;
-      for(const input of details.querySelectorAll('input'))input.disabled=disabled||(!hasSong&&input.type==='checkbox')||(!hasSong&&!enabled)||(input.type!=='checkbox'&&!enabled);
+      for(const input of details.querySelectorAll('input')){
+        const endBoundary=input.dataset.cycleField==='placementEndBar';
+        input.disabled=disabled||(!hasSong&&(input.type==='checkbox'||endBoundary))||(!endBoundary&&input.type!=='checkbox'&&!enabled);
+      }
     }
   }
 
