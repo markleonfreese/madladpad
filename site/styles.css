@@ -514,3 +514,11 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
 .pattern-library-controls>.pattern-setting{min-width:125px}
 .pattern-library-controls .scene-name-input{min-height:44px;flex:1 1 140px}
 .pattern-library-controls button{min-height:44px}
+
+/* The visible pattern library must wrap inside a 320px phone viewport. */
+.pattern-library,.pattern-library-controls{min-width:0;max-width:100%}
+.pattern-library-controls>*{min-width:0;max-width:100%}
+.pattern-library-controls .pattern-setting{flex:1 1 125px;min-width:0;max-width:100%}
+.pattern-library-controls .pattern-setting select{max-width:100%;width:100%}
+.pattern-library-controls .scene-name-input{flex:1 1 100%;min-width:0;max-width:100%;width:100%}
+.pattern-library-controls .pill-button{white-space:normal;overflow-wrap:anywhere;flex:1 1 120px;max-width:100%;text-align:center}
