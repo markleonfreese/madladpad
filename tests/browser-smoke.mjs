@@ -1146,7 +1146,9 @@ try {
   },midiClipId,{timeout:5000});
   assert.equal(await page.locator('#melody-notes .melody-note').count(),legacyMelodyCount+1,'the new clip note should remain on its selected lane');
   assert.equal(await page.locator('#melody-clip-repeat').isChecked(),true,'the independently repeating MIDI lane should remain selected');
-  await page.reload();await page.locator('[data-voice-jump="melody-title"]').click();
+  await page.reload();
+  await page.waitForFunction(clipId=>document.querySelector('#melody-lane-select')?.value===clipId,midiClipId,{timeout:10000});
+  await page.locator('[data-voice-jump="melody-title"]').click();
   assert.equal(await page.locator('#melody-lane-select').inputValue(),midiClipId,'the selected clip lane should persist through local project reload');
   assert.match(await page.locator('#melody-clip-status').textContent(),/repeats every 8 bars/,'clip repeat timing should persist through local project reload');
   const midiDownload=page.waitForEvent('download');
