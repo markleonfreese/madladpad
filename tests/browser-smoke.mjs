@@ -2640,6 +2640,66 @@ try {
   checkpoint('Song sections support drag reorder, edge resize, keyboard move and numeric bar fallback');
 
 
+  // Exercise the one-tap real-time Song capture in a clean profile with a
+  // short arrangement so the test verifies the complete automatic stop.
+  const fullSongContext=await browser.newContext({acceptDownloads:true});
+  await fullSongContext.route('**/*',routeLocalOnly);
+  const fullSongPage=await fullSongContext.newPage();
+  const fullSongPageErrors=[];
+  fullSongPage.on('pageerror',error=>fullSongPageErrors.push(error.message));
+  try{
+    const openCaptureScreen=async screen=>{
+      await fullSongPage.locator(`[data-studio-screen="${screen}"]`).click();
+      await fullSongPage.waitForFunction(value=>document.body.dataset.screen===value,screen);
+    };
+    await fullSongPage.goto(origin);
+    await wait(fullSongPage,'.pad-hit');
+    await fullSongPage.setViewportSize({width:320,height:720});
+    await openCaptureScreen('export');
+    const fullSongButton=fullSongPage.locator('#record-full-song-video');
+    assert.equal(await fullSongButton.getAttribute('aria-pressed'),'false','full-Song capture starts idle');
+    assert.match(await fullSongPage.locator('#full-song-capture-status').textContent(),/ready/i,'empty project explains when capture is available');
+    await fullSongButton.click();
+    assert.match(await fullSongPage.locator('.toast').textContent(),/Add saved patterns/i,'capture without a saved Song explains the prerequisite');
+    await openCaptureScreen('beats');
+    await fullSongPage.locator('#scene-name').fill('Capture test');
+    await fullSongPage.locator('#save-scene').click();
+    await openCaptureScreen('overdub');
+    const captureSceneId=await fullSongPage.locator('#song-scene-select').inputValue();
+    assert.ok(captureSceneId,'saved pattern is available to the Song arranger');
+    await fullSongPage.locator('#song-bars').selectOption('1');
+    await fullSongPage.locator('#song-add-section').click();
+    assert.match(await fullSongPage.locator('#song-status').textContent(),/1 bar/,'capture fixture is a one-bar Song');
+    await openCaptureScreen('export');
+    const captureButtonBox=await fullSongButton.boundingBox();
+    assert.ok(captureButtonBox?.width>=44&&captureButtonBox?.height>=44,'full-Song capture button is a touch-sized mobile control');
+    assert.equal(await fullSongPage.evaluate(()=>document.documentElement.scrollWidth===document.documentElement.clientWidth),true,'full-Song capture controls do not widen the 320px mobile layout');
+    const fullSongDownloadPromise=fullSongPage.waitForEvent('download',{timeout:12000});
+    await fullSongButton.click();
+    await fullSongPage.waitForFunction(()=>document.querySelector('#record-full-song-video')?.textContent.includes('STOP FULL SONG'));
+    assert.match(await fullSongPage.locator('#full-song-capture-status').textContent(),/bar 1 of 1/i,'capture status confirms start at the first bar');
+    const fullSongDownload=await fullSongDownloadPromise;
+    const fullSongPath=await fullSongDownload.path();
+    assert.ok(fullSongPath,'automatic Song-end stop produces a downloaded video');
+    const fullSongBytes=await readFile(fullSongPath);
+    assert.ok(fullSongBytes.length>100,'one-bar Song capture contains encoded media');
+    assert.match(fullSongDownload.suggestedFilename(),/\.(?:webm|mp4)$/i,'download uses a browser-supported video extension');
+    await fullSongPage.waitForFunction(()=>document.querySelector('#full-song-capture-status')?.textContent.includes('Full-Song video is ready'));
+    assert.equal(await fullSongButton.getAttribute('aria-pressed'),'false','automatic Song end resets the capture button');
+    const captureMime=fullSongDownload.suggestedFilename().toLowerCase().endsWith('.mp4')?'video/mp4':'video/webm';
+    const videoDuration=await fullSongPage.evaluate(async({encoded,type})=>{
+      const binary=atob(encoded),bytes=Uint8Array.from(binary,char=>char.charCodeAt(0));
+      const video=document.createElement('video'),url=URL.createObjectURL(new Blob([bytes],{type}));
+      try{video.src=url;await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=()=>reject(video.error||new Error('captured video metadata could not be decoded'));});return video.duration;}
+      finally{URL.revokeObjectURL(url);}
+    },{encoded:fullSongBytes.toString('base64'),type:captureMime});
+    assert.ok(videoDuration>=1.5&&videoDuration<=4,`one-bar recording should stop at its final bar (decoded ${videoDuration}s)`);
+    assert.deepEqual(fullSongPageErrors,[],'full-Song capture completes without browser errors');
+    checkpoint('one-tap Song video capture starts at bar 1 and automatically downloads at Song end');
+  } finally {
+    await fullSongContext.close();
+  }
+
   assert.deepEqual(errors, []);
   assert.deepEqual(blockedFontProviderRequests,[],'the UI must not request Google Fonts or gstatic at any point');
   console.log('Browser smoke passed: layouts, demo/keyboard, live patterns/scenes, integrated Pitch/Speed audio exports, audio/video recording, adaptive one-to-three-clip composition, local media, pack round-trip, offline reopen and mobile overflow.');
