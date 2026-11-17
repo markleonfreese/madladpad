@@ -2671,6 +2671,8 @@ try {
     await fullSongPage.locator('#song-add-section').click();
     assert.match(await fullSongPage.locator('#song-status').textContent(),/1 bar/,'capture fixture is a one-bar Song');
     await openCaptureScreen('export');
+    await fullSongPage.locator('#export-advanced > summary').click();
+    await fullSongPage.locator('#record-video-format').selectOption('webm');
     const captureButtonBox=await fullSongButton.boundingBox();
     assert.ok(captureButtonBox?.width>=44&&captureButtonBox?.height>=44,'full-Song capture button is a touch-sized mobile control');
     assert.equal(await fullSongPage.evaluate(()=>document.documentElement.scrollWidth===document.documentElement.clientWidth),true,'full-Song capture controls do not widen the 320px mobile layout');
@@ -2687,13 +2689,22 @@ try {
     await fullSongPage.waitForFunction(()=>document.querySelector('#full-song-capture-status')?.textContent.includes('Full-Song video is ready'));
     assert.equal(await fullSongButton.getAttribute('aria-pressed'),'false','automatic Song end resets the capture button');
     const captureMime=fullSongDownload.suggestedFilename().toLowerCase().endsWith('.mp4')?'video/mp4':'video/webm';
-    const videoDuration=await fullSongPage.evaluate(async({encoded,type})=>{
+    const videoPlayback=await fullSongPage.evaluate(async({encoded,type})=>{
       const binary=atob(encoded),bytes=Uint8Array.from(binary,char=>char.charCodeAt(0));
       const video=document.createElement('video'),url=URL.createObjectURL(new Blob([bytes],{type}));
-      try{video.src=url;await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=()=>reject(video.error||new Error('captured video metadata could not be decoded'));});return video.duration;}
+      try{
+        video.muted=true;video.src=url;
+        return await new Promise(async(resolve,reject)=>{
+          const timeout=setTimeout(()=>reject(new Error('captured video did not finish playback')),10000);
+          video.onended=()=>{clearTimeout(timeout);resolve({seconds:video.currentTime,frames:video.getVideoPlaybackQuality?.().totalVideoFrames??0});};
+          video.onerror=()=>{clearTimeout(timeout);reject(video.error||new Error('captured video could not be decoded'));};
+          try{await video.play();}catch(error){clearTimeout(timeout);reject(error);}
+        });
+      }
       finally{URL.revokeObjectURL(url);}
     },{encoded:fullSongBytes.toString('base64'),type:captureMime});
-    assert.ok(videoDuration>=1.5&&videoDuration<=4,`one-bar recording should stop at its final bar (decoded ${videoDuration}s)`);
+    assert.ok(videoPlayback.seconds>=1.5&&videoPlayback.seconds<=4,`one-bar recording should stop at its final bar (played ${videoPlayback.seconds}s)`);
+    assert.ok(videoPlayback.frames>=10,`full-Song capture should contain moving video frames (${videoPlayback.frames})`);
     assert.deepEqual(fullSongPageErrors,[],'full-Song capture completes without browser errors');
     checkpoint('one-tap Song video capture starts at bar 1 and automatically downloads at Song end');
   } finally {
