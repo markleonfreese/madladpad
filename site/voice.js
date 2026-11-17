@@ -399,7 +399,7 @@ function renderLyricInsights(project) {
     const chip = document.createElement('span');
     chip.setAttribute('role', 'listitem');
     chip.className = 'rap-insight-ending' + (line.family ? ' possible-rhyme' : '') + (line.repeatedEnding ? ' repeated-ending' : '');
-    chip.textContent = 'Bar ' + line.bar + ': ' + line.ending + (line.family ? ' · approx ' + line.family : '') + (line.repeatedEnding ? ' · repeated' : '');
+    chip.textContent = 'Bar ' + line.bar + ': ~' + line.syllables + ' syllables · ' + line.ending + (line.family ? ' · approx ' + line.family : '') + (line.repeatedEnding ? ' · repeated' : '');
     endings.append(chip);
   }
   host.append(endings);

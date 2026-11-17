@@ -1,6 +1,6 @@
 # Lyric Intelligence V0 — MadLadPad / WGOT
 
-**Status:** POC implementation on review-only feature branch. No merge or production release authorised.
+**Status:** Local-first feature eligible to merge after exact-head checks pass. A merge alone does not authorize a production Pages publish.
 
 ## User workflow
 In **Melody & Rhythm → Rap & flow**, write in the existing 16 editable bars and optionally open **Lyric Insights**. The disclosure updates on each bar edit. It groups possible line-ending rhymes, identifies repeated ending words, and reports estimated syllable ranges and unused bars. It never edits the lyrics or saved flow map.

@@ -1076,6 +1076,11 @@ try {
   await page.locator('#melody-follow-beat').check();
   await page.locator('[data-voice-jump="rap-title"]').click();
   await page.locator('#rap-bars textarea').nth(0).fill('Hello from the other side');
+  assert.match(await page.locator('#rap-insights-summary').textContent(),/1 OF 16 BARS/,'Lyric Insights should update as the existing Rap bars are edited');
+  await page.locator('#rap-insights-summary').click();
+  assert.match(await page.locator('#rap-insights .rap-insight-ending').first().textContent(),/^Bar 1: ~\d+ syllables · side/,'each visible lyric insight should include a clearly marked per-bar syllable estimate');
+  await page.locator('#rap-bars textarea').nth(0).fill('I see <img src=x onerror=alert(1)> light');
+  assert.equal(await page.locator('#rap-insights img').count(),0,'lyric content must not be interpreted as markup in the live insights');
   await page.locator('#rap-bars textarea').nth(0).fill('wanted needed wishes boxes');
   assert.match(await page.locator('#rap-bars .rap-bar').first().locator('small').textContent(),/8 estimated syllables/,'rap estimates should count common syllabic -ed and -es endings');
   await page.locator('#rap-bars textarea').nth(0).fill('Hello from the other side');
