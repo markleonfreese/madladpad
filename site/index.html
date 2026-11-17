@@ -236,6 +236,10 @@
             <span id="voice-selection-status" role="status" aria-live="polite">No words selected.</span>
           </div>
           <div id="voice-word-list" class="voice-word-list" role="group" aria-label="Editable transcript words"></div>
+          <div id="voice-word-preview" class="voice-word-preview" hidden>
+            <p id="voice-word-preview-status" class="voice-word-preview-status" role="status" aria-live="polite">Choose a word to preview its original clip segment.</p>
+            <video id="voice-word-video" playsinline preload="metadata" aria-label="Original video for the selected transcript word" hidden></video>
+          </div>
           <button class="pill-button" id="voice-make-phrase" disabled>ADD SELECTED WORDS TO PHRASE</button>
           <div id="voice-phrases" class="voice-phrases" role="group" aria-label="Reorderable audio phrases"></div>
           <div class="voice-actions"><button class="pill-button" id="voice-story-combine">COMBINE PHRASES INTO A STORY</button></div>
