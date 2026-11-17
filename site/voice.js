@@ -2009,7 +2009,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   });
   $('word-remix-follow-transport').addEventListener('change',async event=>{
     const control=event.currentTarget;
-    if(!control.checked){project.voice.wordRemix.followTransport=false;stopWordRemixTransport();save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);return;}
+    if(!control.checked){project.voice.wordRemix.followTransport=false;wordRemixTransportReady=false;stopWordRemixTransport();releaseWordRemixLiveVideo();save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);return;}
     control.disabled=true;$('word-remix-follow-help').textContent='Preparing local audio cues for the Beat/Song transport…';
     try{await prepareWordRemixTransport();project.voice.wordRemix.followTransport=true;save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);}
     catch(error){project.voice.wordRemix.followTransport=false;control.checked=false;notify(`Could not enable Word Remix transport: ${error.message}`);renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);}
@@ -2019,7 +2019,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   $('word-remix-length').addEventListener('input',()=>{$('word-remix-length-value').textContent=`${$('word-remix-length').value}%`;});
   $('word-remix-length').addEventListener('change',()=>{const event=project.voice.wordRemix.events.find(item=>item.step===wordRemixBar.selectedStep);if(!event)return;event.lengthPercent=Math.round(clamp($('word-remix-length').value,25,100));save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);});
   $('word-remix-remove').addEventListener('click',()=>{const index=project.voice.wordRemix.events.findIndex(item=>item.step===wordRemixBar.selectedStep);if(index<0)return;project.voice.wordRemix.events.splice(index,1);wordRemixBar.selectedStep=null;save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);});
-  $('word-remix-clear').addEventListener('click',()=>{project.voice.wordRemix.events=[];project.voice.wordRemix.followTransport=false;wordRemixBar.selectedStep=null;stopWordRemix('Cleared all Word Remix events.');stopWordRemixTransport();save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);});
+  $('word-remix-clear').addEventListener('click',()=>{project.voice.wordRemix.events=[];project.voice.wordRemix.followTransport=false;wordRemixTransportReady=false;wordRemixBar.selectedStep=null;stopWordRemix('Cleared all Word Remix events.');stopWordRemixTransport();releaseWordRemixLiveVideo();save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);});
   window.addEventListener('pagehide',()=>stopWordRemix('Stopped when this page closed.'),{once:true});
   $('voice-source-pad').addEventListener('change', () => {
     if (transcriptionActivity.phase!=='idle') cancelTranscription('Source changed. Previous transcription canceled.');

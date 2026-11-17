@@ -1094,6 +1094,7 @@ try {
   await openScreen('voice');
   await page.locator('#word-remix-follow-transport').uncheck();
   assert.equal(await page.locator('#word-remix-follow-transport').isChecked(),false,'transport opt-out should persist');
+  assert.equal(await page.locator('#word-remix-live-video').evaluate(video=>video.hasAttribute('src')),false,'opt-out must release the original speaker temporary video URL');
   const videoWordPreview=page.getByRole('button',{name:'Preview word 1, visible from original clip'});
   await videoWordPreview.click();
   await page.locator('#voice-word-video').waitFor({state:'visible'});
