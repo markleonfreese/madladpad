@@ -68,7 +68,16 @@ test('live Song video discloses and represents active local audio tracks',()=>{
   assert.match(app,/MELODY · \$\{cell\.track\.name\}/,'generated note lanes should identify Melody and harmony');
   assert.match(app,/note\.velocity\/127/,'note lanes should visualize note velocity');
   assert.match(app,/note\.step\/totalSteps/,'note lanes should use absolute arrangement time');
-  assert.match(readFileSync(new URL('../site/sw.js',import.meta.url),'utf8'),/madladpad-shell-v35/,'the offline shell version should refresh updated capture rendering');
+  assert.match(readFileSync(new URL('../site/sw.js',import.meta.url),'utf8'),/madladpad-shell-v36/,'the offline shell version should refresh updated capture rendering');
+});
+
+test('offline Song WAV export is accessible and describes its local support boundary',()=>{
+  assert.match(html,/<button class="pill-button" id="render-song-audio"[^>]*aria-describedby="render-song-audio-note"[^>]*>RENDER SONG MIX · OFFLINE WAV<\/button>/);
+  assert.match(html,/<p id="render-song-audio-note"[^>]*>Creates a deterministic local stereo WAV/);
+  assert.match(html,/Non-zero independent Pitch and generated demo synth lanes are reported as unsupported/);
+  assert.match(html,/<p id="render-song-audio-status" class="voice-status" role="status" aria-live="polite"/);
+  assert.match(app,/rememberAudioTake:\(blob,duration\)=>\{rememberTake\('audio',blob,duration\);download\(blob,lastTakes\.audio\.name\);\}/,'a finished WAV should use the existing preview and take recovery path');
+  assert.match(readFileSync(new URL('../site/sw.js',import.meta.url),'utf8'),/\/song-render\.js/,'offline rendering should be precached with the PWA shell');
 });
 
 test('one Song arrangement owner, visible named patterns and no redundant action buttons',()=>{

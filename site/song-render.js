@@ -1,13 +1,16 @@
 import {
   clamp,
   PAD_COUNT,
+  audioBufferToWav,
   isPadAudible,
   melodyClipNotesAtStep,
+  midiFrequency,
   sampleNoteAtStep,
   songVideoPositionAtStep,
   songLayerPlaybackEvents,
   songSectionAtStep,
   songTotalBars,
+  MAX_REVERSED_AUDIO_BYTES,
   stepGateDuration,
   stepLoopGateDuration
 } from './core.js';
@@ -52,17 +55,34 @@ export function buildSongRenderPlan(project, { padDurations = {}, vocalDurations
       if (!isPadAudible(activePads, padId)) return;
       const lane = lanes[padId];
       if (!lane) return;
+      if (pad.kind === 'image') {
+        const active = lane.sequenceMode === 'notes'
+          ? Boolean(sampleNoteAtStep(lane.sampleNotes, pattern))
+          : pattern % stride === 0 && Boolean(lane.steps?.[pattern]);
+        if (active) {
+          const offset = lane.stepOffsets?.[pattern] || 0;
+          const gate = lane.sequenceMode === 'notes'
+            ? (sampleNoteAtStep(lane.sampleNotes, pattern)?.length || 1) * secondsPerStep
+            : lane.stepPlaybackMode === 'one-step' ? stepGateDuration(bpm, offset) : secondsPerStep;
+          events.push({ kind: 'still', trackId: `pad-${padId}`, padId, startStep: step,
+            startSeconds: step * secondsPerStep + offset * secondsPerStep,
+            durationSeconds: gate, gain: 0, speed: 1, semitones: 0 });
+        }
+        return;
+      }
+      if (!pad.fileName && !pad.demoSound && !project.demoEnabled) return;
+      const eventKind = !pad.fileName ? 'demo' : 'sample';
       if (lane.sequenceMode === 'notes') {
         const note = sampleNoteAtStep(lane.sampleNotes, pattern);
         if (!note) return;
         const offset = lane.stepOffsets?.[pattern] || 0;
         events.push({
-          kind: pad.kind === 'image' ? 'still' : 'sample', trackId: `pad-${padId}`, padId, startStep: step,
+          kind: eventKind, trackId: `pad-${padId}`, padId, startStep: step,
           startSeconds: step * secondsPerStep + offset * secondsPerStep,
           durationSeconds: note.length * secondsPerStep, sourceStartSeconds: pad.start,
           sourceEndSeconds: pad.end, gain: pad.volume, speed: pad.speed,
           semitones: clamp(pad.pitch + note.semitones, -12, 12), loop: true,
-          noteMode: true
+          noteMode: true, demoSound: pad.demoSound || ''
         });
         return;
       }
@@ -84,11 +104,11 @@ export function buildSongRenderPlan(project, { padDurations = {}, vocalDurations
       const eventStartSeconds = step * secondsPerStep + offset * secondsPerStep;
       if (indefinite) durationSeconds = Math.max(0, ((section.endBar - 1) * 16 * secondsPerStep) - eventStartSeconds);
       events.push({
-        kind: pad.kind === 'image' ? 'still' : 'sample', trackId: `pad-${padId}`, padId, startStep: step,
+        kind: eventKind, trackId: `pad-${padId}`, padId, startStep: step,
         startSeconds: eventStartSeconds,
         durationSeconds: Number.isFinite(durationSeconds) ? durationSeconds : naturalDuration,
         sourceStartSeconds: pad.start, sourceEndSeconds: pad.end, gain: pad.volume,
-        speed: pad.speed, semitones: pad.pitch, loop, indefinite,
+        speed: pad.speed, semitones: pad.pitch, loop, indefinite, demoSound: pad.demoSound || '',
         noteMode: false
       });
     });
@@ -161,7 +181,7 @@ export function songRenderVisualsAtTime(project, plan, seconds) {
   }
   for (const event of plan.events) {
     if (seconds < event.startSeconds || seconds >= event.startSeconds + event.durationSeconds) continue;
-    if (event.kind === 'sample' || event.kind === 'still') {
+    if (event.kind === 'sample' || event.kind === 'still' || event.kind === 'demo') {
       const pad = project.pads[event.padId];
       const sourceSeconds = event.sourceStartSeconds + (seconds - event.startSeconds) * event.speed;
       if (event.kind === 'still' || pad?.kind === 'image') visuals.push({ kind: 'still', trackId: event.trackId, name: pad.name, sourceSeconds: 0 });
@@ -174,4 +194,168 @@ export function songRenderVisualsAtTime(project, plan, seconds) {
     }
   }
   return visuals.sort((a, b) => a.kind.localeCompare(b.kind) || a.trackId.localeCompare(b.trackId));
+}
+
+function audioBufferLike(buffer) {
+  return buffer && Number.isFinite(buffer.duration) && Number.isFinite(buffer.sampleRate)
+    && Number.isInteger(buffer.length) && Number.isInteger(buffer.numberOfChannels)
+    && typeof buffer.getChannelData === 'function';
+}
+
+function assertSourceWindow(event, buffer, { start = event.sourceStartSeconds, end = event.sourceEndSeconds ?? buffer.duration } = {}) {
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > buffer.duration + 1 / buffer.sampleRate) {
+    throw new Error(`The local trim for “${event.name || event.trackId}” is outside its decoded audio. Adjust the trim or reload the source.`);
+  }
+}
+
+function assertPitchSupported(event) {
+  if (Math.abs(Number(event.semitones) || 0) > .01) {
+    throw new Error(`Offline WAV export cannot yet preserve the independent Pitch setting on “${event.name || event.trackId}”. Set Pitch to 0 semitones or record this mix in real time.`);
+  }
+}
+
+function setEnvelope(gain, start, end, amount) {
+  const inTime = Math.min(.008, Math.max(.001, (end - start) / 8));
+  const outTime = Math.min(.008, Math.max(.001, (end - start) / 8));
+  gain.gain.setValueAtTime(0, start);
+  gain.gain.linearRampToValueAtTime(clamp(amount, 0, 1.5), start + inTime);
+  if (end - outTime > start + inTime) gain.gain.setValueAtTime(clamp(amount, 0, 1.5), end - outTime);
+  gain.gain.linearRampToValueAtTime(0, end);
+}
+
+function scheduleBufferEvent(context, master, event, buffer, start, end, { offset = 0, sourceEnd = buffer.duration, speed = 1, gain: gainValue = event.gain, loop = false } = {}) {
+  const usableEnd = Math.min(buffer.duration, sourceEnd);
+  const clipDuration = usableEnd - offset;
+  if (clipDuration <= .001 || end <= start) return;
+  const source = context.createBufferSource(), gain = context.createGain();
+  source.buffer = buffer;
+  source.playbackRate.setValueAtTime(clamp(speed, .5, 2), start);
+  const outputDuration = end - start;
+  const shouldLoop = Boolean(loop && clipDuration / clamp(speed, .5, 2) < outputDuration - .006);
+  if (shouldLoop) {
+    source.loop = true;
+    source.loopStart = offset;
+    source.loopEnd = usableEnd;
+  }
+  setEnvelope(gain, start, end, gainValue);
+  source.connect(gain).connect(master);
+  if (shouldLoop) {
+    source.start(start, offset);
+    source.stop(end + .001);
+  } else {
+    const sourceDuration = Math.min(clipDuration, outputDuration * clamp(speed, .5, 2));
+    source.start(start, offset, sourceDuration);
+  }
+}
+
+/** Mix the supported Song events to a local stereo PCM WAV. Unsupported Pitch
+ * processing fails closed instead of silently substituting a different sound.
+ */
+export async function renderSongAudioWav(plan, sources, {
+  OfflineAudioContextClass = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext,
+  sampleRate = 44100,
+  maxSeconds = 240
+} = {}) {
+  if (typeof OfflineAudioContextClass !== 'function') throw new Error('This browser does not support local offline audio rendering. Use real-time audio recording instead.');
+  if (!Number.isFinite(plan?.durationSeconds) || plan.durationSeconds <= 0) throw new Error('The Song has no renderable duration.');
+  if (plan.durationSeconds > maxSeconds) throw new Error(`Offline WAV rendering is limited to ${maxSeconds / 60} minutes on this device. Shorten the Song or use real-time audio recording.`);
+  const rate = clamp(sampleRate, 22050, 48000);
+  const frameCount = Math.ceil(plan.durationSeconds * rate);
+  const estimatedBytes = 44 + frameCount * 4;
+  if (estimatedBytes > 48 * 1024 * 1024) throw new Error('This WAV would exceed the local export size limit. Lower the Song duration before rendering.');
+  const pads = sources?.pads || new Map(), vocals = sources?.vocals || new Map(), videos = sources?.videos || new Map(), cues = sources?.cues || new Map();
+  const playable = plan.events.filter(event => ['sample', 'vocal', 'video-audio', 'midi', 'demo'].includes(event.kind));
+  const bufferFor = event => event.kind === 'sample' ? pads.get(event.padId)
+    : event.kind === 'vocal' ? vocals.get(event.trackId)
+      : event.kind === 'video-audio' ? videos.get(event.trackId) : null;
+  for (const event of playable) {
+    if (event.kind === 'demo') throw new Error('This Song uses a generated demo pad sound that offline WAV export cannot render yet. Replace that lane with a local audio clip, or use real-time audio recording.');
+    if (event.kind === 'midi' && event.word && cues.has(event.word)) {
+      const cue = cues.get(event.word);
+      if (!audioBufferLike(cue?.buffer)) throw new Error(`The local phrase audio for “${event.word}” is unavailable.`);
+      assertSourceWindow(event, cue.buffer, { start: cue.start, end: cue.end });
+      continue;
+    }
+    if (event.kind === 'midi') continue;
+    assertPitchSupported(event);
+    const buffer = bufferFor(event);
+    if (!audioBufferLike(buffer)) throw new Error(`A local audio source for “${event.name || event.trackId}” is unavailable or cannot be decoded in this browser.`);
+    const sourceEnd = event.sourceEndSeconds ?? event.sourceStartSeconds + event.durationSeconds;
+    assertSourceWindow(event, buffer, { end: sourceEnd });
+    if (event.kind === 'vocal' && event.reverse) {
+      const first = Math.floor(event.sourceStartSeconds * buffer.sampleRate);
+      const last = Math.min(buffer.length, Math.ceil((event.sourceStartSeconds + event.durationSeconds) * buffer.sampleRate));
+      const bytes = Math.max(1, last - first) * buffer.numberOfChannels * Float32Array.BYTES_PER_ELEMENT;
+      if (bytes > MAX_REVERSED_AUDIO_BYTES) {
+        throw new Error(`The reversed vocal “${event.name || event.trackId}” exceeds the local reverse-buffer limit. Shorten its trim or turn off Reverse.`);
+      }
+    }
+  }
+
+  const offline = new OfflineAudioContextClass(2, frameCount, rate);
+  const compressor = offline.createDynamicsCompressor();
+  compressor.threshold.value = -1.5;
+  compressor.knee.value = 0;
+  compressor.ratio.value = 20;
+  compressor.attack.value = .003;
+  compressor.release.value = .08;
+  compressor.connect(offline.destination);
+  const sortedSamples = playable.filter(event => event.kind === 'sample').sort((a, b) => a.startSeconds - b.startSeconds);
+  const reversedBuffers = new Map();
+  for (const event of playable) {
+    const start = clamp(event.startSeconds, 0, plan.durationSeconds);
+    if (event.kind === 'midi') {
+      const cue = event.word ? cues.get(event.word) : null;
+      if (cue) {
+        assertPitchSupported({ ...event, semitones: event.midi - 60 });
+        const end = Math.min(plan.durationSeconds, start + event.durationSeconds);
+        scheduleBufferEvent(offline, compressor, event, cue.buffer, start, end, {
+          offset: clamp(cue.start, 0, cue.buffer.duration),
+          sourceEnd: clamp(cue.end, 0, cue.buffer.duration),
+          gain: clamp((cue.gain ?? 1) * event.velocity / 96, 0, 1.5), loop: true
+        });
+      } else {
+        const end = Math.min(plan.durationSeconds, start + event.durationSeconds);
+        const oscillator = offline.createOscillator(), gain = offline.createGain();
+        oscillator.type = 'triangle';
+        oscillator.frequency.setValueAtTime(midiFrequency(event.midi, event.tuning), start);
+        setEnvelope(gain, start, end, .16 * event.velocity / 127);
+        oscillator.connect(gain).connect(compressor);
+        oscillator.start(start);
+        oscillator.stop(end + .001);
+      }
+      continue;
+    }
+    const buffer = bufferFor(event);
+    const nextSamePad = event.kind === 'sample'
+      ? sortedSamples.find(other => other.padId === event.padId && other.startSeconds > event.startSeconds)?.startSeconds
+      : null;
+    const end = Math.min(plan.durationSeconds, start + event.durationSeconds, nextSamePad ?? Infinity);
+    if (event.kind === 'vocal' && event.reverse) {
+      const key = `${event.trackId}:${event.sourceStartSeconds}:${event.durationSeconds}`;
+      let reversed = reversedBuffers.get(key);
+      if (!reversed) {
+        const first = Math.floor(event.sourceStartSeconds * buffer.sampleRate);
+        const last = Math.min(buffer.length, Math.ceil((event.sourceStartSeconds + event.durationSeconds) * buffer.sampleRate));
+        const frames = Math.max(1, last - first);
+        reversed = offline.createBuffer(buffer.numberOfChannels, frames, buffer.sampleRate);
+        for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+          const input = buffer.getChannelData(channel), output = reversed.getChannelData(channel);
+          for (let frame = 0; frame < frames; frame++) output[frame] = input[last - 1 - frame] || 0;
+        }
+        reversedBuffers.set(key, reversed);
+      }
+      scheduleBufferEvent(offline, compressor, event, reversed, start, end, { gain: event.gain });
+      continue;
+    }
+    scheduleBufferEvent(offline, compressor, event, buffer, start, end, {
+      offset: event.sourceStartSeconds,
+      sourceEnd: event.sourceEndSeconds ?? buffer.duration,
+      speed: event.kind === 'sample' ? event.speed : 1,
+      gain: event.gain,
+      loop: event.loop
+    });
+  }
+  const rendered = await offline.startRendering();
+  return { buffer: rendered, blob: audioBufferToWav(rendered), durationSeconds: rendered.duration };
 }

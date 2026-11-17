@@ -2,6 +2,7 @@ import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPos
 import { getValue, saveVoiceLayer, deleteVoiceLayer, saveSongVideoLayer, deleteSongVideoLayer, beginAudioRecordingRecovery, appendAudioRecordingRecoveryChunk, listInterruptedAudioRecordings, deleteInterruptedAudioRecording, beginVideoRecordingRecovery, appendVideoRecordingRecoveryChunk, listInterruptedVideoRecordings, deleteInterruptedVideoRecording } from './storage.js';
 import { detectPitch } from './tuner.js';
 import { renderMelodyRoll } from './melody-roll.js';
+import { buildSongRenderPlan, renderSongAudioWav } from './song-render.js';
 
 const $ = id => document.getElementById(id);
 const rhymes = {
@@ -432,7 +433,7 @@ function renderRap(project, save, audio, notify) {
   });
 }
 
-export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTransport, notify, save, assignWordsToPads, onTimelineScale }) {
+export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTransport, notify, save, assignWordsToPads, onTimelineScale, rememberAudioTake }) {
   const project = getProject(), audio = getAudio();
   let activeTranscript = null;
   let worker = null;
@@ -445,6 +446,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   let videoRecording = null;
   const pendingRecordingDownloads=new Map();
   const videoRecordingActivity = new AsyncActivity();
+  const songRenderActivity = new AsyncActivity();
   let tunerStream = null, tunerSource = null, tunerAnalyser = null, tunerTimer = null, tunerFrame = null;
   const tunerActivity = new AsyncActivity();
   const vocalFiles = new Map();
@@ -520,7 +522,73 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     $('overdub-video-cancel').hidden=!videoRecording;
     if(project.voice.videoLayers.length>=MAX_VOCAL_LAYERS&&!videoRecording)$('song-video-status').textContent=`The ${MAX_VOCAL_LAYERS} video-track limit is full. Delete a track before adding another.`;
     else if(!state.running&&!videoRecording&&!videoStarting&&!$('song-video-status').textContent)$('song-video-status').textContent='Start the Song to record a video track.';
+    const renderButton=$('render-song-audio');
+    if(renderButton)renderButton.disabled=!songTotalBars(project.song)||state.running||songRenderActivity.phase!=='idle'||Boolean(vocalRecording)||Boolean(videoRecording)||videoStarting;
   };
+
+  async function renderSongAudioExport(){
+    const status=$('render-song-audio-status');
+    const token=songRenderActivity.begin();
+    if(token===null)return;
+    updateOverdubControls();
+    status.textContent='Preparing local Song audio sources…';
+    const decodeFile=async(file,label,existing=null)=>{
+      if(existing)return existing;
+      if(!file)throw new Error(`The local media for “${label}” is missing.`);
+      try{return await audio.context.decodeAudioData(await file.arrayBuffer());}
+      catch(error){throw new Error(`Could not decode “${label}” for the offline Song mix: ${error?.message||'unsupported audio codec'}.`);}
+    };
+    try{
+      if(!songTotalBars(project.song))throw new Error('Add saved patterns to Song before rendering.');
+      if(transportState().running)throw new Error('Stop Song playback before starting an offline WAV render.');
+      const pads=new Map(),vocals=new Map(),videos=new Map(),cues=new Map();
+      const vocalDurations={},videoDurations={};
+      for(const layer of project.voice.layers){
+        if(layer.muted)continue;
+        const existing=audio.vocalSources.get(layer.id)?.buffer;
+        const file=vocalFiles.get(layer.id)||audio.vocalSources.get(layer.id)?.file;
+        if(!file&&!existing)continue;
+        const buffer=await decodeFile(file,layer.name,existing);
+        vocals.set(layer.id,buffer);vocalDurations[layer.id]=buffer.duration;
+      }
+      for(const layer of project.voice.videoLayers){
+        if(!layer.includeAudio)continue;
+        const file=videoFiles.get(layer.id);
+        if(!file)throw new Error(`The opted-in source audio for “${layer.name}” is missing locally.`);
+        const buffer=await decodeFile(file,layer.name);
+        videos.set(layer.id,buffer);videoDurations[layer.id]=Math.min(layer.durationSec,buffer.duration);
+      }
+      let plan=buildSongRenderPlan(project,{vocalDurations,videoDurations});
+      const activePadIds=[...new Set(plan.events.filter(event=>event.kind==='sample').map(event=>event.padId))];
+      for(const id of activePadIds){
+        const pad=project.pads[id],source=audio.sources.get(id),file=getMediaFiles().get(id)||source?.file;
+        if(!file&&!source?.buffer)throw new Error(`Pad ${id+1} has an active Song step but no local audio source.`);
+        pads.set(id,await decodeFile(file,pad.name,source?.buffer));
+      }
+      for(const note of plan.events.filter(event=>event.kind==='midi'&&event.word)){
+        if(cues.has(note.word))continue;
+        const word=project.voice.phrases.flatMap(phrase=>phrase.words).find(item=>item.text===note.word);
+        const sourcePad=word&&project.pads[word.sourcePad],source=word&&audio.sources.get(word.sourcePad),file=word&&getMediaFiles().get(word.sourcePad);
+        if(!word||!sourcePad?.fileName||!file&&!source?.buffer)continue;
+        const buffer=pads.get(word.sourcePad)||await decodeFile(file,sourcePad.name,source?.buffer);
+        pads.set(word.sourcePad,buffer);
+        cues.set(note.word,{buffer,start:word.start,end:word.end,gain:sourcePad.volume});
+      }
+      const padDurations=Object.fromEntries([...pads].map(([id,buffer])=>[id,buffer.duration]));
+      plan=buildSongRenderPlan(project,{padDurations,vocalDurations,videoDurations});
+      if(!songRenderActivity.current(token))return;
+      status.textContent=`Rendering ${plan.bars} bars to a local 44.1 kHz WAV. Keep this tab open…`;
+      const result=await renderSongAudioWav(plan,{pads,vocals,videos,cues});
+      if(!songRenderActivity.current(token))return;
+      rememberAudioTake?.(result.blob,result.durationSeconds);
+      status.textContent=`Offline Song mix ready · ${result.durationSeconds.toFixed(1)} s · ${(result.blob.size/1024/1024).toFixed(1)} MB · stereo 16-bit PCM WAV. Review or download it below.`;
+    }catch(error){
+      status.textContent=error?.message||'Offline Song audio rendering failed. The original project media is unchanged.';
+    }finally{
+      if(songRenderActivity.current(token))songRenderActivity.cancel();
+      updateOverdubControls();
+    }
+  }
 
   const renderInterruptedAudioRecovery = () => {
     interruptedAudioRecording=interruptedAudioRecordings[0]||null;
@@ -1682,6 +1750,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       scheduleMelodyNote(note,now+note.step*secondsPerStep,secondsPerStep);
     }
   });
+  $('render-song-audio').addEventListener('click',renderSongAudioExport);
   $('melody-export').addEventListener('click', () => {
     const melody=project.voice.melody,songBars=songTotalBars(project.song),bars=songBars||Math.min(MAX_SONG_BARS,Math.max(1,...melody.notes.map(note=>Math.ceil((note.step+note.duration)/16)),...melody.clips.map(melodyClipPreviewBars)));
     const notes=melody.notes.map(note=>({...note,track:'Melody'}));
@@ -1712,6 +1781,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     songVideoFramesAtStep,
     songAudioFramesAtStep,
     songMelodyVisualTracksAtStep,
+    renderSongAudioExport,
     stopSongVideoVisualPlayback,
     stopTuner,
     refreshTimeline() { renderOverdubTimeline(); },
