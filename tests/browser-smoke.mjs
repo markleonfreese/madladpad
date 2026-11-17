@@ -909,6 +909,26 @@ try {
   await page.locator('#voice-word-list .voice-word').nth(1).locator('input[aria-label="Transcript word 2"]').fill('from edited');
   assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Transcript word 2','correcting a transcript word should keep keyboard focus in the editor');
   assert.equal(await page.locator('#voice-word-list .voice-word').nth(1).locator('input[type=checkbox]').getAttribute('aria-label'),'Use word 2, from edited','the word-selection control should announce the corrected transcript text');
+  await page.evaluate(()=>{window.__wordSegmentStarts=[];window.__nativeWordSegmentStart=AudioBufferSourceNode.prototype.start;AudioBufferSourceNode.prototype.start=function(...args){if(args.length>=3&&this.buffer)window.__wordSegmentStarts.push(args.slice(0,3));return window.__nativeWordSegmentStart.apply(this,args);};});
+  const wordPreview=page.getByRole('button',{name:'Preview word 2, from edited from original clip'});
+  await wordPreview.click();
+  await page.waitForFunction(()=>window.__wordSegmentStarts.length===1);
+  const wordSegment=await page.evaluate(()=>window.__wordSegmentStarts[0]);
+  assert.ok(Math.abs(wordSegment[1]-.15)<.002,'word preview must begin at the manually corrected source offset');
+  assert.ok(Math.abs(wordSegment[2]-.4)<.003,'word preview must stop at the corrected source boundary');
+  assert.match(await page.locator('#voice-word-preview-status').textContent(),/original local clip/,'word preview should identify that it reuses the local source');
+  const voicePreviewViewport=page.viewportSize();
+  for(const width of [390,320]){
+    await page.setViewportSize({width,height:720});
+    const wordControlLayout=await page.locator('#voice-word-list .voice-word').nth(1).evaluate(row=>({row:row.clientWidth,content:row.scrollWidth,button:row.querySelector('button').getBoundingClientRect().width,document:document.documentElement.scrollWidth,viewport:document.documentElement.clientWidth}));
+    assert.ok(wordControlLayout.content<=wordControlLayout.row,`timestamp controls should fit inside a transcript word row at ${width}px: ${JSON.stringify(wordControlLayout)}`);
+    assert.equal(wordControlLayout.document,width,`transcript preview should not cause page overflow at ${width}px`);
+    assert.ok(wordControlLayout.button>=44,'word preview should retain a 44px touch target');
+  }
+  await page.setViewportSize(voicePreviewViewport);
+  await page.waitForFunction(()=>document.querySelector('#voice-word-preview-status')?.textContent.includes('Finished previewing'),null,{timeout:3000});
+  await page.evaluate(()=>{AudioBufferSourceNode.prototype.start=window.__nativeWordSegmentStart;});
+  checkpoint('timestamped speech word previews the original audio range');
   await page.locator('#voice-word-list .voice-word').nth(2).locator('input[type=checkbox]').check();
   await page.locator('#voice-make-phrase').click();
   await page.locator('#voice-phrases .phrase-words button[aria-label="Move later Hello"]').click();
@@ -950,6 +970,22 @@ try {
   assert.equal(await page.locator('#voice-word-list .voice-word').count(),3,'words outside the clip should not be included in the draft');
   assert.match(await page.locator('#voice-status').textContent(),/review the clip and add any missing words manually/i,'the transcript should disclose omitted words and explain manual recovery');
   await page.evaluate(()=>{window.syntheticVoiceWords=null;});
+  await page.locator('#voice-source-pad').selectOption('1');
+  await page.locator('#voice-manual-text').fill('visible');
+  await page.locator('#voice-manual-start').fill('0.05');
+  await page.locator('#voice-manual-end').fill('0.25');
+  await page.locator('#voice-manual-add').click();
+  const videoWordPreview=page.getByRole('button',{name:'Preview word 1, visible from original clip'});
+  await videoWordPreview.click();
+  await page.locator('#voice-word-video').waitFor({state:'visible'});
+  await page.waitForFunction(()=>{const video=document.querySelector('#voice-word-video');return video.readyState>=2&&!video.paused&&video.currentSrc.startsWith('blob:');},null,{timeout:5000});
+  const videoWordState=await page.locator('#voice-word-video').evaluate(video=>({time:video.currentTime,source:video.currentSrc.startsWith('blob:'),label:video.getAttribute('aria-label')}));
+  assert.ok(videoWordState.time>=.04&&videoWordState.time<.25,`video preview should seek into the manually aligned original segment: ${JSON.stringify(videoWordState)}`);
+  assert.equal(videoWordState.source,true,'video word preview should use the original local media file');
+  assert.equal(videoWordState.label,'Original video for the selected transcript word');
+  await page.getByRole('button',{name:'Stop preview of word 1, visible'}).click();
+  assert.equal(await page.locator('#voice-word-video').isHidden(),true,'stopping the selected word should release and hide its video preview');
+  await page.locator('#voice-source-pad').selectOption('0');
   await page.locator('[data-voice-jump="melody-title"]').click();
   const tunerBrowserResult=await page.evaluate(async()=>{
     const {detectPitch}=await import('/tuner.js');
@@ -2105,11 +2141,14 @@ try {
   await page.locator('#export-button').click();
   const download = await downloadPromise;
   const pack = JSON.parse(await readFile(await download.path(), 'utf8'));
+  const manualTranscriptIndex=pack.project.voice.transcripts.findIndex(transcript=>transcript.words.some(word=>word.text==='by hand'));
+  const videoTranscriptIndex=pack.project.voice.transcripts.findIndex(transcript=>transcript.sourcePad===1&&transcript.words.some(word=>word.text==='visible'));
   assert.equal(pack.format, 'madladpad');
   assert.ok(pack.media[0].startsWith('data:audio/'));
-  assert.equal(pack.project.voice.transcripts.length,3,'project packs should preserve every saved transcript take');
+  assert.equal(pack.project.voice.transcripts.length,4,'project packs should preserve every saved transcript take, including a manually aligned video word');
   assert.deepEqual(pack.project.voice.transcripts[0].words.map(word=>word.text),['Hello','from edited','MadLadPad'],'project packs should preserve corrected transcript words');
-  assert.ok(pack.project.voice.transcripts[2].words.some(word=>word.text==='by hand'),'project packs should preserve manual corrections in the selected transcript');
+  assert.ok(pack.project.voice.transcripts.some(transcript=>transcript.words.some(word=>word.text==='by hand')),'project packs should preserve manual corrections in the selected transcript');
+  assert.ok(pack.project.voice.transcripts.some(transcript=>transcript.sourcePad===1&&transcript.words.some(word=>word.text==='visible')),'project packs should preserve a manually aligned word and its video source pad');
   assert.equal(pack.project.voice.phrases.length,3,'project packs should preserve original phrases and the combined story');
   assert.ok(pack.project.voice.melody.notes.some(note=>note.midi===69&&note.word==='MadLadPad'),'project packs should preserve melody pitch and its transcript-word cue');
   assert.equal(pack.project.voice.rap.bars[0],'Hello from the other side','project packs should preserve the written rap bars');
@@ -2145,7 +2184,9 @@ try {
   await page.waitForFunction(()=>document.querySelector('#sample-info').textContent.includes('synthetic.wav · AUDIO · stored on this device'));
   assert.equal(await page.locator('#project-title').inputValue(), 'Smoke pack');
   await openScreen('voice');
-  await page.waitForFunction(()=>document.querySelectorAll('#voice-transcript-select option').length===3);
+  await page.waitForFunction(()=>document.querySelectorAll('#voice-transcript-select option').length===4);
+  assert.ok(manualTranscriptIndex>=0&&videoTranscriptIndex>=0,'the exported pack should retain both local word transcript records');
+  await page.locator('#voice-transcript-select').selectOption(String(manualTranscriptIndex));
   assert.ok(await page.locator('#voice-word-list input[type=text]').evaluateAll(inputs=>inputs.some(input=>input.value==='by hand')),'imported transcript corrections should still render after reloading the project');
   assert.equal(await page.locator('#voice-phrases .voice-phrase').count(),3,'imported phrases and the combined story should render after reload');
   await page.locator('[data-voice-jump="melody-title"]').click();

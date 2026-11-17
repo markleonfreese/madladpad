@@ -124,7 +124,7 @@ function toMono16k(buffer) {
   return mono;
 }
 
-function renderWords(project, save, transcript = project.voice.transcripts.at(-1)) {
+function renderWords(project, save, previewWord, transcript = project.voice.transcripts.at(-1)) {
   const host = $('voice-word-list'); host.replaceChildren();
   const tools = $('voice-selection-tools');
   if (!transcript) { tools.hidden = true; $('voice-make-phrase').disabled = true; return; }
@@ -156,8 +156,8 @@ function renderWords(project, save, transcript = project.voice.transcripts.at(-1
     const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = word.selected; checkbox.setAttribute('aria-label', `Use word ${index + 1}, ${word.text}`);
     checkbox.addEventListener('change', () => { word.selected = checkbox.checked; save(); updateSelectionTools(); });
     const text = document.createElement('input'); text.type = 'text'; text.maxLength = 120; text.value = word.text; text.setAttribute('aria-label', `Transcript word ${index + 1}`);
-    text.addEventListener('input', () => { word.text = text.value; checkbox.setAttribute('aria-label', `Use word ${index + 1}, ${word.text}`); save(); });
-    text.addEventListener('change', () => { word.text = text.value.trim(); text.value = word.text; checkbox.setAttribute('aria-label', `Use word ${index + 1}, ${word.text}`); save(); });
+    text.addEventListener('input', () => { word.text = text.value; checkbox.setAttribute('aria-label', `Use word ${index + 1}, ${word.text}`); preview.setAttribute('aria-label', `Preview word ${index + 1}, ${word.text} from original clip`); save(); });
+    text.addEventListener('change', () => { word.text = text.value.trim(); text.value = word.text; checkbox.setAttribute('aria-label', `Use word ${index + 1}, ${word.text}`); preview.setAttribute('aria-label', `Preview word ${index + 1}, ${word.text} from original clip`); save(); });
     const start = document.createElement('input'); start.type = 'number'; start.min = '0'; start.max = '3600'; start.step = '.01'; start.value = word.start.toFixed(2); start.setAttribute('aria-label', `Word ${index + 1} start seconds`);
     const end = document.createElement('input'); end.type = 'number'; end.min = '0'; end.max = '3600'; end.step = '.01'; end.value = word.end.toFixed(2); end.setAttribute('aria-label', `Word ${index + 1} end seconds`);
     for (const [input, key] of [[start, 'start'], [end, 'end']]) input.addEventListener('change', () => {
@@ -166,8 +166,11 @@ function renderWords(project, save, transcript = project.voice.transcripts.at(-1
       start.value = word.start.toFixed(2); end.value = word.end.toFixed(2);
       save();
     });
+    const preview = document.createElement('button'); preview.type = 'button'; preview.className = 'pill-button voice-word-preview-button'; preview.textContent = '▶';
+    preview.setAttribute('aria-label', `Preview word ${index + 1}, ${word.text} from original clip`);
+    preview.addEventListener('click', () => previewWord(word, transcript, preview));
     const score = document.createElement('span'); score.className = 'voice-confidence'; score.textContent = 'review'; score.title = 'The local model does not provide a calibrated word confidence score.';
-    row.append(checkbox, text, start, end, score); host.append(row);
+    row.append(checkbox, text, start, end, score, preview); host.append(row);
   });
   updateSelectionTools();
 }
@@ -479,6 +482,83 @@ function renderRap(project, save, audio, notify) {
 export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTransport, notify, save, assignWordsToPads, onTimelineScale, rememberAudioTake }) {
   const project = getProject(), audio = getAudio();
   let activeTranscript = null;
+  let activeWordPreview = null;
+  let wordPreviewToken = 0;
+  const stopWordPreview = (message = 'Word preview stopped.') => {
+    wordPreviewToken++;
+    const active = activeWordPreview;
+    activeWordPreview = null;
+    if (active?.kind === 'audio') {
+      try { active.source.stop(); } catch {}
+      active.source.disconnect(); active.gain.disconnect();
+    } else if (active?.kind === 'video') {
+      active.element.pause();
+      active.element.removeEventListener('timeupdate', active.onTime);
+      active.element.removeEventListener('ended', active.onEnded);
+      active.element.removeAttribute('src'); active.element.load();
+      URL.revokeObjectURL(active.url);
+    }
+    if (active?.button?.isConnected) {
+      active.button.textContent = '▶';
+      active.button.setAttribute('aria-label', `Preview word ${active.wordIndex + 1}, ${active.wordText} from original clip`);
+    }
+    if ($('voice-word-preview-status')) $('voice-word-preview-status').textContent = message;
+    if ($('voice-word-preview')) $('voice-word-preview').hidden = !activeWordPreview;
+  };
+  const previewTranscriptWord = async (word, transcript, button) => {
+    if (activeWordPreview?.button === button) { stopWordPreview(); return; }
+    stopWordPreview('Loading the selected word from its original local clip…');
+    const token = wordPreviewToken, sourcePad = transcript.sourcePad, file = getMediaFiles().get(sourcePad);
+    if (!file) { $('voice-word-preview-status').textContent = 'The original local clip is unavailable. Reload or re-import it before previewing this word.'; $('voice-word-preview').hidden = false; return; }
+    const range = { start: Math.max(0, Number(word.start) || 0), end: Math.max(0, Number(word.end) || 0) };
+    const wordIndex = transcript.words.indexOf(word), wordText = word.text;
+    if (file.type.startsWith('video/')) {
+      const element = $('voice-word-video'), url = URL.createObjectURL(file);
+      let end = range.end;
+      const stopAtWordEnd = () => { if (element.currentTime >= end - .015) stopWordPreview(`Finished previewing “${wordText}”. Video timing is best-effort on this browser.`); };
+      const onEnded = () => stopWordPreview(`Finished previewing “${wordText}”.`);
+      element.hidden = false; $('voice-word-preview').hidden = false;
+      element.src = url;
+      element.currentTime = range.start;
+      element.addEventListener('timeupdate', stopAtWordEnd);
+      element.addEventListener('ended', onEnded, { once: true });
+      activeWordPreview = { kind: 'video', element, url, onTime: stopAtWordEnd, onEnded, button, wordIndex, wordText };
+      button.textContent = 'Ⅱ';
+      button.setAttribute('aria-label', `Stop preview of word ${wordIndex + 1}, ${wordText}`);
+      $('voice-word-preview-status').textContent = `Previewing “${wordText}” at ${range.start.toFixed(2)}–${range.end.toFixed(2)} seconds from the original clip. Audio and video seek timing is best-effort.`;
+      try { await element.play(); }
+      catch (error) { if (activeWordPreview?.url === url) stopWordPreview(`Could not play this source video: ${error.message}`); }
+      return;
+    }
+    try {
+      const source = audio.sources.get(sourcePad);
+      let buffer = source?.buffer;
+      if (!buffer && file.type.startsWith('audio/')) buffer = await audio.context.decodeAudioData(await file.arrayBuffer());
+      if (token !== wordPreviewToken) return;
+      if (!buffer) throw new Error('This browser cannot decode audio from the original clip.');
+      const start = Math.min(range.start, Math.max(0, buffer.duration - .01));
+      const end = Math.min(buffer.duration, Math.max(start + .01, range.end));
+      const duration = end - start;
+      if (!Number.isFinite(duration) || duration <= 0) throw new Error('The selected word has no playable audio range.');
+      await audio.unlock();
+      if (token !== wordPreviewToken) return;
+      const node = audio.context.createBufferSource(), gain = audio.context.createGain();
+      node.buffer = buffer; node.connect(gain).connect(audio.master);
+      const at = audio.context.currentTime + .02, fade = Math.min(.008, duration / 3), level = .8;
+      gain.gain.setValueAtTime(0, at); gain.gain.linearRampToValueAtTime(level, at + fade);
+      gain.gain.setValueAtTime(level, at + duration - fade); gain.gain.linearRampToValueAtTime(0, at + duration);
+      activeWordPreview = { kind: 'audio', source: node, gain, button, wordIndex, wordText };
+      button.textContent = 'Ⅱ';
+      button.setAttribute('aria-label', `Stop preview of word ${wordIndex + 1}, ${wordText}`);
+      $('voice-word-preview').hidden = false;
+      $('voice-word-video').hidden = true;
+      $('voice-word-preview-status').textContent = `Previewing “${wordText}” at ${start.toFixed(2)}–${end.toFixed(2)} seconds from the original local clip.`;
+      node.onended = () => { if (activeWordPreview?.source === node) stopWordPreview(`Finished previewing “${wordText}”.`); };
+      node.start(at, start, duration);
+    } catch (error) {
+      if (token === wordPreviewToken) { $('voice-word-preview').hidden = false; $('voice-word-preview-status').textContent = `Could not preview this word: ${error.message}`; }
+    }
+  };
   let worker = null;
   const transcriptionActivity = new AsyncActivity();
   let vocalRecording = null;
@@ -1266,7 +1346,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     for (const [id, file] of getMediaFiles()) if (/^(audio|video)\//.test(file.type)) { const option = document.createElement('option'); option.value = id; option.textContent = `${project.pads[id].name} · ${file.name || file.type}`; select.append(option); }
     if ([...select.options].some(option => option.value === selected)) select.value = selected;
     updateConsentState(); updateManualEntryState(); renderTranscriptPicker();
-    renderWords(project, save, activeTranscript); renderPhrases(project, audio, notify, save, assignWordsToPads); renderMelody(project, save,auditionMelodyNote); renderRap(project, save, audio, notify); renderVocalLayers();renderVideoLayers();
+    renderWords(project, save, previewTranscriptWord, activeTranscript); renderPhrases(project, audio, notify, save, assignWordsToPads); renderMelody(project, save,auditionMelodyNote); renderRap(project, save, audio, notify); renderVocalLayers();renderVideoLayers();
   }
   const stopOverdub = () => {
     const take = vocalRecording;
@@ -1653,8 +1733,9 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     render();
   });
   $('voice-transcript-select').addEventListener('change', () => {
+    stopWordPreview();
     activeTranscript = project.voice.transcripts[Number($('voice-transcript-select').value)] || null;
-    renderWords(project, save, activeTranscript);
+    renderWords(project, save, previewTranscriptWord, activeTranscript);
   });
   $('voice-consent').addEventListener('change', () => {
     if (!$('voice-consent').checked && transcriptionActivity.phase!=='idle') cancelTranscription('Consent withdrawn. Transcription canceled.');
@@ -1676,7 +1757,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     }
     transcript.words.push({id:`manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, text, start, end, selected:true, score:null});
     project.voice.transcripts.push(transcript);
-    activeTranscript = transcript; save(); renderTranscriptPicker(); renderWords(project, save, activeTranscript);
+    activeTranscript = transcript; save(); renderTranscriptPicker(); renderWords(project, save, previewTranscriptWord, activeTranscript);
     $('voice-status').textContent = `Added “${text}” at ${start.toFixed(2)}–${end.toFixed(2)} seconds. This manual alignment used no speech model.`;
     $('voice-manual-text').value = ''; $('voice-manual-start').value = end.toFixed(2); $('voice-manual-end').value = (end + .3).toFixed(2);
     updateManualEntryState();
