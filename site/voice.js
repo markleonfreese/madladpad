@@ -124,7 +124,7 @@ function toMono16k(buffer) {
   return mono;
 }
 
-function renderWords(project, save, previewWord, transcript = project.voice.transcripts.at(-1)) {
+function renderWords(project, save, previewWord, transcript = project.voice.transcripts.at(-1), onWordEdit = null) {
   const host = $('voice-word-list'); host.replaceChildren();
   const tools = $('voice-selection-tools');
   if (!transcript) { tools.hidden = true; $('voice-make-phrase').disabled = true; return; }
@@ -156,8 +156,8 @@ function renderWords(project, save, previewWord, transcript = project.voice.tran
     const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = word.selected; checkbox.setAttribute('aria-label', `Use word ${index + 1}, ${word.text}`);
     checkbox.addEventListener('change', () => { word.selected = checkbox.checked; save(); updateSelectionTools(); });
     const text = document.createElement('input'); text.type = 'text'; text.maxLength = 120; text.value = word.text; text.setAttribute('aria-label', `Transcript word ${index + 1}`);
-    text.addEventListener('input', () => { word.text = text.value; checkbox.setAttribute('aria-label', `Use word ${index + 1}, ${word.text}`); preview.setAttribute('aria-label', `Preview word ${index + 1}, ${word.text} from original clip`); save(); });
-    text.addEventListener('change', () => { word.text = text.value.trim(); text.value = word.text; checkbox.setAttribute('aria-label', `Use word ${index + 1}, ${word.text}`); preview.setAttribute('aria-label', `Preview word ${index + 1}, ${word.text} from original clip`); save(); });
+    text.addEventListener('input', () => { word.text = text.value; checkbox.setAttribute('aria-label', `Use word ${index + 1}, ${word.text}`); preview.setAttribute('aria-label', `Preview word ${index + 1}, ${word.text} from original clip`); save(); onWordEdit?.(); });
+    text.addEventListener('change', () => { word.text = text.value.trim(); text.value = word.text; checkbox.setAttribute('aria-label', `Use word ${index + 1}, ${word.text}`); preview.setAttribute('aria-label', `Preview word ${index + 1}, ${word.text} from original clip`); save(); onWordEdit?.(); });
     const start = document.createElement('input'); start.type = 'number'; start.min = '0'; start.max = '3600'; start.step = '.01'; start.value = word.start.toFixed(2); start.setAttribute('aria-label', `Word ${index + 1} start seconds`);
     const end = document.createElement('input'); end.type = 'number'; end.min = '0'; end.max = '3600'; end.step = '.01'; end.value = word.end.toFixed(2); end.setAttribute('aria-label', `Word ${index + 1} end seconds`);
     for (const [input, key] of [[start, 'start'], [end, 'end']]) input.addEventListener('change', () => {
@@ -173,6 +173,37 @@ function renderWords(project, save, previewWord, transcript = project.voice.tran
     row.append(checkbox, text, start, end, score, preview); host.append(row);
   });
   updateSelectionTools();
+}
+
+function renderWordRemix(project, transcript, save, barState) {
+  const wordSelect=$('word-remix-word'),barHost=$('word-remix-bars'),grid=$('word-remix-grid'),events=project.voice.wordRemix.events;
+  const priorWord=wordSelect.value;
+  wordSelect.replaceChildren();
+  for(const word of transcript?.words||[]){const option=document.createElement('option');option.value=word.id;option.textContent=word.text;wordSelect.append(option);}
+  wordSelect.disabled=!transcript?.words.length;
+  if((transcript?.words||[]).some(word=>word.id===priorWord))wordSelect.value=priorWord;
+  barHost.replaceChildren();
+  for(let bar=0;bar<4;bar++){
+    const button=document.createElement('button');button.type='button';button.className='pill-button';button.textContent=`BAR ${bar+1}`;button.setAttribute('aria-pressed',String(barState.value===bar));
+    button.addEventListener('click',()=>{barState.value=bar;renderWordRemix(project,transcript,save,barState);});barHost.append(button);
+  }
+  grid.replaceChildren();
+  for(let stepInBar=0;stepInBar<16;stepInBar++){
+    const absoluteStep=barState.value*16+stepInBar,event=events.find(item=>item.step===absoluteStep);
+    const eventTranscript=event&&project.voice.transcripts.find(item=>item.id===event.transcriptId),word=eventTranscript?.words.find(item=>item.id===event.wordId);
+    const button=document.createElement('button');button.type='button';button.className='pill-button';button.textContent=word?.text||String(stepInBar+1).padStart(2,'0');button.setAttribute('aria-pressed',String(Boolean(event)));
+    button.setAttribute('aria-label',event?`Bar ${barState.value+1}, step ${stepInBar+1}, ${word?.text||'missing word'}; remove event`:`Bar ${barState.value+1}, step ${stepInBar+1}; place ${wordSelect.selectedOptions[0]?.textContent||'selected word'}`);
+    button.disabled=!event&&!wordSelect.value;
+    button.addEventListener('click',()=>{
+      const existing=events.findIndex(item=>item.step===absoluteStep);
+      if(existing>=0)events.splice(existing,1);
+      else if(transcript&&wordSelect.value&&events.length<64)events.push({id:crypto.randomUUID?.()||`word-event-${Date.now()}-${absoluteStep}`,transcriptId:transcript.id,wordId:wordSelect.value,step:absoluteStep});
+      save();renderWordRemix(project,transcript,save,barState);
+    });
+    grid.append(button);
+  }
+  $('word-remix-clear').disabled=!events.length;
+  $('word-remix-play').disabled=!events.length;
 }
 
 function renderPhrases(project, audio, notify, save, assignWordsToPads) {
@@ -484,6 +515,8 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   let activeTranscript = null;
   let activeWordPreview = null;
   let wordPreviewToken = 0;
+  let wordRemixPlayback = null;
+  const wordRemixBar={value:0};
   const stopWordPreview = (message = 'Word preview stopped.') => {
     wordPreviewToken++;
     const active = activeWordPreview;
@@ -506,6 +539,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     if ($('voice-word-preview')) $('voice-word-preview').hidden = !activeWordPreview;
   };
   const previewTranscriptWord = async (word, transcript, button) => {
+    if(wordRemixPlayback)stopWordRemix('Stopped the Word Remix to preview one word.');
     if (activeWordPreview?.button === button) { stopWordPreview(); return; }
     stopWordPreview('Loading the selected word from its original local clip…');
     const token = wordPreviewToken, sourcePad = transcript.sourcePad, file = getMediaFiles().get(sourcePad);
@@ -557,6 +591,83 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       node.start(at, start, duration);
     } catch (error) {
       if (token === wordPreviewToken) { $('voice-word-preview').hidden = false; $('voice-word-preview-status').textContent = `Could not preview this word: ${error.message}`; }
+    }
+  };
+  const stopWordRemix = (message='Word Remix stopped.') => {
+    const playback=wordRemixPlayback;
+    if(!playback)return;
+    wordRemixPlayback=null;
+    playback.timers.forEach(timer=>clearTimeout(timer));
+    playback.sources.forEach(({node,gain})=>{try{node.stop();}catch{}node.disconnect();gain.disconnect();});
+    if(playback.video){playback.video.pause();playback.video.removeEventListener('timeupdate',playback.onVideoTime);playback.video.removeAttribute('src');playback.video.load();playback.video.hidden=true;}
+    if(playback.videoUrl)URL.revokeObjectURL(playback.videoUrl);
+    $('word-remix-play').disabled=!getProject().voice.wordRemix.events.length;
+    $('word-remix-stop').disabled=true;
+    $('word-remix-status').textContent=message;
+  };
+  const playWordRemix = async () => {
+    stopWordRemix('Preparing the local word events…');
+    if(activeWordPreview)stopWordPreview('Stopped the single-word preview to play the Word Remix.');
+    const currentProject=getProject(),events=[...currentProject.voice.wordRemix.events].sort((a,b)=>a.step-b.step);
+    if(!events.length)return;
+    const token={sources:[],timers:[],video:null,videoUrl:null,onVideoTime:null};
+    try{
+      await audio.unlock();
+      const bpm=clamp(getTransport?.()?.bpm||currentProject.bpm,40,240),secondsPerStep=60/bpm/4,totalDuration=64*secondsPerStep;
+      const plans=[];
+      for(const event of events){
+        const transcript=currentProject.voice.transcripts.find(item=>item.id===event.transcriptId),word=transcript?.words.find(item=>item.id===event.wordId),file=transcript&&getMediaFiles().get(transcript.sourcePad);
+        if(!word||!file)throw new Error('A word source is missing. Re-import its original local clip before playing.');
+        const offset=event.step*secondsPerStep,rangeStart=clamp(word.start,0,3600),rangeEnd=clamp(word.end,rangeStart,3600),duration=Math.min(rangeEnd-rangeStart,totalDuration-offset);
+        if(duration<=.01)continue;
+        if(file.type.startsWith('video/'))plans.push({event,word,file,rangeStart,duration,offset,transcript});
+        else if(file.type.startsWith('audio/')){
+          let buffer=audio.sources.get(transcript.sourcePad)?.buffer;
+          if(!buffer)buffer=await audio.context.decodeAudioData(await file.arrayBuffer());
+          const start=Math.min(rangeStart,Math.max(0,buffer.duration-.01)),playDuration=Math.min(duration,buffer.duration-start);
+          if(playDuration>.01)plans.push({event,word,file,buffer,start,duration:playDuration,offset,transcript});
+        }else throw new Error(`The source for “${word.text}” is not playable audio or video.`);
+      }
+      const videoPads=new Set(plans.filter(plan=>plan.file.type.startsWith('video/')).map(plan=>plan.transcript.sourcePad));
+      if(videoPads.size>1)throw new Error('This preview supports one original video source at a time. Use words from one transcript.');
+      if(videoPads.size){
+        const pad=[...videoPads][0],file=getMediaFiles().get(pad),video=$('voice-word-video');
+        token.video=video;token.videoUrl=URL.createObjectURL(file);video.hidden=false;video.src=token.videoUrl;video.load();
+        await new Promise((resolve,reject)=>{
+          if(video.readyState>=1){resolve();return;}
+          const timer=setTimeout(()=>reject(new Error('The source video did not become ready.')),5000);token.timers.push(timer);
+          video.addEventListener('loadedmetadata',()=>{clearTimeout(timer);resolve();},{once:true});
+          video.addEventListener('error',()=>{clearTimeout(timer);reject(new Error('This browser could not open the source video.'));},{once:true});
+        });
+        token.onVideoTime=()=>{const active=token.currentVideoPlan;if(active&&video.currentTime>=active.rangeStart+active.duration-.02)video.pause();};
+        video.addEventListener('timeupdate',token.onVideoTime);
+      }
+      if(wordRemixPlayback)stopWordRemix();
+      wordRemixPlayback=token;
+      const epoch=audio.context.currentTime+.12;
+      for(const plan of plans){
+        if(plan.buffer){
+          const node=audio.context.createBufferSource(),gain=audio.context.createGain(),when=epoch+plan.offset,duration=plan.duration,fade=Math.min(.008,duration/3);
+          node.buffer=plan.buffer;node.connect(gain).connect(audio.master);gain.gain.setValueAtTime(0,when);gain.gain.linearRampToValueAtTime(.82,when+fade);gain.gain.setValueAtTime(.82,when+duration-fade);gain.gain.linearRampToValueAtTime(0,when+duration);
+          token.sources.push({node,gain});node.onended=()=>{node.disconnect();gain.disconnect();};node.start(when,plan.start,duration);
+        }else{
+          const timer=setTimeout(()=>{
+            if(wordRemixPlayback!==token)return;
+            const video=token.video;token.currentVideoPlan=plan;video.pause();video.currentTime=Math.min(plan.rangeStart,Math.max(0,video.duration-.02));
+            video.play().catch(error=>{if(wordRemixPlayback===token)$('word-remix-status').textContent=`Video playback was blocked: ${error.message}. Tap Play again.`;});
+          },Math.max(0,Math.round(plan.offset*1000)));
+          token.timers.push(timer);
+        }
+      }
+      $('voice-word-preview').hidden=false;
+      $('word-remix-play').disabled=true;$('word-remix-stop').disabled=false;
+      $('word-remix-status').textContent=`Playing ${events.length} source-linked word event${events.length===1?'':'s'} across four bars at ${bpm} BPM. Original video seek timing is best-effort.`;
+      const finish=setTimeout(()=>stopWordRemix('Finished the four-bar Word Remix.'),Math.ceil((totalDuration+.15)*1000));token.timers.push(finish);
+      wordRemixPlayback=token;
+    }catch(error){
+      if(wordRemixPlayback===token)stopWordRemix(`Word Remix could not play: ${error.message}`);
+      else {token.sources.forEach(({node,gain})=>{try{node.stop();}catch{}node.disconnect();gain.disconnect();});if(token.videoUrl)URL.revokeObjectURL(token.videoUrl);if(token.video){token.video.pause();token.video.removeAttribute('src');token.video.load();token.video.hidden=true;}}
+      $('word-remix-play').disabled=false;$('word-remix-stop').disabled=true;$('word-remix-status').textContent=`Word Remix could not play: ${error.message}`;
     }
   };
   let worker = null;
@@ -1346,7 +1457,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     for (const [id, file] of getMediaFiles()) if (/^(audio|video)\//.test(file.type)) { const option = document.createElement('option'); option.value = id; option.textContent = `${project.pads[id].name} · ${file.name || file.type}`; select.append(option); }
     if ([...select.options].some(option => option.value === selected)) select.value = selected;
     updateConsentState(); updateManualEntryState(); renderTranscriptPicker();
-    renderWords(project, save, previewTranscriptWord, activeTranscript); renderPhrases(project, audio, notify, save, assignWordsToPads); renderMelody(project, save,auditionMelodyNote); renderRap(project, save, audio, notify); renderVocalLayers();renderVideoLayers();
+    renderWords(project, save, previewTranscriptWord, activeTranscript,()=>renderWordRemix(project,activeTranscript,save,wordRemixBar)); renderWordRemix(project,activeTranscript,save,wordRemixBar);renderPhrases(project, audio, notify, save, assignWordsToPads); renderMelody(project, save,auditionMelodyNote); renderRap(project, save, audio, notify); renderVocalLayers();renderVideoLayers();
   }
   const stopOverdub = () => {
     const take = vocalRecording;
@@ -1728,14 +1839,19 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   await refreshInterruptedAudioRecordings();
   await refreshInterruptedVideoRecordings();
   window.addEventListener('madladpad-media-change', render);
+  $('word-remix-word').addEventListener('change',()=>renderWordRemix(project,activeTranscript,save,wordRemixBar));
+  $('word-remix-play').addEventListener('click',playWordRemix);
+  $('word-remix-stop').addEventListener('click',()=>stopWordRemix());
+  $('word-remix-clear').addEventListener('click',()=>{project.voice.wordRemix.events=[];stopWordRemix('Cleared all Word Remix events.');save();renderWordRemix(project,activeTranscript,save,wordRemixBar);});
+  window.addEventListener('pagehide',()=>stopWordRemix('Stopped when this page closed.'),{once:true});
   $('voice-source-pad').addEventListener('change', () => {
     if (transcriptionActivity.phase!=='idle') cancelTranscription('Source changed. Previous transcription canceled.');
     render();
   });
   $('voice-transcript-select').addEventListener('change', () => {
-    stopWordPreview();
+    stopWordPreview();stopWordRemix();
     activeTranscript = project.voice.transcripts[Number($('voice-transcript-select').value)] || null;
-    renderWords(project, save, previewTranscriptWord, activeTranscript);
+    renderWords(project, save, previewTranscriptWord, activeTranscript,()=>renderWordRemix(project,activeTranscript,save,wordRemixBar));renderWordRemix(project,activeTranscript,save,wordRemixBar);
   });
   $('voice-consent').addEventListener('change', () => {
     if (!$('voice-consent').checked && transcriptionActivity.phase!=='idle') cancelTranscription('Consent withdrawn. Transcription canceled.');
@@ -1757,7 +1873,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     }
     transcript.words.push({id:`manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, text, start, end, selected:true, score:null});
     project.voice.transcripts.push(transcript);
-    activeTranscript = transcript; save(); renderTranscriptPicker(); renderWords(project, save, previewTranscriptWord, activeTranscript);
+    activeTranscript = transcript; save(); renderTranscriptPicker(); renderWords(project, save, previewTranscriptWord, activeTranscript,()=>renderWordRemix(project,activeTranscript,save,wordRemixBar));renderWordRemix(project,activeTranscript,save,wordRemixBar);
     $('voice-status').textContent = `Added “${text}” at ${start.toFixed(2)}–${end.toFixed(2)} seconds. This manual alignment used no speech model.`;
     $('voice-manual-text').value = ''; $('voice-manual-start').value = end.toFixed(2); $('voice-manual-end').value = (end + .3).toFixed(2);
     updateManualEntryState();

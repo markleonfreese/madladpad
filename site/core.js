@@ -102,7 +102,7 @@ export function directedPads(shot, active, padCount=12) {
 }
 
 export const makeVoiceData = () => ({
-  transcripts: [], phrases: [], layers: [], videoLayers: [], melody: { tuning: 440, key:0, scale:'major', notes: [], clips:[], activeClipId:'', followBeat:false },
+  transcripts: [], phrases: [], wordRemix:{events:[]}, layers: [], videoLayers: [], melody: { tuning: 440, key:0, scale:'major', notes: [], clips:[], activeClipId:'', followBeat:false },
   rap: { scheme: 'AABB', bars: Array(RAP_BAR_COUNT).fill(''), flow:Array.from({length:RAP_BAR_COUNT},()=>Array(16).fill(false)) }
 });
 
@@ -131,6 +131,17 @@ function normaliseVoice(value) {
       })).filter(word => word.text && word.end > word.start)
     };
   }) : [];
+  const remixSource = source.wordRemix && typeof source.wordRemix === 'object' ? source.wordRemix : {};
+  const occupiedRemixSteps = new Set();
+  const wordRemix = { events: (Array.isArray(remixSource.events) ? remixSource.events : []).slice(0, 64).flatMap((event,index) => {
+    const transcriptId = String(event?.transcriptId || '').slice(0,80), wordId = String(event?.wordId || '').slice(0,100);
+    const transcript = transcripts.find(item => item.id === transcriptId), rawStep = Number(event?.step);
+    if (!Number.isInteger(rawStep) || rawStep < 0 || rawStep >= 64) return [];
+    const step = rawStep;
+    if (!transcript || !transcript.words.some(word => word.id === wordId) || occupiedRemixSteps.has(step)) return [];
+    occupiedRemixSteps.add(step);
+    return [{ id:String(event?.id || `word-event-${index+1}`).slice(0,80), transcriptId, wordId, step }];
+  }) };
   const layers = Array.isArray(source.layers) ? source.layers.slice(0, MAX_VOCAL_LAYERS).map((layer, index) => ({
     id: String(layer?.id || `vocal-${index + 1}`).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || `vocal-${index + 1}`,
     name: String(layer?.name || `Vocal take ${index + 1}`).slice(0, 48),
@@ -183,7 +194,7 @@ function normaliseVoice(value) {
   }):[];
   const rapSource = source.rap && typeof source.rap === 'object' ? source.rap : {};
   return {
-    transcripts, phrases, layers, videoLayers,
+    transcripts, phrases, wordRemix, layers, videoLayers,
     melody: {
       tuning: clamp(melodySource.tuning ?? 440, 400, 480),
       key: clamp(Math.round(melodySource.key ?? 0), 0, 11),

@@ -240,6 +240,15 @@
             <p id="voice-word-preview-status" class="voice-word-preview-status" role="status" aria-live="polite">Choose a word to preview its original clip segment.</p>
             <video id="voice-word-video" playsinline preload="metadata" aria-label="Original video for the selected transcript word" hidden></video>
           </div>
+          <section class="word-remix" aria-labelledby="word-remix-title">
+            <h4 id="word-remix-title">WORD REMIX · 4 BARS</h4>
+            <p class="voice-note">Place reviewed source words on a 16th-note grid. Events keep their original transcript time ranges; no cropped samples are created. Video seek timing is best-effort.</p>
+            <label class="voice-label">WORD FOR NEW EVENTS<select id="word-remix-word" aria-label="Word to place in the remix"></select></label>
+            <div id="word-remix-bars" class="word-remix-bars" role="group" aria-label="Choose remix bar"></div>
+            <div id="word-remix-grid" class="word-remix-grid" role="group" aria-label="Sixteenth-note word remix grid"></div>
+            <div class="voice-actions"><button class="pill-button" id="word-remix-play" type="button">▶ PLAY 4 BARS</button><button class="pill-button" id="word-remix-stop" type="button" disabled>■ STOP</button><button class="pill-button" id="word-remix-clear" type="button">CLEAR EVENTS</button></div>
+            <p id="word-remix-status" class="voice-status" role="status" aria-live="polite">Choose a transcript word, then tap a grid step to place or remove it.</p>
+          </section>
           <button class="pill-button" id="voice-make-phrase" disabled>ADD SELECTED WORDS TO PHRASE</button>
           <div id="voice-phrases" class="voice-phrases" role="group" aria-label="Reorderable audio phrases"></div>
           <div class="voice-actions"><button class="pill-button" id="voice-story-combine">COMBINE PHRASES INTO A STORY</button></div>
