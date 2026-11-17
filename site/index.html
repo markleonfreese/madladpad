@@ -353,8 +353,10 @@
     <section id="export-lab" class="studio-stage" aria-labelledby="export-title" hidden>
       <div class="section-label"><span>05 / FINAL MIX</span><span>PREVIEW · DOWNLOAD · BACK UP</span></div>
       <h2 id="export-title">Capture and share your track.</h2>
-      <p class="voice-intro">Record your performance, then review the result below. While a Song plays, video includes active placed video and audio tracks alongside the pad visuals; audio tracks appear as local waveforms and beat-following Melody and harmony appear as note lanes. Track source audio is muted unless you turn on MIX SOURCE AUDIO; enabled tracks join the live and recorded master mix. This captures the live performance; it is not a deterministic full-Song render. Recording stops when you tap the same button again.</p>
+      <p class="voice-intro">Record your performance, then review the result below. While a Song plays, video includes active placed video and audio tracks alongside the pad visuals; audio tracks appear as local waveforms and beat-following Melody and harmony appear as note lanes. Track source audio is muted unless you turn on MIX SOURCE AUDIO; enabled tracks join the live and recorded master mix. Performance capture is live; it is not a deterministic full-Song render. Full-Song capture starts at bar 1 and stops at the end; other recordings stop when you tap the same button again.</p>
       <div class="export-controls">
+        <button class="accent-button full-song-capture-button" id="record-full-song-video" type="button" aria-pressed="false" title="Capture the arranged Song from bar 1 through its final bar">▶ CAPTURE FULL SONG VIDEO</button>
+        <p class="voice-note full-song-capture-note">Starts the Song at bar 1 and stops at its final bar. This is a real-time live capture, not an offline renderer; keep this page open until the download begins. Your audio and video stay on this device.</p>
         <button class="accent-button" id="start-record" aria-pressed="false"><span class="record-dot"></span> RECORD VIDEO</button>
         <button class="accent-button audio-record-button" id="record-audio" aria-pressed="false">♪ RECORD AUDIO</button>
         <details class="export-advanced" id="export-advanced"><summary>Video framing &amp; formats</summary><div class="export-settings">
@@ -364,6 +366,7 @@
         <label class="field">AUDIO FORMAT<select id="record-audio-format"><option value="auto">Browser's best supported</option><option value="m4a">M4A (if supported)</option><option value="webm">WebM (if supported)</option><option value="ogg">Ogg (if supported)</option></select></label>
         </div></details>
       </div>
+      <p id="full-song-capture-status" class="voice-status" role="status" aria-live="polite">Full-Song capture is ready when the arrangement contains saved sections.</p>
       <p id="export-record-status" class="voice-status" role="status">Record a video or audio take to preview it here. Completed takes also download automatically.</p>
       <canvas id="capture-canvas" class="export-live-preview" width="960" height="720" aria-label="Live performance composition with pad, audio waveform, Melody note lanes and video tiles" hidden></canvas>
       <div class="export-previews">

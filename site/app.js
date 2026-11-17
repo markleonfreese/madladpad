@@ -27,6 +27,10 @@ let nextStep = 0;
 let nextStepTime = 0;
 let songEndTimer = null;
 let recording = null;
+let fullSongVideoCapture = false;
+let fullSongVideoCaptureStarting = false;
+let fullSongVideoCaptureReachedEnd = false;
+let recordingPurpose = 'performance';
 const takeActivity = new AsyncActivity();
 let takeKind = null;
 let patternRecording = null;
@@ -1376,20 +1380,21 @@ async function placeFiles(files,start=selected) {
   if(loaded)notify(`${loaded} sample${loaded===1?'':'s'} added and stored on this device. Tap a pad to play.`);
 }
 
-function startSequencer() {
+async function startSequencer() {
   if(sequenceView==='song'){
-    if(!project.song.clips.length)return notify('Add saved patterns to Song before playing.');
+    if(!project.song.clips.length){notify('Add saved patterns to Song before playing.');return false;}
     if(project.song.clips.some(clip=>!project.scenes.some(scene=>scene.id===clip.sceneId)))
-      return notify('A song section refers to a missing pattern. Remove or repair that section before playing.');
+      {notify('A song section refers to a missing pattern. Remove or repair that section before playing.');return false;}
   }
   const playbackSong=sequenceView==='song'
     ?JSON.parse(JSON.stringify({song:project.song,scenes:project.scenes}))
     :null;
   const token = transportActivity.begin();
-  if (token===null) return;
+  if (token===null) return false;
   updateTransportButton();
-  audio.unlock().then(() => {
-    if (!transportActivity.activate(token)) return;
+  try {
+    await audio.unlock();
+    if (!transportActivity.activate(token)) return false;
     audio.setTransport(project.bpm,'off');
     const secondsPerStep=60/project.bpm/4;
     audio.setEpoch(audio.context.currentTime+.08);
@@ -1408,7 +1413,12 @@ function startSequencer() {
         if(playbackSong&&!section){
           clearInterval(transportTimer);transportTimer=null;
           songEndTimer=setTimeout(()=>{
-            if(transportActivity.current(token)){stopSequencer();notify('Song finished. Recordings remain in this project.');}
+            if(transportActivity.current(token)){
+              const capturedFullSong=fullSongVideoCapture;
+              if(capturedFullSong)fullSongVideoCaptureReachedEnd=true;
+              stopSequencer();
+              notify(capturedFullSong?'Song finished. Finalizing the full-Song video…':'Song finished. Recordings remain in this project.');
+            }
           },Math.max(0,(time-audio.context.currentTime)*1000));
           return;
         }
@@ -1452,7 +1462,13 @@ function startSequencer() {
         voiceLab?.scheduleMelodyStep(absoluteStep,time,project.bpm);
         setTimeout(()=>{
           if(!transportActivity.current(token) || !transportTimer)return;
-          if(section)updateSongPlayhead(absoluteStep,true);
+          if(section){
+            updateSongPlayhead(absoluteStep,true);
+            if(fullSongVideoCapture&&absoluteStep%16===0){
+              const totalBars=songTotalBars(playbackSong.song);
+              $('full-song-capture-status').textContent=`Capturing arranged Song · bar ${Math.floor(absoluteStep/16)+1} of ${totalBars}. Keep this page open.`;
+            }
+          }
           showDirectorPlayingStep(step);
           voiceLab?.highlightRapBar(absoluteStep);
           updateBeatIndicator(Math.floor(step/stride));
@@ -1467,11 +1483,13 @@ function startSequencer() {
     tick();
     updateTransportButton();
     renderScenes();
-  }).catch(error=>{
-    if (!transportActivity.current(token)) return;
+    return true;
+  } catch(error) {
+    if (!transportActivity.current(token)) return false;
     stopSequencer();
     notify(`Could not start loop: ${error.message}`);
-  });
+    return false;
+  }
 }
 
 function updateBeatIndicator(step) {
@@ -1490,6 +1508,10 @@ function stopSequencer() {
   audio.stopAllPadVoices();
   visualUntil.clear();activeUntil.clear();
   voiceLab?.transportStopped();
+  const stopFullSongVideo=fullSongVideoCapture;
+  fullSongVideoCapture=false;
+  if(stopFullSongVideo&&recording?.state==='recording')recording.stop();
+  syncFullSongVideoButton();
   directorPlayingStep=null;
   $('director-steps').querySelectorAll('.current').forEach(node=>node.classList.remove('current'));
   if(pendingScene){pendingScene=null;renderScenes();notify('Queued pattern cancelled because playback stopped.');}
@@ -1653,8 +1675,71 @@ function syncPerformanceRecordButton(){
   button.classList.toggle('recording',live);
 }
 
+function syncFullSongVideoButton(){
+  const button=$('record-full-song-video');
+  if(!button)return;
+  const finalizing=!fullSongVideoCaptureStarting&&!fullSongVideoCapture&&Boolean(recording&&recordingPurpose==='song');
+  button.disabled=fullSongVideoCaptureStarting||finalizing;
+  button.textContent=fullSongVideoCaptureStarting?'PREPARING SONG CAPTURE…':finalizing?'FINALIZING SONG VIDEO…':fullSongVideoCapture?'■ STOP FULL SONG CAPTURE':'▶ CAPTURE FULL SONG VIDEO';
+  button.setAttribute('aria-pressed',String(fullSongVideoCapture));
+  button.classList.toggle('recording',fullSongVideoCapture);
+}
+
+async function toggleFullSongVideoCapture(){
+  if(fullSongVideoCapture){
+    fullSongVideoCaptureReachedEnd=false;
+    fullSongVideoCapture=false;
+    if(transportActivity.phase!=='idle')stopSequencer();
+    if(recording?.state==='recording')recording.stop();
+    $('full-song-capture-status').textContent='Stopping the full-Song capture. Keep this page open until the video is ready.';
+    syncFullSongVideoButton();
+    return;
+  }
+  if(fullSongVideoCaptureStarting)return;
+  if(!project.song.clips.length)return notify('Add saved patterns to Song before recording the full arrangement.');
+  if(project.song.clips.some(clip=>!project.scenes.some(scene=>scene.id===clip.sceneId)))
+    return notify('A Song section refers to a missing pattern. Repair it before recording the full Song.');
+  if(transportActivity.phase!=='idle')return notify('Stop the current playback before capturing the full Song from bar 1.');
+  if(recording||takeActivity.phase!=='idle')return notify('Finish the current recording before starting a full-Song capture.');
+
+  fullSongVideoCaptureStarting=true;
+  fullSongVideoCaptureReachedEnd=false;
+  recordingPurpose='song';
+  syncFullSongVideoButton();
+  setSequenceView('song');
+  requestedSongStartStep=0;
+  updateSongPlayhead(0,true);
+  $('full-song-capture-status').textContent='Preparing a real-time capture from bar 1. Keep this page open until it finishes.';
+  const videoStarted=await toggleSetRecording();
+  fullSongVideoCaptureStarting=false;
+  if(!videoStarted||!recording||recording.state!=='recording'){
+    recordingPurpose='performance';
+    $('full-song-capture-status').textContent='Full-Song video could not start. Check the recording message above and try again.';
+    syncFullSongVideoButton();
+    return;
+  }
+  fullSongVideoCapture=true;
+  syncFullSongVideoButton();
+  $('full-song-capture-status').textContent=`Capturing arranged Song · bar 1 of ${songTotalBars(project.song)}. Keep this page open.`;
+  const songStarted=await startSequencer();
+  if(!songStarted){
+    fullSongVideoCapture=false;
+    fullSongVideoCaptureReachedEnd=false;
+    if(recording?.state==='recording')recording.stop();
+    syncFullSongVideoButton();
+  }
+}
+
 async function toggleSetRecording() {
-  if (recording) { if(recording.state!=='inactive')recording.stop(); return; }
+  if (recording) {
+    const stoppingFullSong=recordingPurpose==='song';
+    fullSongVideoCaptureReachedEnd=false;
+    fullSongVideoCapture=false;
+    if(stoppingFullSong&&transportActivity.phase!=='idle')stopSequencer();
+    if(recording.state!=='inactive')recording.stop();
+    syncFullSongVideoButton();
+    return true;
+  }
   if (takeActivity.phase!=='idle') {
     if (takeKind==='video' && takeActivity.phase==='starting') {
       takeActivity.cancel(); takeKind=null;
@@ -1663,9 +1748,10 @@ async function toggleSetRecording() {
       syncPerformanceRecordButton();
       notify('Audiovisual recording start canceled.');
     } else notify('Finish the current recording before starting an audiovisual set.');
-    return;
+    return false;
   }
-  if (!window.MediaRecorder || !$('capture-canvas').captureStream) return notify('Video recording is unavailable in this browser.');
+  if (!window.MediaRecorder || !$('capture-canvas').captureStream) {notify('Video recording is unavailable in this browser.');return false;}
+  if(!fullSongVideoCaptureStarting)recordingPurpose='performance';
   const token=takeActivity.begin();takeKind='video';
   $('start-record').textContent='■ CANCEL START';$('start-record').setAttribute('aria-pressed','true');
   syncPerformanceRecordButton();
@@ -1689,7 +1775,14 @@ async function toggleSetRecording() {
       stream.getVideoTracks().forEach(track=>track.stop());
       const type=recorder.mimeType||mime||'video/webm';
       const blob=new Blob(chunks,{type});
-      if(blob.size){rememberTake('video',blob);download(blob,lastTakes.video.name);}
+      const purpose=recordingPurpose,completedFullSong=fullSongVideoCaptureReachedEnd;
+      if(blob.size){
+        rememberTake('video',blob);download(blob,lastTakes.video.name);
+        if(purpose==='song'&&blob.size<=120*1024*1024){
+          $('full-song-capture-status').textContent=completedFullSong?'Full-Song video is ready below and has been downloaded.':'Song video capture stopped early; the partial take is ready below and has been downloaded.';
+          notify(completedFullSong?'Full-Song video ready. Review it below or in Video & Export.':'Partial Song video saved. Review it below or in Video & Export.');
+        }
+      }
       else notify('The browser did not capture video.');
       $('capture-canvas').hidden=true;
       recording=null;
@@ -1697,15 +1790,19 @@ async function toggleSetRecording() {
       $('start-record').setAttribute('aria-pressed','false');
       takeActivity.cancel();takeKind=null;
       syncPerformanceRecordButton();
-      if(blob.size)notify('Video saved. Open Video & Export to review or download it again.');
+      fullSongVideoCapture=false;fullSongVideoCaptureStarting=false;fullSongVideoCaptureReachedEnd=false;
+      recordingPurpose='performance';syncFullSongVideoButton();
+      if(blob.size&&purpose!=='song')notify('Video saved. Open Video & Export to review or download it again.');
     };
     recording=recorder;drawing=true;$('capture-canvas').hidden=false;drawPerformanceFrame();recorder.start(200);
     $('start-record').classList.add('recording');$('start-record').textContent='■ STOP RECORDING';
     $('start-record').setAttribute('aria-pressed','true');
     syncPerformanceRecordButton();
-    notify('Recording your audiovisual performance. Play pads here or on Sequence; stop with the Record video control.');
+    if(recordingPurpose==='song')notify('Capturing the arranged Song in real time from bar 1. It will stop at the last bar; keep this page open.');
+    else notify('Recording your audiovisual performance. Play pads here or on Sequence; stop with the Record video control.');
+    return true;
   } catch(error) {
-    if(!takeActivity.current(token))return;
+    if(!takeActivity.current(token))return false;
     takeActivity.cancel();takeKind=null;
     voiceLab?.stopSongVideoVisualPlayback?.();
     canvasStream?.getTracks().forEach(track=>track.stop());
@@ -1714,6 +1811,7 @@ async function toggleSetRecording() {
     $('start-record').setAttribute('aria-pressed','false');
     syncPerformanceRecordButton();
     notify(error.message);
+    return false;
   }
 }
 
@@ -2300,6 +2398,7 @@ function bindControls() {
   window.matchMedia('(max-width:740px)').addEventListener?.('change',()=>{if(!compactSequenceOverview())closeSequenceFocus();renderTrackGrid();});
   $('start-record').addEventListener('click',toggleSetRecording);
   $('studio-record').addEventListener('click',toggleSetRecording);
+  $('record-full-song-video').addEventListener('click',toggleFullSongVideoCapture);
   $('record-audio').addEventListener('click',toggleAudioRecording);
   $('google-drive').addEventListener('click',()=>pickFromDrive(files=>placeFiles(files)).catch(error=>notify(error.message)));
   $('google-photos').addEventListener('click',()=>pickFromPhotos(files=>placeFiles(files),notify).catch(error=>notify(error.message)));

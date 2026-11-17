@@ -139,7 +139,7 @@ try {
   }, trackId);
   assert.ok(overdub.bytes > 100 && overdub.duration >= seconds - 1, `the full ${seconds}-second synthetic microphone take should be stored and decodable: ${JSON.stringify(overdub)}`);
   assert.ok(overdub.rms > 0.01, `the synthetic microphone track should contain its tone signal: ${JSON.stringify(overdub)}`);
-  overdub.startStep = Number(await track.locator('.vocal-layer-start input').inputValue());
+  overdub.startStep = Number(await track.locator('input[aria-label$="start step"]').inputValue());
   assert.ok(overdub.startStep >= 0 && overdub.startStep < 16, `the long take should remain aligned to the Song start: ${JSON.stringify(overdub)}`);
   assert.equal(overdub.journals, 0, 'the successfully saved long microphone take should clear its recovery journal');
   const trackMeta = await track.locator('.vocal-layer-meta').textContent();
@@ -172,7 +172,7 @@ try {
   await openScreen('overdub');
   await page.waitForFunction(() => document.querySelectorAll('#voice-overdub-layers .vocal-layer').length === 1, null, { timeout: 20000 });
   const restoredTrack = page.locator('#voice-overdub-layers .vocal-layer').first();
-  const restoredStartStep = Number(await restoredTrack.locator('.vocal-layer-start input').inputValue());
+  const restoredStartStep = Number(await restoredTrack.locator('input[aria-label$="start step"]').inputValue());
   assert.equal(restoredStartStep, overdub.startStep, 'the long Song placement should survive reload');
   const restoredSize = await page.evaluate(async id => (await (await import('/storage.js')).getValue(`voice-layer:${id}`))?.size, trackId);
   assert.equal(restoredSize, overdub.bytes, 'the complete long microphone source should survive reload');
