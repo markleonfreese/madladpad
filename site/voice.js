@@ -102,6 +102,40 @@ async function renderPhraseWav(phrase, audio) {
   return audioBufferToWav(await renderPhraseBuffer(phrase, audio));
 }
 
+async function renderWordRemixWav(project,audio,getMediaFiles,bpm=project.bpm) {
+  const events=[...project.voice.wordRemix.events].sort((a,b)=>a.step-b.step);
+  if(!events.length)throw new Error('Place at least one audio word in the four-bar grid first.');
+  if(events.some(event=>Math.abs(Number(event.pitch)||0)>.01))throw new Error('Set every event pitch to 0 st before WAV export. The live time-preserving pitch processor is not available in offline export yet.');
+  const tempo=clamp(bpm,40,240),secondsPerStep=60/tempo/4,totalSeconds=64*secondsPerStep,sampleRate=clamp(audio.context.sampleRate,22050,48000);
+  const clips=[];
+  for(const event of events){
+    const transcript=project.voice.transcripts.find(item=>item.id===event.transcriptId),word=transcript?.words.find(item=>item.id===event.wordId),file=transcript&&getMediaFiles().get(transcript.sourcePad);
+    if(!word||!file)throw new Error('A word source is missing. Re-import its original local clip before exporting.');
+    if(!file.type?.startsWith('audio/'))throw new Error('WAV export currently supports audio-backed word cues only. Remove video-backed cues from this grid.');
+    const source=audio.sources.get(transcript.sourcePad);
+    if(!source?.file)throw new Error(`The original local audio for “${word.text}” is not loaded.`);
+    const buffer=source.buffer||await audio.context.decodeAudioData(await source.file.arrayBuffer());
+    source.buffer=buffer;
+    const start=clamp(word.start,0,Math.max(0,buffer.duration-.01)),offset=event.step*secondsPerStep;
+    const duration=Math.min((word.end-word.start)*clamp(event.lengthPercent??100,25,100)/100,totalSeconds-offset,buffer.duration-start);
+    if(duration>.01)clips.push({buffer,start,offset,duration});
+  }
+  if(!clips.length)throw new Error('No source audio could be decoded for the Word Remix.');
+  const Offline=globalThis.OfflineAudioContext||globalThis.webkitOfflineAudioContext;
+  if(typeof Offline!=='function')throw new Error('This browser does not support local offline WAV rendering.');
+  const offline=new Offline(2,Math.ceil(totalSeconds*sampleRate),sampleRate),limiter=offline.createDynamicsCompressor();
+  limiter.threshold.value=-2;limiter.knee.value=0;limiter.ratio.value=16;limiter.attack.value=.003;limiter.release.value=.08;limiter.connect(offline.destination);
+  for(const clip of clips){
+    const node=offline.createBufferSource(),gain=offline.createGain(),fade=Math.min(.008,clip.duration/3),end=clip.offset+clip.duration;
+    node.buffer=clip.buffer;node.connect(gain);gain.connect(limiter);
+    gain.gain.setValueAtTime(0,clip.offset);gain.gain.linearRampToValueAtTime(.82,clip.offset+fade);
+    gain.gain.setValueAtTime(.82,end-fade);gain.gain.linearRampToValueAtTime(0,end);
+    node.start(clip.offset,clip.start,clip.duration);
+  }
+  const rendered=await offline.startRendering();
+  return audioBufferToWav(rendered);
+}
+
 function download(blob, fileName) {
   const url = URL.createObjectURL(blob), link = document.createElement('a'); link.href = url; link.download = fileName; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
@@ -222,6 +256,9 @@ function renderWordRemix(project, transcript, save, barState, getMediaFiles) {
   $('word-remix-remove').disabled=!selectedEvent;
   $('word-remix-clear').disabled=!events.length;
   $('word-remix-play').disabled=!events.length;
+  const exportButton=$('word-remix-export'),hasPitchedEvent=events.some(event=>Math.abs(Number(event.pitch)||0)>.01);
+  exportButton.disabled=!events.length||hasVideoEvent||hasPitchedEvent;
+  $('word-remix-export-help').textContent=hasVideoEvent?'Local WAV export supports audio-source cues only. Video cues remain available in preview.':hasPitchedEvent?'Set every event pitch to 0 st to export; live pitch processing is not available in offline WAV yet.':'Downloads a four-bar stereo PCM WAV rendered locally. No source media is uploaded.';
   window.dispatchEvent(new Event('madladpad-word-remix-change'));
 }
 
@@ -1902,6 +1939,17 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   $('word-remix-word').addEventListener('change',()=>renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles));
   $('word-remix-play').addEventListener('click',playWordRemix);
   $('word-remix-stop').addEventListener('click',()=>stopWordRemix());
+  $('word-remix-export').addEventListener('click',async()=>{
+    const button=$('word-remix-export'),help=$('word-remix-export-help');let resultMessage='';button.disabled=true;help.textContent='Rendering the four-bar WAV on this device…';
+    try{
+      const bpm=clamp(getTransport?.()?.bpm||project.bpm,40,240),blob=await renderWordRemixWav(project,audio,getMediaFiles,bpm),safeTitle=(project.title||'madladpad').replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase()||'madladpad';
+      download(blob,`${safeTitle}-word-remix-${bpm}bpm.wav`);resultMessage=`Local four-bar WAV ready at ${bpm} BPM. Source audio remains on this device.`;
+    }catch(error){resultMessage=`Word Remix export failed: ${error.message}`;notify(resultMessage);}
+    finally{
+      renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);
+      if(resultMessage)help.textContent=resultMessage;
+    }
+  });
   $('word-remix-follow-transport').addEventListener('change',async event=>{
     const control=event.currentTarget;
     if(!control.checked){project.voice.wordRemix.followTransport=false;stopWordRemixTransport();save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);return;}
