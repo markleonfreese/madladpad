@@ -363,6 +363,8 @@
         <p class="voice-note full-song-capture-note">Starts the Song at bar 1 and stops at its final bar. This is a real-time live capture, not an offline renderer; keep this page open until the download begins. Your audio and video stay on this device.</p>
         <button class="accent-button" id="start-record" aria-pressed="false"><span class="record-dot"></span> RECORD VIDEO</button>
         <button class="accent-button audio-record-button" id="record-audio" aria-pressed="false">♪ RECORD AUDIO</button>
+        <button class="pill-button" id="render-song-audio" type="button" aria-describedby="render-song-audio-note" disabled>RENDER SONG MIX · OFFLINE WAV</button>
+        <p id="render-song-audio-note" class="voice-note song-render-note">Mixes saved Song steps with local pad and vocal audio, opted-in video-track audio and beat-following Melody into a deterministic stereo WAV. Up to four minutes / 48 MB. Non-zero independent Pitch and generated demo synth lanes are reported as unsupported instead of silently changed.</p>
         <details class="export-advanced" id="export-advanced"><summary>Video framing &amp; formats</summary><div class="export-settings">
         <label class="field">VIDEO FRAME<select id="record-layout"><option value="follow-active">Follow active pads</option><option value="fixed">Fixed grid</option><option value="directed">Video Director: cuts by beat</option></select></label>
         <label class="field">ASPECT RATIO<select id="video-aspect"><option value="4:3">4:3</option><option value="16:9">16:9 · wide</option><option value="9:16">9:16 · vertical</option><option value="1:1">1:1 · square</option></select></label>
@@ -371,6 +373,7 @@
         </div></details>
       </div>
       <p id="full-song-capture-status" class="voice-status" role="status" aria-live="polite">Full-Song capture is ready when the arrangement contains saved sections.</p>
+      <p id="render-song-audio-status" class="voice-status" role="status" aria-live="polite">Offline audio rendering is available when the Song contains saved sections.</p>
       <p id="export-record-status" class="voice-status" role="status">Record a video or audio take to preview it here. Completed takes also download automatically.</p>
       <canvas id="capture-canvas" class="export-live-preview" width="960" height="720" aria-label="Live performance composition with pad, audio waveform, Melody note lanes and video tiles" hidden></canvas>
       <div class="export-previews">

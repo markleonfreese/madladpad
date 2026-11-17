@@ -5,6 +5,8 @@ import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { resolve, extname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import assert from 'node:assert/strict';
+import { makeProject, normaliseProject, normaliseSong } from '../site/core.js';
+import { buildSongRenderPlan, songRenderVisualsAtTime } from '../site/song-render.js';
 
 const root=resolve('site');
 const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.woff2':'font/woff2','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.png':'image/png'};
@@ -15,8 +17,8 @@ const server=createServer(async(req,res)=>{
   try{res.setHeader('Content-Type',mime[extname(path)]||'application/octet-stream');res.end(await readFile(path));}
   catch{res.writeHead(404).end();}
 });
-const wav=()=>{
-  const rate=16000,frames=rate*240,bytes=Buffer.alloc(44+frames*2);
+const wav=(seconds=240)=>{
+  const rate=16000,frames=rate*seconds,bytes=Buffer.alloc(44+frames*2);
   bytes.write('RIFF',0);bytes.writeUInt32LE(bytes.length-8,4);bytes.write('WAVEfmt ',8);
   bytes.writeUInt32LE(16,16);bytes.writeUInt16LE(1,20);bytes.writeUInt16LE(1,22);
   bytes.writeUInt32LE(rate,24);bytes.writeUInt32LE(rate*2,28);bytes.writeUInt16LE(2,32);bytes.writeUInt16LE(16,34);
@@ -25,6 +27,30 @@ const wav=()=>{
   return bytes;
 };
 const audioFixture=wav();
+const padFixture=wav(2);
+const renderPattern=(id,name,step)=>{
+  const pads=Array.from({length:16},()=>({steps:Array(16).fill(false),stepOffsets:Array(16).fill(0)}));
+  pads[0].steps[step]=true;pads[1].steps[step]=true;
+  return {id,name,pads};
+};
+const renderBase=makeProject();
+const renderProject=normaliseProject({
+  ...renderBase,bpm:90,
+  pads:renderBase.pads.map((pad,index)=>index===0?{...pad,kind:'audio',fileName:'local-kick.wav',start:0,end:2,volume:.45,speed:1,pitch:0}
+    :index===1?{...pad,kind:'image',fileName:'cover.png'}:pad),
+  scenes:[renderPattern('render-a','A',0),renderPattern('render-b','B',4),renderPattern('render-c','C',8)],
+  song:normaliseSong({clips:[{id:'render-intro',sceneId:'render-a',bars:8},{id:'render-verse',sceneId:'render-b',bars:16},{id:'render-hook',sceneId:'render-c',bars:24},{id:'render-outro',sceneId:'render-a',bars:24}]}),
+  voice:{...renderBase.voice,
+    layers:[{id:'render-vocal',name:'Lead vocal',startStep:0,trimStartSec:0,trimEndSec:2,repeatEnabled:true,repeatEveryBars:8,audibleLengthBars:2,placementEndBar:72}],
+    videoLayers:[
+      {id:'video-one',name:'Verse footage',startStep:0,trimStartSec:0,trimEndSec:2,durationSec:2},
+      {id:'video-two',name:'Hook footage',startStep:0,trimStartSec:0,trimEndSec:2,durationSec:2,includeAudio:true,audioGain:.25,repeatEnabled:true,repeatEveryBars:4,audibleLengthBars:1,placementEndBar:72}
+    ],
+    melody:{...renderBase.voice.melody,followBeat:true,notes:[{midi:60,step:0,duration:4,velocity:100,layer:'lead'}]}
+  }
+});
+const renderPlan=buildSongRenderPlan(renderProject,{padDurations:{0:2},vocalDurations:{'render-vocal':2},videoDurations:{'video-two':2}});
+const renderFrameVisuals=songRenderVisualsAtTime(renderProject,renderPlan,.1);
 let browser,temp;
 try{
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -40,6 +66,59 @@ try{
   await context.route('**/*',route=>route.request().url().startsWith(`${origin}/`)?route.continue():route.abort());
   const page=await context.newPage();
   page.setDefaultTimeout(10000);
+  await page.goto(origin);await page.locator('.pad-hit').first().waitFor();
+  const offlineWav=await page.evaluate(async()=>{
+    const {renderSongAudioWav}=await import('/song-render.js');
+    const sourceContext=new AudioContext(),sample=sourceContext.createBuffer(1,12000,24000);
+    const data=sample.getChannelData(0);
+    for(let frame=0;frame<data.length;frame++)data[frame]=.35*Math.sin(2*Math.PI*220*frame/sample.sampleRate);
+    const result=await renderSongAudioWav({durationSeconds:1,events:[
+      {kind:'sample',trackId:'pad-0',padId:0,startSeconds:0,durationSeconds:.5,sourceStartSeconds:0,sourceEndSeconds:.5,gain:.8,speed:1,semitones:0},
+      {kind:'midi',trackId:'melody',startSeconds:.5,durationSeconds:.5,midi:69,velocity:127,tuning:440,word:''}
+    ]},{pads:new Map([[0,sample]])},{sampleRate:24000});
+    const wavHeader=new DataView(await result.blob.arrayBuffer());
+    const decoded=await sourceContext.decodeAudioData(await result.blob.arrayBuffer());
+    const rms=Array.from({length:2},(_,channel)=>{
+      const pcm=decoded.getChannelData(channel);let sum=0;
+      for(const value of pcm)sum+=value*value;
+      return Math.sqrt(sum/pcm.length);
+    });
+    await sourceContext.close();
+    return {type:result.blob.type,bytes:result.blob.size,duration:decoded.duration,wavSampleRate:wavHeader.getUint32(24,true),rms};
+  });
+  assert.equal(offlineWav.type,'audio/wav','the offline Song audio render should be an explicit WAV artifact');
+  assert.equal(offlineWav.wavSampleRate,24000,'the WAV header should preserve the selected render sample rate');
+  assert.ok(Math.abs(offlineWav.duration-1)<.001,'the decoded offline mix should keep the exact planned Song duration');
+  assert.ok(offlineWav.bytes>48000&&offlineWav.rms.every(level=>level>.03),'decoded audio samples should contain the local pad and generated MIDI mix');
+  console.log(`Offline Song WAV acceptance passed: ${offlineWav.duration.toFixed(3)} s decoded, ${offlineWav.bytes} bytes, stereo RMS ${offlineWav.rms.map(level=>level.toFixed(3)).join('/')}.`);
+  assert.equal(renderPlan.bars,72);
+  assert.equal(renderPlan.durationSeconds,192);
+  assert.deepEqual(renderFrameVisuals.map(tile=>tile.kind),['midi','still','video','video','waveform','waveform'],'the same Song timestamp must align a generated note, still, two videos and both audible waveform tracks');
+  const fullSongWav=await page.evaluate(async plan=>{
+    const {renderSongAudioWav}=await import('/song-render.js');
+    const rate=44100,context=new AudioContext({sampleRate:rate});
+    const makeTone=(frequency,amplitude)=>{
+      const buffer=context.createBuffer(1,rate*2,rate),channel=buffer.getChannelData(0);
+      for(let frame=0;frame<channel.length;frame++)channel[frame]=amplitude*Math.sin(2*Math.PI*frequency*frame/rate);
+      return buffer;
+    };
+    const sources={pads:new Map([[0,makeTone(110,.2)]]),vocals:new Map([['render-vocal',makeTone(220,.16)]]),videos:new Map([['video-two',makeTone(330,.1)]])};
+    try{
+      const result=await renderSongAudioWav(plan,sources,{sampleRate:rate});
+      const encoded=await result.blob.arrayBuffer(),header=new DataView(encoded);
+      const decoded=await context.decodeAudioData(encoded.slice(0));
+      const channel=decoded.getChannelData(0);let sum=0;
+      for(const sample of channel)sum+=sample*sample;
+      return {type:result.blob.type,bytes:result.blob.size,duration:decoded.duration,rate:header.getUint32(24,true),channels:decoded.numberOfChannels,rms:Math.sqrt(sum/channel.length)};
+    }finally{await context.close();}
+  },renderPlan);
+  assert.equal(fullSongWav.type,'audio/wav');
+  assert.equal(fullSongWav.duration,192,'the decoded artifact must span the complete 72-bar arrangement at 90 BPM');
+  assert.equal(fullSongWav.rate,44100);
+  assert.equal(fullSongWav.channels,2);
+  assert.ok(fullSongWav.rms>.01,'the full-length artifact must contain mixed local pad, vocal, video-source and MIDI audio');
+  assert.ok(fullSongWav.bytes<48*1024*1024,'the typical full-length song must fit the documented WAV size cap');
+  console.log(`Full 72-bar Song WAV acceptance passed: ${fullSongWav.duration.toFixed(1)} s, ${fullSongWav.bytes} bytes, stereo RMS ${fullSongWav.rms.toFixed(3)}; timestamp shows two videos, a still and MIDI.`);
   await page.addInitScript(()=>{
     window.__songVideoFramesDrawn=0;window.__songVideoFirstSourceTime=null;
     const drawImage=CanvasRenderingContext2D.prototype.drawImage;
@@ -51,12 +130,14 @@ try{
       return drawImage.call(this,media,...args);
     };
   });
-  await page.goto(origin);await page.locator('.pad-hit').first().waitFor();
   const openDetails=async selector=>{const details=page.locator(selector);if(!await details.evaluate(el=>el.open))await details.locator('summary').click();};
   const openScreen=async screen=>{
     await page.locator(`[data-studio-screen="${screen}"]`).click();
     await page.waitForFunction(value=>document.body.dataset.screen===value,screen);
   };
+  await openScreen('sounds');
+  await page.locator('#media-input').setInputFiles({name:'render-pad.wav',mimeType:'audio/wav',buffer:padFixture});
+  await page.waitForFunction(()=>JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'))?.pads?.[0]?.fileName==='render-pad.wav');
   await openScreen('beats');
   await openDetails('#loop-settings');
   await page.locator('#bpm-input').fill('240');await page.locator('#bpm-input').press('Tab');
@@ -221,6 +302,24 @@ try{
     await page.locator('#studio-play').click();
     await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='false');
   }
+  const offlineDownload=page.waitForEvent('download',{timeout:30000});
+  await openScreen('export');
+  assert.equal(await page.locator('#render-song-audio').isEnabled(),true,'a stopped Song with local sources exposes its offline WAV action');
+  await page.locator('#render-song-audio').click();
+  await page.waitForFunction(()=>document.querySelector('#render-song-audio-status').textContent.includes('Offline Song mix ready'),null,{timeout:30000});
+  const offlineArtifact=await offlineDownload;
+  const offlineBytes=await readFile(await offlineArtifact.path());
+  assert.equal(offlineBytes.toString('ascii',0,4),'RIFF','the export action downloads an actual WAV file');
+  const uiRender=await page.evaluate(async encoded=>{
+    const bytes=Uint8Array.from(atob(encoded),character=>character.charCodeAt(0));
+    const context=new AudioContext();
+    try{const buffer=await context.decodeAudioData(bytes.buffer);const samples=buffer.getChannelData(0);return {duration:buffer.duration,rms:Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length),channels:buffer.numberOfChannels};}
+    finally{await context.close();}
+  },offlineBytes.toString('base64'));
+  assert.ok(Math.abs(uiRender.duration-36)<.02,`the downloaded Song WAV should match all 36 bars at 240 BPM, got ${uiRender.duration}s`);
+  assert.equal(uiRender.channels,2);
+  assert.ok(uiRender.rms>.01,`the offline action should mix the imported pad and vocal audio, got RMS ${uiRender.rms}`);
+  assert.match(await page.locator('#export-audio-preview').getAttribute('src'),/blob:/,'the generated WAV is available in the app preview');
   await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='true');
   await openScreen('export');
@@ -246,7 +345,7 @@ try{
   assert.ok(decodedVideo.width>0&&decodedVideo.height>0&&decodedVideo.readyState>=2,`the audiovisual export should decode a video frame, got ${JSON.stringify(decodedVideo)}`);
   await openScreen('beats');await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='false');
-  console.log(`Song journey browser acceptance passed: 36-bar A-B-C-A, four-minute local audio/video pack recovery, synthetic microphone take ${recorded.duration.toFixed(2)} s from Song step ${recordedStartStep}, camera clip ${recordedVideo.bytes} bytes from Song step ${recordedVideo.startStep}, decoded 8+ second mix RMS ${mixStats.rms.toFixed(3)}, and a decoded ${decodedVideo.width}×${decodedVideo.height} video frame.`);
+  console.log(`Song journey browser acceptance passed: 36-bar A-B-C-A, offline WAV ${uiRender.duration.toFixed(1)} s / ${offlineBytes.length} bytes / RMS ${uiRender.rms.toFixed(3)}, four-minute local audio/video pack recovery, synthetic microphone take ${recorded.duration.toFixed(2)} s from Song step ${recordedStartStep}, camera clip ${recordedVideo.bytes} bytes from Song step ${recordedVideo.startStep}, decoded 8+ second live mix RMS ${mixStats.rms.toFixed(3)}, and a decoded ${decodedVideo.width}×${decodedVideo.height} video frame.`);
   await context.close();
 }finally{
   if(browser)await browser.close();

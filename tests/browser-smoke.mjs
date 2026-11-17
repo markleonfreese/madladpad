@@ -2352,6 +2352,7 @@ try {
   assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v36')).match('/core.js')).text()),/MAX_MELODY_STEPS/,'the full multi-bar melody range should be available offline');
   assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v36')).match('/core.js')).text()),/melodyClipEvents/,'the independent MIDI clip engine should be available offline');
   assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v36')).match('/melody-roll.js')).text()),/renderMelodyRoll/,'the piano roll should be cached for offline use');
+  assert.match(await page.evaluate(async()=>await (await (await caches.open('madladpad-shell-v36')).match('/song-render.js')).text()),/renderSongAudioWav/,'the offline WAV renderer should be cached before export');
   const cachedFonts=await page.evaluate(async()=>Promise.all(['/fonts/dm-sans-variable-latin.woff2','/fonts/dm-sans-variable-latin-ext.woff2','/fonts/dm-mono-400-latin.woff2','/fonts/dm-mono-400-latin-ext.woff2','/fonts/dm-mono-500-latin.woff2','/fonts/dm-mono-500-latin-ext.woff2'].map(async path=>Boolean(await (await caches.open('madladpad-shell-v36')).match(path)))));
   assert.ok(cachedFonts.every(Boolean),'both local UI fonts and their Latin/extended subsets should be cached for offline use');
   await page.reload();
