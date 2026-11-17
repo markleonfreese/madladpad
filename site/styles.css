@@ -583,3 +583,4 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
 .rap-insight-ending.repeated-ending{text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px}
 .rap-insight-observations{margin:10px 0 0;padding-left:20px;font-size:12px;line-height:1.6;color:var(--ink)}
 #render-song-audio-status,.song-render-note{font-size:14px;line-height:1.55}
+.song-render-note{font-size:14px}.song-video-render-status{font-size:14px}
