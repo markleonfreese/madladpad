@@ -37,6 +37,8 @@ jobs:
         run: npm run test:browser
       - name: Run integrated full-song media acceptance
         run: npm run test:song-browser
+      - name: Run local deterministic video encoder acceptance
+        run: npm run test:song-video
       - name: Run WebKit mobile-adjacent smoke
         run: npm run test:webkit
       - name: Run native Workers Static Assets runtime smoke

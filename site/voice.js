@@ -3,7 +3,8 @@ import { getValue, saveVoiceLayer, deleteVoiceLayer, saveSongVideoLayer, deleteS
 import { detectPitch } from './tuner.js';
 import { analyseLyrics } from './lyric-intelligence.js';
 import { renderMelodyRoll } from './melody-roll.js';
-import { buildSongRenderPlan, renderSongAudioWav } from './song-render.js';
+import { buildSongRenderPlan, renderSongAudioWav, songRenderVisualsAtTime } from './song-render.js';
+import { renderSongVideo } from './song-video-render.js';
 
 const $ = id => document.getElementById(id);
 const rhymes = {
@@ -489,6 +490,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   const pendingRecordingDownloads=new Map();
   const videoRecordingActivity = new AsyncActivity();
   const songRenderActivity = new AsyncActivity();
+  let songVideoAbortController = null;
   let tunerStream = null, tunerSource = null, tunerAnalyser = null, tunerTimer = null, tunerFrame = null;
   const tunerActivity = new AsyncActivity();
   const vocalFiles = new Map();
@@ -564,9 +566,71 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     $('overdub-video-cancel').hidden=!videoRecording;
     if(project.voice.videoLayers.length>=MAX_VOCAL_LAYERS&&!videoRecording)$('song-video-status').textContent=`The ${MAX_VOCAL_LAYERS} video-track limit is full. Delete a track before adding another.`;
     else if(!state.running&&!videoRecording&&!videoStarting&&!$('song-video-status').textContent)$('song-video-status').textContent='Start the Song to record a video track.';
+    const rendering=songRenderActivity.phase!=='idle';
+    const blocked=!songTotalBars(project.song)||state.running||rendering||Boolean(vocalRecording)||Boolean(videoRecording)||videoStarting;
     const renderButton=$('render-song-audio');
-    if(renderButton)renderButton.disabled=!songTotalBars(project.song)||state.running||songRenderActivity.phase!=='idle'||Boolean(vocalRecording)||Boolean(videoRecording)||videoStarting;
+    if(renderButton)renderButton.disabled=blocked;
+    const videoButton=$('render-song-video');
+    if(videoButton){
+      videoButton.disabled=blocked&&!songVideoAbortController;
+      videoButton.textContent=songVideoAbortController?'× CANCEL VIDEO RENDER':'RENDER SONG VIDEO · MP4 / WEBM';
+      videoButton.setAttribute('aria-label',songVideoAbortController?'Cancel offline Song video render':'Render complete Song video locally');
+    }
   };
+
+  async function prepareSongRenderInputs(){
+    const decodeFile=async(file,label,existing=null)=>{
+      if(existing)return existing;
+      if(!file)throw new Error(`The local media for “${label}” is missing.`);
+      try{return await audio.context.decodeAudioData(await file.arrayBuffer());}
+      catch(error){throw new Error(`Could not decode “${label}” for the offline Song export: ${error?.message||'unsupported audio codec'}.`);}
+    };
+    if(!songTotalBars(project.song))throw new Error('Add saved patterns to Song before rendering.');
+    const pads=new Map(),vocals=new Map(),videos=new Map(),cues=new Map();
+    const vocalDurations={},videoDurations={};
+    for(const layer of project.voice.layers){
+      if(layer.muted)continue;
+      const existing=audio.vocalSources.get(layer.id)?.buffer;
+      const file=vocalFiles.get(layer.id)||audio.vocalSources.get(layer.id)?.file;
+      if(!file&&!existing)continue;
+      const buffer=await decodeFile(file,layer.name,existing);
+      vocals.set(layer.id,buffer);vocalDurations[layer.id]=buffer.duration;
+    }
+    for(const layer of project.voice.videoLayers){
+      if(!layer.includeAudio)continue;
+      const file=videoFiles.get(layer.id);
+      if(!file)throw new Error(`The opted-in source audio for “${layer.name}” is missing locally.`);
+      const buffer=await decodeFile(file,layer.name);
+      videos.set(layer.id,buffer);videoDurations[layer.id]=Math.min(layer.durationSec,buffer.duration);
+    }
+    let plan=buildSongRenderPlan(project,{vocalDurations,videoDurations});
+    const activePadIds=[...new Set(plan.events.filter(event=>event.kind==='sample').map(event=>event.padId))];
+    for(const id of activePadIds){
+      const pad=project.pads[id],source=audio.sources.get(id),file=getMediaFiles().get(id)||source?.file;
+      if(!file&&!source?.buffer)throw new Error(`Pad ${id+1} has an active Song step but no local audio source.`);
+      pads.set(id,await decodeFile(file,pad.name,source?.buffer));
+    }
+    for(const note of plan.events.filter(event=>event.kind==='midi'&&event.word)){
+      if(cues.has(note.word))continue;
+      const word=project.voice.phrases.flatMap(phrase=>phrase.words).find(item=>item.text===note.word);
+      const sourcePad=word&&project.pads[word.sourcePad],source=word&&audio.sources.get(word.sourcePad),file=word&&getMediaFiles().get(word.sourcePad);
+      if(!word||!sourcePad?.fileName||!file&&!source?.buffer)continue;
+      const buffer=pads.get(word.sourcePad)||await decodeFile(file,sourcePad.name,source?.buffer);
+      pads.set(word.sourcePad,buffer);
+      cues.set(note.word,{buffer,start:word.start,end:word.end,gain:sourcePad.volume});
+    }
+    const padDurations=Object.fromEntries([...pads].map(([id,buffer])=>[id,buffer.duration]));
+    plan=buildSongRenderPlan(project,{padDurations,vocalDurations,videoDurations});
+    const visualFiles=new Map();
+    for(const layer of project.voice.videoLayers){const file=videoFiles.get(layer.id);if(file)visualFiles.set(layer.id,file);}
+    for(let id=0;id<project.pads.length;id++){
+      const pad=project.pads[id],file=getMediaFiles().get(id);
+      if(file&&(pad.kind==='image'||pad.kind==='video'))visualFiles.set(`pad-${id}`,file);
+    }
+    const waveformBuffers=new Map([...pads].map(([id,buffer])=>[`pad-${id}`,buffer]));
+    for(const [id,buffer] of vocals)waveformBuffers.set(id,buffer);
+    return {plan,pads,vocals,videos,cues,visualFiles,waveformBuffers};
+  }
 
   async function renderSongAudioExport(){
     const status=$('render-song-audio-status');
@@ -574,50 +638,9 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     if(token===null)return;
     updateOverdubControls();
     status.textContent='Preparing local Song audio sources…';
-    const decodeFile=async(file,label,existing=null)=>{
-      if(existing)return existing;
-      if(!file)throw new Error(`The local media for “${label}” is missing.`);
-      try{return await audio.context.decodeAudioData(await file.arrayBuffer());}
-      catch(error){throw new Error(`Could not decode “${label}” for the offline Song mix: ${error?.message||'unsupported audio codec'}.`);}
-    };
     try{
-      if(!songTotalBars(project.song))throw new Error('Add saved patterns to Song before rendering.');
       if(transportState().running)throw new Error('Stop Song playback before starting an offline WAV render.');
-      const pads=new Map(),vocals=new Map(),videos=new Map(),cues=new Map();
-      const vocalDurations={},videoDurations={};
-      for(const layer of project.voice.layers){
-        if(layer.muted)continue;
-        const existing=audio.vocalSources.get(layer.id)?.buffer;
-        const file=vocalFiles.get(layer.id)||audio.vocalSources.get(layer.id)?.file;
-        if(!file&&!existing)continue;
-        const buffer=await decodeFile(file,layer.name,existing);
-        vocals.set(layer.id,buffer);vocalDurations[layer.id]=buffer.duration;
-      }
-      for(const layer of project.voice.videoLayers){
-        if(!layer.includeAudio)continue;
-        const file=videoFiles.get(layer.id);
-        if(!file)throw new Error(`The opted-in source audio for “${layer.name}” is missing locally.`);
-        const buffer=await decodeFile(file,layer.name);
-        videos.set(layer.id,buffer);videoDurations[layer.id]=Math.min(layer.durationSec,buffer.duration);
-      }
-      let plan=buildSongRenderPlan(project,{vocalDurations,videoDurations});
-      const activePadIds=[...new Set(plan.events.filter(event=>event.kind==='sample').map(event=>event.padId))];
-      for(const id of activePadIds){
-        const pad=project.pads[id],source=audio.sources.get(id),file=getMediaFiles().get(id)||source?.file;
-        if(!file&&!source?.buffer)throw new Error(`Pad ${id+1} has an active Song step but no local audio source.`);
-        pads.set(id,await decodeFile(file,pad.name,source?.buffer));
-      }
-      for(const note of plan.events.filter(event=>event.kind==='midi'&&event.word)){
-        if(cues.has(note.word))continue;
-        const word=project.voice.phrases.flatMap(phrase=>phrase.words).find(item=>item.text===note.word);
-        const sourcePad=word&&project.pads[word.sourcePad],source=word&&audio.sources.get(word.sourcePad),file=word&&getMediaFiles().get(word.sourcePad);
-        if(!word||!sourcePad?.fileName||!file&&!source?.buffer)continue;
-        const buffer=pads.get(word.sourcePad)||await decodeFile(file,sourcePad.name,source?.buffer);
-        pads.set(word.sourcePad,buffer);
-        cues.set(note.word,{buffer,start:word.start,end:word.end,gain:sourcePad.volume});
-      }
-      const padDurations=Object.fromEntries([...pads].map(([id,buffer])=>[id,buffer.duration]));
-      plan=buildSongRenderPlan(project,{padDurations,vocalDurations,videoDurations});
+      const {plan,pads,vocals,videos,cues}=await prepareSongRenderInputs();
       if(!songRenderActivity.current(token))return;
       status.textContent=`Rendering ${plan.bars} bars to a local 44.1 kHz WAV. Keep this tab open…`;
       const result=await renderSongAudioWav(plan,{pads,vocals,videos,cues});
@@ -627,6 +650,45 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     }catch(error){
       status.textContent=error?.message||'Offline Song audio rendering failed. The original project media is unchanged.';
     }finally{
+      if(songRenderActivity.current(token))songRenderActivity.cancel();
+      updateOverdubControls();
+    }
+  }
+
+  async function renderSongVideoExport(){
+    if(songVideoAbortController){songVideoAbortController.abort();return;}
+    const status=$('render-song-video-status');
+    const token=songRenderActivity.begin();
+    if(token===null)return;
+    songVideoAbortController=new AbortController();
+    const signal=songVideoAbortController.signal;
+    updateOverdubControls();
+    status.textContent='Preparing the local Song mix and visual sources…';
+    try{
+      if(transportState().running)throw new Error('Stop Song playback before starting an offline video render.');
+      const sources=await prepareSongRenderInputs();
+      if(!songRenderActivity.current(token)||signal.aborted)return;
+      status.textContent=`Loading the local render engine for ${sources.plan.bars} bars…`;
+      let Media;
+      try{Media=await import('./media-codec-kit.bundle.js');}
+      catch{throw new Error('The local render engine is not cached yet. Connect once, start this export to save it for offline use, then retry.');}
+      if(!songRenderActivity.current(token)||signal.aborted)return;
+      status.textContent=`Mixing ${sources.plan.bars} bars locally and encoding 24 fps video. Keep this tab open…`;
+      const mixed=await renderSongAudioWav(sources.plan,sources,{sampleRate:44100,makeWav:false});
+      if(!songRenderActivity.current(token)||signal.aborted)return;
+      const aspect=$('video-aspect')?.value||project.video.aspect||'16:9';
+      const result=await renderSongVideo(sources.plan,{audioBuffer:mixed.buffer,visualFiles:sources.visualFiles,
+        waveformBuffers:sources.waveformBuffers,visualsAtTime:seconds=>songRenderVisualsAtTime(project,sources.plan,seconds)},
+      {Media,format:$('record-video-format')?.value||'auto',aspect,signal,onProgress:progress=>{
+        if(songRenderActivity.current(token))status.textContent=`Rendering Song video · ${progress.seconds.toFixed(0)} / ${progress.durationSeconds.toFixed(0)} s · ${Math.round(progress.frames/progress.totalFrames*100)}%. Keep this tab open…`;
+      }});
+      if(!songRenderActivity.current(token)||signal.aborted)return;
+      rememberVideoTake?.(result.blob,result.durationSeconds);
+      status.textContent=`Local Song video ready · ${result.durationSeconds.toFixed(1)} s · ${result.width}×${result.height} at ${result.frameRate} fps · ${result.format.toUpperCase()} · ${(result.blob.size/1024/1024).toFixed(1)} MB. Review or download it below.`;
+    }catch(error){
+      status.textContent=error?.message||'Offline Song video rendering failed. The original project media is unchanged.';
+    }finally{
+      songVideoAbortController=null;
       if(songRenderActivity.current(token))songRenderActivity.cancel();
       updateOverdubControls();
     }
@@ -1793,6 +1855,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     }
   });
   $('render-song-audio').addEventListener('click',renderSongAudioExport);
+  $('render-song-video').addEventListener('click',renderSongVideoExport);
   $('melody-export').addEventListener('click', () => {
     const melody=project.voice.melody,songBars=songTotalBars(project.song),bars=songBars||Math.min(MAX_SONG_BARS,Math.max(1,...melody.notes.map(note=>Math.ceil((note.step+note.duration)/16)),...melody.clips.map(melodyClipPreviewBars)));
     const notes=melody.notes.map(note=>({...note,track:'Melody'}));

@@ -254,7 +254,8 @@ function scheduleBufferEvent(context, master, event, buffer, start, end, { offse
 export async function renderSongAudioWav(plan, sources, {
   OfflineAudioContextClass = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext,
   sampleRate = 44100,
-  maxSeconds = 240
+  maxSeconds = 240,
+  makeWav = true
 } = {}) {
   if (typeof OfflineAudioContextClass !== 'function') throw new Error('This browser does not support local offline audio rendering. Use real-time audio recording instead.');
   if (!Number.isFinite(plan?.durationSeconds) || plan.durationSeconds <= 0) throw new Error('The Song has no renderable duration.');
@@ -357,5 +358,5 @@ export async function renderSongAudioWav(plan, sources, {
     });
   }
   const rendered = await offline.startRendering();
-  return { buffer: rendered, blob: audioBufferToWav(rendered), durationSeconds: rendered.duration };
+  return { buffer: rendered, blob: makeWav ? audioBufferToWav(rendered) : null, durationSeconds: rendered.duration };
 }
