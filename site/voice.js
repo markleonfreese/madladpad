@@ -1388,8 +1388,9 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const mime = findAudioRecorderMime();
       const recorder = new MediaRecorder(stream, mime ? {mimeType:mime} : undefined);
       const secondsPerStep = 60 / clamp(transport.bpm, 40, 240) / 4;
-      const startStep = Math.max(0, Math.ceil((audio.context.currentTime - transport.epoch - .001) / secondsPerStep));
-      const targetTime = transport.epoch + startStep * secondsPerStep;
+      const elapsedStep = Math.max(0, Math.ceil((audio.context.currentTime - transport.epoch - .001) / secondsPerStep));
+      const startStep = (transport.songStartStep || 0) + elapsedStep;
+      const targetTime = transport.epoch + elapsedStep * secondsPerStep;
       if (targetTime > audio.context.currentTime) {
         $('voice-overdub-status').textContent = 'Microphone ready. Aligning the raw take to the next sixteenth note…';
         await new Promise(resolve => setTimeout(resolve, Math.max(0, (targetTime - audio.context.currentTime) * 1000)));
@@ -1553,8 +1554,9 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       if(!videoRecordingActivity.current(token)){stream.getTracks().forEach(track=>track.stop());return;}
       if(!stream.getVideoTracks().length||!stream.getAudioTracks().length)throw new Error('Both camera and microphone are required for a Song video take.');
       const secondsPerStep=60/clamp(transport.bpm,40,240)/4;
-      const startStep=Math.max(0,Math.ceil((audio.context.currentTime-transport.epoch-.001)/secondsPerStep));
-      const targetTime=transport.epoch+startStep*secondsPerStep;
+      const elapsedStep=Math.max(0,Math.ceil((audio.context.currentTime-transport.epoch-.001)/secondsPerStep));
+      const startStep=(transport.songStartStep||0)+elapsedStep;
+      const targetTime=transport.epoch+elapsedStep*secondsPerStep;
       if(targetTime>audio.context.currentTime){$('song-video-status').textContent='Camera ready. Aligning the video take to the next sixteenth note…';await new Promise(resolve=>setTimeout(resolve,Math.ceil((targetTime-audio.context.currentTime)*1000)));}
       const aligned=transportState();
       if(!videoRecordingActivity.current(token)||!aligned.running||aligned.epoch!==transport.epoch)throw new Error('The Song stopped or changed before video recording could begin.');
