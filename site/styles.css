@@ -570,3 +570,14 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
 .melody-roll-status{min-height:1.5em;margin:7px 0 0;color:#9aaa9b;font-size:13px;line-height:1.5}
 .melody-note-list-title{margin-top:14px}
 @media(max-width:520px){.melody-roll-panel,.melody-clips{padding:9px}.melody-clips-heading{display:grid}.melody-clip-toolbar{gap:7px}.melody-clip-toolbar label,.melody-clip-toolbar label:first-child{flex:1 1 135px;min-width:0}.melody-clip-toolbar select,.melody-clip-toolbar input:not([type=checkbox]){min-width:0}.melody-roll-toolbar{gap:6px}.melody-roll-toolbar label{flex:1 1 100px}.melody-roll-toolbar input,.melody-roll-toolbar select{max-width:100%;width:100%}.melody-roll-range{flex:1 1 100%;margin-left:0}.melody-roll-svg{height:406px}}
+
+/* Secondary local lyric diagnostics; the existing 16-bar writing surface stays primary. */
+.rap-insights{margin:10px 0 14px;padding:0;border:1px solid #475b48;border-radius:9px;background:#18231b}
+.rap-insights>summary{padding:12px;min-height:44px;cursor:pointer;font:700 11px var(--mono);color:var(--acid)}
+.rap-insights>summary:focus-visible{outline:3px solid var(--coral);outline-offset:3px}
+#rap-insights{padding:0 12px 12px}
+.rap-insight-endings{display:flex;flex-wrap:wrap;gap:7px}
+.rap-insight-ending{padding:7px 10px;border:1px solid #526454;border-radius:6px;color:var(--ink);font:11px var(--mono);overflow-wrap:anywhere}
+.rap-insight-ending.possible-rhyme{border-color:var(--acid);color:var(--acid)}
+.rap-insight-ending.repeated-ending{text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px}
+.rap-insight-observations{margin:10px 0 0;padding-left:20px;font-size:12px;line-height:1.6;color:var(--ink)}
