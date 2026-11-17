@@ -24,6 +24,7 @@ test('offline shell and all locally referenced ES modules exist', () => {
   }
   assert.ok(shell[1].includes("'/onsets-worker.js'"));
   assert.ok(shell[1].includes("'/voice-inference-worker.bundle.js'"), 'offline transcription must include its local inference worker');
+  assert.ok(shell[1].includes("'/lyric-intelligence.js'"), 'offline shell must include the local lyric analysis module');
   assert.ok(shell[1].includes("'/tuner.js'"), 'offline shell must include the local tuner module');
   assert.ok(shell[1].includes("'/pitch-dsp.js'")&&shell[1].includes("'/pitch-shifter.js'"),
     'offline shell must include both pitch processor modules');
@@ -54,6 +55,7 @@ test('v36 install precaches the updated modules, local fonts and licenses before
   handlers.get('install')({waitUntil:promise=>{installation=promise;}});
   await installation;
   assert.equal(cacheName,'madladpad-shell-v36');
+  assert.ok(precache.includes('/lyric-intelligence.js'),'lyric intelligence must be available offline');
   assert.ok(precache.includes('/melody-roll.js'),'the offline shell should include the interactive piano roll');
   assert.ok(precache.includes('/song-render.js'),'offline Song WAV rendering should work after the app shell is cached');
   assert.ok(precache.includes('/audio.js'),'the replacement offline shell must include the fixed audio module');

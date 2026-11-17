@@ -1,6 +1,7 @@
 import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, melodyClipEvents, melodyClipNotesAtStep, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_MELODY_CLIPS, MAX_MELODY_EXPORT_NOTES, MAX_MELODY_STEPS, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, MAX_SONG_BARS, MAX_REVERSED_AUDIO_BYTES, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, findRecorderMime, extensionForAudioMime, extensionForMime, vocalLayerClip, songVideoPositionAtStep, activeSongAudioVisuals, songMelodyVisualTracks, songLayerPlaybackEvents, songTotalBars, editSongTrackOnTimeline, AsyncActivity, localRecordingBudget, localJournaledRecordingBudget, createBoundedRecordingCapture } from './core.js';
 import { getValue, saveVoiceLayer, deleteVoiceLayer, saveSongVideoLayer, deleteSongVideoLayer, beginAudioRecordingRecovery, appendAudioRecordingRecoveryChunk, listInterruptedAudioRecordings, deleteInterruptedAudioRecording, beginVideoRecordingRecovery, appendVideoRecordingRecoveryChunk, listInterruptedVideoRecordings, deleteInterruptedVideoRecording } from './storage.js';
 import { detectPitch } from './tuner.js';
+import { analyseLyrics } from './lyric-intelligence.js';
 import { renderMelodyRoll } from './melody-roll.js';
 import { buildSongRenderPlan, renderSongAudioWav } from './song-render.js';
 
@@ -372,6 +373,46 @@ function renderMelody(project, save, onAudition, rollFocusIndex) {
   drawRoll(rollFocusIndex);
 }
 
+
+function renderLyricInsights(project) {
+  const host = $('rap-insights');
+  const result = analyseLyrics(project.voice.rap.bars, estimateSyllables);
+  $('rap-insights-summary').textContent = 'LYRIC INSIGHTS · ' + result.filledBars + ' OF ' + result.lines.length + ' BARS';
+  host.replaceChildren();
+  if (!result.filledBars) {
+    const empty = document.createElement('p');
+    empty.className = 'voice-note';
+    empty.textContent = 'Write a bar to see its ending, estimated syllables and possible rhyme relationships.';
+    host.append(empty);
+    return;
+  }
+  const headings = document.createElement('p');
+  headings.className = 'voice-note';
+  headings.textContent = result.possibleRhymeFamilies + ' possible rhyme families · ' + result.filledBars + ' written bars. Spelling-based estimates; listen to confirm.';
+  host.append(headings);
+  const endings = document.createElement('div');
+  endings.className = 'rap-insight-endings';
+  endings.setAttribute('role', 'list');
+  endings.setAttribute('aria-label', 'Line endings and possible rhymes');
+  for (const line of result.lines) {
+    if (!line.filled) continue;
+    const chip = document.createElement('span');
+    chip.setAttribute('role', 'listitem');
+    chip.className = 'rap-insight-ending' + (line.family ? ' possible-rhyme' : '') + (line.repeatedEnding ? ' repeated-ending' : '');
+    chip.textContent = 'Bar ' + line.bar + ': ~' + line.syllables + ' syllables · ' + line.ending + (line.family ? ' · approx ' + line.family : '') + (line.repeatedEnding ? ' · repeated' : '');
+    endings.append(chip);
+  }
+  host.append(endings);
+  const observations = document.createElement('ul');
+  observations.className = 'rap-insight-observations';
+  for (const observation of result.observations) {
+    const item = document.createElement('li');
+    item.textContent = observation;
+    observations.append(item);
+  }
+  host.append(observations);
+}
+
 function renderRap(project, save, audio, notify) {
   $('rap-scheme').value = project.voice.rap.scheme;
   const host = $('rap-bars'); host.replaceChildren();
@@ -412,7 +453,7 @@ function renderRap(project, save, audio, notify) {
     const rhymeSummary = document.createElement('summary'); rhymeDetails.append(rhymeSummary);
     const rhymeButtons = document.createElement('div'); rhymeButtons.className = 'rap-rhyme-list'; rhymeDetails.append(rhymeButtons);
     row.updateMeta = renderMeta;
-    text.addEventListener('input', () => { project.voice.rap.bars[index] = text.value; host.querySelectorAll('.rap-bar').forEach(item => item.updateMeta?.()); save(); }); renderMeta(); row.append(number, text, meta, rhymeDetails);
+    text.addEventListener('input', () => { project.voice.rap.bars[index] = text.value; host.querySelectorAll('.rap-bar').forEach(item => item.updateMeta?.()); renderLyricInsights(project); save(); }); renderMeta(); row.append(number, text, meta, rhymeDetails);
     const flowDetails=document.createElement('details');flowDetails.className='rap-flow';
     const summary=document.createElement('summary');summary.textContent=`FLOW · ${project.voice.rap.flow[index].filter(Boolean).length}/16 syllable starts`;flowDetails.append(summary);
     const grid=document.createElement('div');grid.className='rap-flow-grid';grid.setAttribute('role','group');grid.setAttribute('aria-label',`Rap bar ${index+1} syllable flow steps`);
@@ -431,6 +472,7 @@ function renderRap(project, save, audio, notify) {
     });
     flowDetails.append(grid,audition);row.append(flowDetails);host.append(row);
   });
+  renderLyricInsights(project);
 }
 
 export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTransport, notify, save, assignWordsToPads, onTimelineScale, rememberAudioTake }) {
