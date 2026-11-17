@@ -570,3 +570,4 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
 .melody-roll-status{min-height:1.5em;margin:7px 0 0;color:#9aaa9b;font-size:13px;line-height:1.5}
 .melody-note-list-title{margin-top:14px}
 @media(max-width:520px){.melody-roll-panel,.melody-clips{padding:9px}.melody-clips-heading{display:grid}.melody-clip-toolbar{gap:7px}.melody-clip-toolbar label,.melody-clip-toolbar label:first-child{flex:1 1 135px;min-width:0}.melody-clip-toolbar select,.melody-clip-toolbar input:not([type=checkbox]){min-width:0}.melody-roll-toolbar{gap:6px}.melody-roll-toolbar label{flex:1 1 100px}.melody-roll-toolbar input,.melody-roll-toolbar select{max-width:100%;width:100%}.melody-roll-range{flex:1 1 100%;margin-left:0}.melody-roll-svg{height:406px}}
+#render-song-audio-status,.song-render-note{font-size:14px;line-height:1.55}
