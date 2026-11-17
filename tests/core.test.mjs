@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withModelReferrerPolicy } from '../site/voice-model-fetch.js';
-import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, estimateSyllables, MAX_TRANSCRIPT_WORDS, MAX_MELODY_STEPS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, songVideoPositionAtStep, songLayerPlaybackEvents, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars, reorderSongClips, resizeSongClipBars, editSongTrackOnTimeline, localRecordingBudget, localJournaledRecordingBudget, MAX_MEDIA_BYTES, RECORDING_STORAGE_RESERVE_BYTES, createBoundedRecordingCapture } from '../site/core.js';
+import { makeProject, normaliseProject, normaliseVideoDirection, directedPads, VIDEO_ASPECTS, nextQuantizedTime, nextBarTime, findRecorderMime, extensionForMime, findAudioRecorderMime, extensionForAudioMime, audioBufferToWav, PAD_COUNT, MAX_SCENES, supportedMediaFile, isPadAudible, captureStepPosition, stepTriggerTime, stepGateDuration, stepLoopGateDuration, midiFrequency, midiNoteName, melodyPositionLabel, snapMidiToScale, midiFile, melodyClipEvents, melodyClipNotesAtStep, estimateSyllables, MAX_TRANSCRIPT_WORDS, MAX_MELODY_STEPS, RAP_BAR_COUNT, videoVisualDurationMs, boundTranscriptWordTimes, vocalLayerClip, songVideoPositionAtStep, songLayerPlaybackEvents, normaliseSampleNotes, setSampleNote, sampleNoteAtStep, normaliseSong, songSectionAtStep, songTotalBars, reorderSongClips, resizeSongClipBars, editSongTrackOnTimeline, localRecordingBudget, localJournaledRecordingBudget, MAX_MEDIA_BYTES, RECORDING_STORAGE_RESERVE_BYTES, createBoundedRecordingCapture } from '../site/core.js';
 
 test('long-form recording budget respects both project and browser storage with headroom', () => {
   assert.equal(localRecordingBudget(10 * 1024 * 1024, {usage:90 * 1024 * 1024,quota:100 * 1024 * 1024}), 10 * 1024 * 1024 - RECORDING_STORAGE_RESERVE_BYTES);
@@ -260,6 +260,11 @@ test('voice projects add bounded transcripts, phrases, vocal layers, melody, tun
   assert.deepEqual(voice.melody.notes[0],{midi:108,step:0,duration:99,velocity:96,word:'',layer:'lead'});
   const fullSong=normaliseProject({voice:{melody:{notes:[{step:MAX_MELODY_STEPS-1,duration:16}]}}}).voice.melody.notes[0];
   assert.deepEqual([fullSong.step,fullSong.duration],[MAX_MELODY_STEPS-1,1],'the final sixteenth of a 256-bar Song remains editable without extending beyond the project limit');
+  const legacyMelody=normaliseProject({voice:{melody:{notes:[{step:48,duration:8}]}}}).voice.melody;
+  assert.equal(legacyMelody.clips.length,0,'older projects without MIDI clips should load unchanged');
+  assert.equal(legacyMelody.activeClipId,'');
+  const boundedClip=normaliseProject({voice:{melody:{clips:[{id:'clip/one',patternBars:2,repeatEveryBars:0,startStep:0,notes:[{step:40,duration:8,velocity:200}]}],activeClipId:'missing'}}}).voice.melody;
+  assert.deepEqual([boundedClip.clips[0].id,boundedClip.clips[0].patternBars,boundedClip.clips[0].repeatEveryBars,boundedClip.clips[0].notes[0].step,boundedClip.clips[0].notes[0].duration,boundedClip.clips[0].notes[0].velocity,boundedClip.activeClipId],['clipone',2,1,31,1,127,''],'clip notes, ids, timing and velocity should normalize within their phrase without altering standalone notes');
   const harmony=normaliseProject({voice:{melody:{harmonyInterval:7,notes:[{midi:67,layer:'harmony'}]}}}).voice.melody;
   assert.equal(harmony.harmonyInterval,7);
   assert.equal(harmony.notes[0].layer,'harmony');
@@ -366,6 +371,38 @@ test('MIDI notes export their full multi-bar positions and stop at the 256-bar p
   assert.ok(events.some(event=>event.tick===1024*120&&event.status===0x90&&event.pitch===48),'Bar 65 note-on should export at its absolute MIDI tick');
   assert.ok(events.some(event=>event.tick===(1024+8)*120&&event.status===0x80&&event.pitch===48),'Bar 65 note-off should preserve its duration');
   assert.ok(events.some(event=>event.tick===MAX_MELODY_STEPS*120&&event.status===0x80&&event.pitch===50),'final-bar note duration should stop exactly at the 256-bar boundary');
+});
+test('independent MIDI clip phrase lengths, repeat periods, phase and stop bars stay separate',()=>{
+  const clip={name:'Bass',startStep:0,patternBars:2,repeatEnabled:true,repeatEveryBars:8,repeatPhaseBars:0,placementEndBar:25,notes:[{midi:36,step:0,duration:4,velocity:90},{midi:43,step:16,duration:8,velocity:70}]};
+  const events=melodyClipEvents(clip,32);
+  assert.deepEqual(events.filter(note=>note.midi===36).map(note=>note.step),[0,128,256],'a two-bar phrase should begin at bars 1, 9 and 17 when its repeat period is eight bars');
+  assert.deepEqual(events.filter(note=>note.midi===43).map(note=>note.step),[16,144,272],'notes later in the two-bar source should retain their local phrase position on each cycle');
+  assert.equal(events.some(note=>note.step>=32*16),false,'events should stop before the Song boundary');
+  assert.deepEqual(melodyClipEvents({...clip,placementEndBar:18},32).filter(note=>note.midi===36).map(note=>note.step),[0,128,256],'an explicit stop bar should bound clip instances');
+  assert.deepEqual(melodyClipEvents({...clip,startStep:16,repeatPhaseBars:2,placementEndBar:26},32).filter(note=>note.midi===36).map(note=>note.step),[48,176,304],'the first cycle offset should be relative to the independent clip start');
+  assert.deepEqual(melodyClipEvents({...clip,repeatEnabled:false},32).map(note=>note.step),[0,16],'a one-shot MIDI clip should play its source phrase once');
+  assert.deepEqual(melodyClipNotesAtStep(clip,128,32).map(note=>[note.midi,note.duration]),[[36,4]],'transport scheduling should return only notes whose cycle starts at the current step');
+  assert.deepEqual(melodyClipNotesAtStep({...clip,placementEndBar:9},144,32),[],'a clip should not start an event at or after its exclusive stop bar');
+  assert.deepEqual(melodyClipNotesAtStep({...clip,repeatPhaseBars:2},16,32),[],'steps before the first cycle phase should remain silent');
+  assert.deepEqual(melodyClipEvents({startStep:0,patternBars:1,placementEndBar:2,notes:[{midi:50,step:15,duration:4}]},8).map(note=>[note.step,note.duration]),[[15,1]],'a note that reaches the stop boundary should be truncated cleanly');
+});
+test('MIDI exports keep independent Melody and clip lanes on named tracks',async()=>{
+  const clip={name:'Bass',startStep:0,patternBars:2,repeatEnabled:true,repeatEveryBars:8,notes:[{midi:36,step:0,duration:4,velocity:80}]};
+  const bassTrackName=`Bass ${'🎹'.repeat(40)}`;
+  const notes=[{midi:60,step:0,duration:4,track:'Melody'},...melodyClipEvents(clip,17).map(note=>({...note,track:bassTrackName}))];
+  const bytes=new Uint8Array(await midiFile(notes,90).arrayBuffer());
+  assert.equal((bytes[8]<<8)|bytes[9],1,'multi-lane MIDI should use Standard MIDI format 1');
+  assert.equal((bytes[10]<<8)|bytes[11],3,'export should contain tempo, Melody and Bass tracks');
+  const tracks=[];let offset=14;
+  while(offset<bytes.length){
+    assert.equal(new TextDecoder().decode(bytes.slice(offset,offset+4)),'MTrk');
+    const length=new DataView(bytes.buffer,bytes.byteOffset+offset+4,4).getUint32(0);tracks.push(bytes.slice(offset+8,offset+8+length));offset+=8+length;
+  }
+  const text=new TextDecoder().decode(bytes);
+  assert.ok(text.includes('Melody')&&text.includes('Bass'),'each MIDI lane should have its name in the exported file');
+  const bass=tracks[2];let cursor=0,tick=0;const onsets=[];
+  while(cursor<bass.length){let delta=0,byte;do{byte=bass[cursor++];delta=(delta<<7)|(byte&127);}while(byte&128);tick+=delta;const status=bass[cursor++];if(status===255){const type=bass[cursor++];let size=0,next;do{next=bass[cursor++];size=(size<<7)|(next&127);}while(next&128);if(type===47)break;cursor+=size;continue;}const pitch=bass[cursor++];cursor++;if(status===0x90&&pitch===36)onsets.push(tick);}
+  assert.deepEqual(onsets,[0,128*120,256*120],'MIDI clip cycles should export on their independent eight-bar grid');
 });
 test('WAV encoder writes bounded little-endian 16-bit PCM for mono and stereo buffers',async()=>{
   const stereo={sampleRate:44100,numberOfChannels:2,length:2,getChannelData:channel=>channel===0?Float32Array.from([-1,.5]):Float32Array.from([1,-.5])};

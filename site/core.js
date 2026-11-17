@@ -12,6 +12,8 @@ export const MAX_TRANSCRIPT_WORDS = 1000;
 export const MAX_VOICE_PHRASES = 8;
 export const MAX_VOCAL_LAYERS = 16;
 export const MAX_MELODY_NOTES = 128;
+export const MAX_MELODY_CLIPS = 16;
+export const MAX_MELODY_EXPORT_NOTES = 65536;
 export const HARMONY_INTERVALS = [-12, -7, -5, -4, -3, 3, 4, 5, 7, 12];
 export const MELODY_ROOTS = Object.freeze(['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B']);
 export const MELODY_SCALES = Object.freeze({
@@ -100,7 +102,7 @@ export function directedPads(shot, active, padCount=12) {
 }
 
 export const makeVoiceData = () => ({
-  transcripts: [], phrases: [], layers: [], videoLayers: [], melody: { tuning: 440, key:0, scale:'major', notes: [], followBeat:false },
+  transcripts: [], phrases: [], layers: [], videoLayers: [], melody: { tuning: 440, key:0, scale:'major', notes: [], clips:[], activeClipId:'', followBeat:false },
   rap: { scheme: 'AABB', bars: Array(RAP_BAR_COUNT).fill(''), flow:Array.from({length:RAP_BAR_COUNT},()=>Array(16).fill(false)) }
 });
 
@@ -160,17 +162,25 @@ function normaliseVoice(value) {
     includeAudio:Boolean(layer?.includeAudio),audioGain:clamp(layer?.audioGain ?? 1,0,1.5)
   })) : [];
   const melodySource = source.melody && typeof source.melody === 'object' ? source.melody : {};
-  const notes = Array.isArray(melodySource.notes) ? melodySource.notes.slice(0, MAX_MELODY_NOTES).map(note => {
-    const step=clamp(Math.round(note?.step ?? 0),0,MAX_MELODY_STEPS-1);
+  const normaliseMelodyNotes=(items,limit=MAX_MELODY_STEPS)=>Array.isArray(items)?items.slice(0,MAX_MELODY_NOTES).map(note=>{
+    const step=clamp(Math.round(note?.step??0),0,limit-1);
+    return {midi:clamp(Math.round(note?.midi??60),24,108),step,duration:clamp(note?.duration??1,.125,limit-step),velocity:clamp(Math.round(note?.velocity??96),1,127),word:String(note?.word||'').slice(0,120),layer:note?.layer==='harmony'?'harmony':'lead'};
+  }):[];
+  const notes=normaliseMelodyNotes(melodySource.notes);
+  const clips=Array.isArray(melodySource.clips)?melodySource.clips.slice(0,MAX_MELODY_CLIPS).map((clip,index)=>{
+    const patternBars=clamp(Math.round(clip?.patternBars??1),1,MAX_SONG_BARS);
     return {
-      midi: clamp(Math.round(note?.midi ?? 60), 24, 108),
-      step,
-      duration: clamp(note?.duration ?? 1, .125, MAX_MELODY_STEPS-step),
-      velocity: clamp(Math.round(note?.velocity ?? 96), 1, 127),
-      word: String(note?.word || '').slice(0, 120),
-      layer: note?.layer === 'harmony' ? 'harmony' : 'lead'
+      id:String(clip?.id||`midi-${index+1}`).replace(/[^a-zA-Z0-9_-]/g,'').slice(0,64)||`midi-${index+1}`,
+      name:String(clip?.name||`MIDI clip ${index+1}`).slice(0,48),
+      notes:normaliseMelodyNotes(clip?.notes,patternBars*STEP_COUNT),
+      startStep:clamp(Math.round(clip?.startStep??0),0,MAX_MELODY_STEPS-1),
+      patternBars,
+      repeatEnabled:Boolean(clip?.repeatEnabled),
+      repeatEveryBars:clamp(Math.round(clip?.repeatEveryBars??patternBars),1,MAX_SONG_BARS),
+      repeatPhaseBars:clamp(Math.round(clip?.repeatPhaseBars??0),0,MAX_SONG_BARS-1),
+      placementEndBar:Number.isFinite(clip?.placementEndBar)?clamp(Math.round(clip.placementEndBar),1,MAX_SONG_BARS):null
     };
-  }) : [];
+  }):[];
   const rapSource = source.rap && typeof source.rap === 'object' ? source.rap : {};
   return {
     transcripts, phrases, layers, videoLayers,
@@ -180,7 +190,8 @@ function normaliseVoice(value) {
       scale: Object.hasOwn(MELODY_SCALES, melodySource.scale) ? melodySource.scale : 'major',
       harmonyInterval: HARMONY_INTERVALS.includes(Number(melodySource.harmonyInterval)) ? Number(melodySource.harmonyInterval) : 3,
       followBeat:Boolean(melodySource.followBeat),
-      notes
+      notes, clips,
+      activeClipId:clips.some(clip=>clip.id===melodySource.activeClipId)?melodySource.activeClipId:''
     },
     rap: {
       scheme: ['AABB', 'ABAB', 'AAAA', 'FREE'].includes(rapSource.scheme) ? rapSource.scheme : 'AABB',
@@ -281,6 +292,49 @@ export function songLayerPlaybackEvents(layer, rawDuration, bpm, songBars=0){
     events.push({startStep:onset,sourceStartSec:crop.start,durationSec:Math.min(durationSec,(endStep-onset)*secondsPerStep)});
   }
   return events;
+}
+
+/** Expand one MIDI clip to Song-positioned note events without changing its source notes.
+ * Phrase length and cycle period are independent; cycle phase is relative to the clip start.
+ */
+export function melodyClipEvents(clip,songBars=0){
+  if(!clip)return [];
+  const totalBars=clamp(Math.round(songBars||MAX_SONG_BARS),1,MAX_SONG_BARS);
+  const songEnd=totalBars*STEP_COUNT;
+  const startStep=clamp(Math.round(clip.startStep??0),0,MAX_MELODY_STEPS-1);
+  const endStep=Math.min(songEnd,Number.isFinite(clip.placementEndBar)?Math.max(0,clamp(Math.round(clip.placementEndBar),1,MAX_SONG_BARS)-1)*STEP_COUNT:songEnd);
+  if(startStep>=endStep)return [];
+  const firstStart=startStep+(clip.repeatEnabled?clamp(Math.round(clip.repeatPhaseBars??0),0,MAX_SONG_BARS-1):0)*STEP_COUNT;
+  const period=clamp(Math.round(clip.repeatEveryBars??clip.patternBars??1),1,MAX_SONG_BARS)*STEP_COUNT;
+  const events=[];
+  for(let cycle=firstStart;cycle<endStep&&events.length<MAX_MELODY_EXPORT_NOTES;cycle+=clip.repeatEnabled?period:MAX_MELODY_STEPS*MAX_SONG_BARS){
+    if(cycle<startStep)continue;
+    for(const note of (clip.notes||[])){
+      if(events.length>=MAX_MELODY_EXPORT_NOTES)break;
+      const step=cycle+clamp(Math.round(note.step??0),0,MAX_MELODY_STEPS-1);
+      if(step>=endStep||step>=songEnd)continue;
+      events.push({...note,step,duration:Math.min(clamp(note.duration??1,.125,MAX_MELODY_STEPS),endStep-step)});
+    }
+    if(!clip.repeatEnabled)break;
+  }
+  return events;
+}
+
+/** Return MIDI clip notes that begin at this sixteenth step, for low-cost transport scheduling. */
+export function melodyClipNotesAtStep(clip,absoluteStep,songBars=0){
+  if(!clip||!Number.isFinite(absoluteStep))return [];
+  const totalBars=clamp(Math.round(songBars||MAX_SONG_BARS),1,MAX_SONG_BARS),songEnd=totalBars*STEP_COUNT;
+  const startStep=clamp(Math.round(clip.startStep??0),0,MAX_MELODY_STEPS-1);
+  const endStep=Math.min(songEnd,Number.isFinite(clip.placementEndBar)?Math.max(0,clamp(Math.round(clip.placementEndBar),1,MAX_SONG_BARS)-1)*STEP_COUNT:songEnd);
+  if(absoluteStep<startStep||absoluteStep>=endStep)return [];
+  const phaseBars=clip.repeatEnabled?clamp(Math.round(clip.repeatPhaseBars??0),0,MAX_SONG_BARS-1):0;
+  const firstStart=startStep+phaseBars*STEP_COUNT;
+  if(absoluteStep<firstStart)return [];
+  const period=clamp(Math.round(clip.repeatEveryBars??clip.patternBars??1),1,MAX_SONG_BARS)*STEP_COUNT;
+  return (clip.notes||[]).filter(note=>{
+    const onset=firstStart+clamp(Math.round(note.step??0),0,MAX_MELODY_STEPS-1);
+    return absoluteStep>=onset&&(clip.repeatEnabled?(absoluteStep-onset)%period===0:absoluteStep===onset);
+  }).map(note=>({...note,step:absoluteStep,duration:Math.min(clamp(note.duration??1,.125,MAX_MELODY_STEPS),endStep-absoluteStep)}));
 }
 
 export const videoVisualDurationMs = (start, end, speed) => Math.max(180, (Number(end) - Number(start)) / clamp(speed ?? 1, 0.5, 2) * 1000);
@@ -543,22 +597,33 @@ export function midiFile(notes, bpm = 120, tuning = 440) {
   const u16 = n => [n >> 8 & 255, n & 255], u32 = n => [n >>> 24 & 255, n >>> 16 & 255, n >>> 8 & 255, n & 255];
   const vlq = value => { let n = Math.max(0, Math.round(value)), out = [n & 127]; while ((n >>= 7)) out.unshift((n & 127) | 128); return out; };
   const tempo = Math.round(60000000 / clamp(bpm, 40, 240));
-  const events = [[0, [255, 81, 3, tempo >> 16 & 255, tempo >> 8 & 255, tempo & 255]]];
-  for (const note of notes.slice(0, MAX_MELODY_NOTES)) {
+  const multiTrack=notes.some(note=>note.track);
+  const grouped=new Map();
+  for (const note of notes.slice(0, MAX_MELODY_EXPORT_NOTES)) {
+    const trackName=multiTrack?String(note.track||'Melody').slice(0,48):'';
+    if(!grouped.has(trackName))grouped.set(trackName,[]);
+    const events=grouped.get(trackName);
     const step=clamp(Math.round(note.step),0,MAX_MELODY_STEPS-1);
     const start = step * 120, end = start + Math.max(1, Math.round(clamp(note.duration, .125, MAX_MELODY_STEPS-step) * 120));
     const pitch = clamp(Math.round(note.midi), 24, 108);
     events.push([start, [0x90, pitch, clamp(Math.round(note.velocity??96),1,127)]], [end, [0x80, pitch, 0]]);
   }
-  // At a shared tick, release a note before retriggering the same pitch.
-  // Some MIDI players stop the newly started note if its note-off comes last.
-  const eventPriority = bytes => bytes[0] === 0xff ? 0 : bytes[0] === 0x80 ? 1 : 2;
-  events.sort((a, b) => a[0] - b[0] || eventPriority(a[1]) - eventPriority(b[1]));
-  let previous = 0; const track = [];
-  for (const [tick, bytes] of events) { track.push(...vlq(tick - previous), ...bytes); previous = tick; }
-  track.push(0, 255, 47, 0);
-  const header = [...[77, 84, 104, 100], ...u32(6), ...u16(0), ...u16(1), ...u16(480)];
-  const body = [...[77, 84, 114, 107], ...u32(track.length), ...track];
+  const chunks=[];
+  const writeTrack=(name,events,tempoTrack=false,includeName=true)=>{
+    if(includeName){const encodedName=Array.from(new TextEncoder().encode(name));events.unshift([0,[255,3,...vlq(encodedName.length),...encodedName]]);}
+    if(tempoTrack)events.push([0,[255,81,3,tempo>>16&255,tempo>>8&255,tempo&255]]);
+    // At a shared tick, release a note before retriggering the same pitch.
+    const eventPriority=bytes=>bytes[0]===255?0:bytes[0]===0x80?1:2;
+    events.sort((a,b)=>a[0]-b[0]||eventPriority(a[1])-eventPriority(b[1]));
+    let previous=0;const track=[];
+    for(const [tick,bytes] of events){track.push(...vlq(tick-previous),...bytes);previous=tick;}
+    track.push(0,255,47,0);
+    chunks.push(...[77,84,114,107],...u32(track.length),...track);
+  };
+  if(multiTrack){writeTrack('Tempo',[],true);for(const [name,events] of grouped)writeTrack(name,events);}
+  else writeTrack('',grouped.get('')||[],true,false);
+  const header = [...[77,84,104,100], ...u32(6), ...u16(multiTrack?1:0), ...u16(multiTrack?grouped.size+1:1), ...u16(480)];
+  const body = chunks;
   return new Blob([new Uint8Array([...header, ...body])], { type: 'audio/midi' });
 }
 export function nextQuantizedTime(now, epoch, bpm, division) {
