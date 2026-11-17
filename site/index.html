@@ -246,7 +246,8 @@
             <label class="voice-label">WORD FOR NEW EVENTS<select id="word-remix-word" aria-label="Word to place in the remix"></select></label>
             <div id="word-remix-bars" class="word-remix-bars" role="group" aria-label="Choose remix bar"></div>
             <div id="word-remix-grid" class="word-remix-grid" role="group" aria-label="Sixteenth-note word remix grid"></div>
-            <div class="voice-actions"><button class="pill-button" id="word-remix-play" type="button">▶ PLAY 4 BARS</button><button class="pill-button" id="word-remix-stop" type="button" disabled>■ STOP</button><button class="pill-button" id="word-remix-clear" type="button">CLEAR EVENTS</button></div>
+            <label class="word-remix-pitch">SELECTED EVENT PITCH <output id="word-remix-pitch-value" for="word-remix-pitch">0 st</output><input id="word-remix-pitch" type="range" min="-12" max="12" step="1" value="0" aria-label="Selected word event pitch in semitones" disabled><small id="word-remix-pitch-help">Select an audio word event to shift its pitch without changing its duration.</small></label>
+            <div class="voice-actions"><button class="pill-button" id="word-remix-play" type="button">▶ PLAY 4 BARS</button><button class="pill-button" id="word-remix-stop" type="button" disabled>■ STOP</button><button class="pill-button" id="word-remix-remove" type="button" disabled>REMOVE SELECTED EVENT</button><button class="pill-button" id="word-remix-clear" type="button">CLEAR EVENTS</button></div>
             <p id="word-remix-status" class="voice-status" role="status" aria-live="polite">Choose a transcript word, then tap a grid step to place or remove it.</p>
           </section>
           <button class="pill-button" id="voice-make-phrase" disabled>ADD SELECTED WORDS TO PHRASE</button>
