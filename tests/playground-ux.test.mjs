@@ -68,7 +68,7 @@ test('live Song video discloses and represents active local audio tracks',()=>{
   assert.match(app,/MELODY · \$\{cell\.track\.name\}/,'generated note lanes should identify Melody and harmony');
   assert.match(app,/note\.velocity\/127/,'note lanes should visualize note velocity');
   assert.match(app,/note\.step\/totalSteps/,'note lanes should use absolute arrangement time');
-  assert.match(readFileSync(new URL('../site/sw.js',import.meta.url),'utf8'),/madladpad-shell-v35/,'the offline shell version should refresh updated capture rendering');
+  assert.match(readFileSync(new URL('../site/sw.js',import.meta.url),'utf8'),/madladpad-shell-v36/,'the offline shell version should refresh updated capture rendering');
 });
 
 test('one Song arrangement owner, visible named patterns and no redundant action buttons',()=>{
