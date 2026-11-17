@@ -906,6 +906,7 @@ function renderTrackGrid(){
     });row.append(cells);
     if(hasSolo&&!pad.solo)row.classList.add('solo-muted');holder.append(row);
   }
+  renderWordRemixTransportTrack();
   if(focused?.pad!==undefined){
     const selector=focused.control?`data-control="${focused.control}"`:`data-step="${focused.step}"`;
     holder.querySelector(`.track-row[data-pad="${focused.pad}"] [${selector}]`)?.focus();
@@ -915,6 +916,31 @@ function renderTrackGrid(){
     const scrollLeft=focused?.step!==undefined&&activeSteps?activeSteps.scrollLeft:previousScroll;
     for(const lane of holder.querySelectorAll('.track-steps'))lane.scrollLeft=scrollLeft;
   }
+}
+
+function renderWordRemixTransportTrack(){
+  const host=$('word-remix-track-lane'),remix=project.voice.wordRemix;
+  host.replaceChildren();
+  if(!remix.followTransport||!remix.events.length){host.hidden=true;return;}
+  host.hidden=false;
+  const eventsByStep=new Map(remix.events.map(event=>[event.step,event]));
+  const heading=document.createElement('strong');heading.textContent='WORD REMIX · SOURCE-LINKED TRANSPORT LANE';
+  const description=document.createElement('p');description.textContent=`${remix.events.length} audio cue${remix.events.length===1?'':'s'} follow the four-bar cycle in Beat and Song without copying source media.`;
+  const bars=document.createElement('div');bars.className='word-remix-transport-bars';bars.setAttribute('role','group');bars.setAttribute('aria-label','Four-bar source-linked Word Remix lane');
+  for(let bar=0;bar<4;bar++){
+    const row=document.createElement('div');row.className='word-remix-transport-bar';
+    const barLabel=document.createElement('span');barLabel.className='word-remix-transport-bar-label';barLabel.textContent=String(bar+1);barLabel.setAttribute('aria-hidden','true');row.append(barLabel);
+    const active=[];
+    for(let step=0;step<16;step++){
+      const absoluteStep=bar*16+step,event=eventsByStep.get(absoluteStep),transcript=event&&project.voice.transcripts.find(item=>item.id===event.transcriptId),word=transcript?.words.find(item=>item.id===event.wordId);
+      const cell=document.createElement('span');cell.className=`word-remix-transport-step${event?' active':''}`;cell.setAttribute('aria-hidden','true');
+      if(event){cell.textContent=(word?.text||'?').slice(0,1).toUpperCase();cell.title=`Bar ${bar+1}, step ${step+1}: ${word?.text||'word'}`;active.push(`${step+1} ${word?.text||'word'}`);}
+      else cell.textContent='';
+      row.append(cell);
+    }
+    row.setAttribute('role','img');row.setAttribute('aria-label',`Bar ${bar+1}${active.length?`: ${active.join(', ')}`:': no word cues'}`);bars.append(row);
+  }
+  host.append(heading,description,bars);
 }
 
 function renderSession() {
@@ -1459,6 +1485,7 @@ async function startSequencer() {
           }
           audio.trigger(pad.id,pad,flashPad,triggerAt,{maxDuration,loop});
         });
+        voiceLab?.scheduleWordRemixStep(absoluteStep,time,project.bpm,padIsAudible);
         voiceLab?.scheduleMelodyStep(absoluteStep,time,project.bpm);
         setTimeout(()=>{
           if(!transportActivity.current(token) || !transportTimer)return;
@@ -2452,6 +2479,7 @@ async function initialise() {
       } catch(error){console.warn(`Failed to restore pad ${id+1}`,error);}
     }
     renderSession();
+    window.addEventListener('madladpad-word-remix-change',renderWordRemixTransportTrack);
     voiceLab=await initVoiceLab({ getProject: () => project, getMediaFiles: () => mediaFiles, getAudio: () => audio, getTransport: () => ({running:Boolean(transportTimer||songEndTimer!==null),epoch:audio.transportEpoch,bpm:project.bpm,songStartStep:sequenceView==='song'?requestedSongStartStep:0}), notify, save: queueSave, assignWordsToPads: assignVoiceWordsToPads, rememberAudioTake:(blob,duration)=>{rememberTake('audio',blob,duration);download(blob,lastTakes.audio.name);}, rememberVideoTake:(blob,duration)=>{rememberTake('video',blob,duration);download(blob,lastTakes.video.name);}, onTimelineScale:({barWidth,width,visibleBars})=>{SONG_BAR_WIDTH=barWidth;songTimelineView={width,visibleBars};renderSong();updateSongPlayhead(songPlayheadStep);} });
     await restoreSavedTakes();
     if(restored)notify(`Restored ${restored} locally saved samples.`);

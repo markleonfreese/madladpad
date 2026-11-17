@@ -68,7 +68,7 @@ test('live Song video discloses and represents active local audio tracks',()=>{
   assert.match(app,/MELODY · \$\{cell\.track\.name\}/,'generated note lanes should identify Melody and harmony');
   assert.match(app,/note\.velocity\/127/,'note lanes should visualize note velocity');
   assert.match(app,/note\.step\/totalSteps/,'note lanes should use absolute arrangement time');
-  assert.match(readFileSync(new URL('../site/sw.js',import.meta.url),'utf8'),/madladpad-shell-v38/,'the offline shell version should refresh Word Remix');
+  assert.match(readFileSync(new URL('../site/sw.js',import.meta.url),'utf8'),/madladpad-shell-v39/,'the offline shell version should refresh Word Remix transport sync');
 });
 
 test('offline Song WAV export is accessible and describes its local support boundary',()=>{
