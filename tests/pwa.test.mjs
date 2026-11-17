@@ -39,10 +39,10 @@ test('offline shell and all locally referenced ES modules exist', () => {
   assert.match(css,/font-family:'DM Mono'.*url\('\/fonts\/dm-mono-400-latin\.woff2'\)/,'DM Mono must use its self-hosted Latin font');
   assert.ok(sw.includes("caches.match('/')"),
     'offline navigation must fall back to the canonical root route used by Workers Static Assets');
-  assert.match(sw,/const CACHE = 'madladpad-shell-v37'/,'full-song video rendering must activate a fresh offline shell');
+  assert.match(sw,/const CACHE = 'madladpad-shell-v38'/,'Word Remix must activate a fresh offline shell');
 });
 
-test('v37 install precaches the updated modules, local fonts and licenses before taking control', async () => {
+test('v38 install precaches the updated modules, local fonts and licenses before taking control', async () => {
   const sw=readFileSync(join(site,'sw.js'),'utf8');
   const handlers=new Map();let cacheName=null,precache=[],skipped=false;
   const context={
@@ -54,7 +54,7 @@ test('v37 install precaches the updated modules, local fonts and licenses before
   let installation;
   handlers.get('install')({waitUntil:promise=>{installation=promise;}});
   await installation;
-  assert.equal(cacheName,'madladpad-shell-v37');
+  assert.equal(cacheName,'madladpad-shell-v38');
   assert.ok(precache.includes('/lyric-intelligence.js'),'lyric intelligence must be available offline');
   assert.ok(precache.includes('/melody-roll.js'),'the offline shell should include the interactive piano roll');
   assert.ok(precache.includes('/song-render.js'),'offline Song WAV rendering should work after the app shell is cached');
