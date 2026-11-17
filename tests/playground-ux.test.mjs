@@ -73,7 +73,7 @@ test('live Song video discloses and represents active local audio tracks',()=>{
 
 test('offline Song WAV export is accessible and describes its local support boundary',()=>{
   assert.match(html,/<button class="pill-button" id="render-song-audio"[^>]*aria-describedby="render-song-audio-note"[^>]*>RENDER SONG MIX · OFFLINE WAV<\/button>/);
-  assert.match(html,/<p id="render-song-audio-note"[^>]*>Creates a deterministic local stereo WAV/);
+  assert.match(html,/<p id="render-song-audio-note"[^>]*>Mixes saved Song steps with local pad and vocal audio, opted-in video-track audio and beat-following Melody into a deterministic stereo WAV/);
   assert.match(html,/Non-zero independent Pitch and generated demo synth lanes are reported as unsupported/);
   assert.match(html,/<p id="render-song-audio-status" class="voice-status" role="status" aria-live="polite"/);
   assert.match(app,/rememberAudioTake:\(blob,duration\)=>\{rememberTake\('audio',blob,duration\);download\(blob,lastTakes\.audio\.name\);\}/,'a finished WAV should use the existing preview and take recovery path');

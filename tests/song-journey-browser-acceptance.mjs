@@ -5,6 +5,8 @@ import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { resolve, extname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import assert from 'node:assert/strict';
+import { makeProject, normaliseProject, normaliseSong } from '../site/core.js';
+import { buildSongRenderPlan, songRenderVisualsAtTime } from '../site/song-render.js';
 
 const root=resolve('site');
 const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.woff2':'font/woff2','.webmanifest':'application/manifest+json','.svg':'image/svg+xml','.png':'image/png'};
@@ -26,6 +28,29 @@ const wav=(seconds=240)=>{
 };
 const audioFixture=wav();
 const padFixture=wav(2);
+const renderPattern=(id,name,step)=>{
+  const pads=Array.from({length:16},()=>({steps:Array(16).fill(false),stepOffsets:Array(16).fill(0)}));
+  pads[0].steps[step]=true;pads[1].steps[step]=true;
+  return {id,name,pads};
+};
+const renderBase=makeProject();
+const renderProject=normaliseProject({
+  ...renderBase,bpm:90,
+  pads:renderBase.pads.map((pad,index)=>index===0?{...pad,kind:'audio',fileName:'local-kick.wav',start:0,end:2,volume:.45,speed:1,pitch:0}
+    :index===1?{...pad,kind:'image',fileName:'cover.png'}:pad),
+  scenes:[renderPattern('render-a','A',0),renderPattern('render-b','B',4),renderPattern('render-c','C',8)],
+  song:normaliseSong({clips:[{id:'render-intro',sceneId:'render-a',bars:8},{id:'render-verse',sceneId:'render-b',bars:16},{id:'render-hook',sceneId:'render-c',bars:24},{id:'render-outro',sceneId:'render-a',bars:24}]}),
+  voice:{...renderBase.voice,
+    layers:[{id:'render-vocal',name:'Lead vocal',startStep:0,trimStartSec:0,trimEndSec:2,repeatEnabled:true,repeatEveryBars:8,audibleLengthBars:2,placementEndBar:72}],
+    videoLayers:[
+      {id:'video-one',name:'Verse footage',startStep:0,trimStartSec:0,trimEndSec:2,durationSec:2},
+      {id:'video-two',name:'Hook footage',startStep:0,trimStartSec:0,trimEndSec:2,durationSec:2,includeAudio:true,audioGain:.25,repeatEnabled:true,repeatEveryBars:4,audibleLengthBars:1,placementEndBar:72}
+    ],
+    melody:{...renderBase.voice.melody,followBeat:true,notes:[{midi:60,step:0,duration:4,velocity:100,layer:'lead'}]}
+  }
+});
+const renderPlan=buildSongRenderPlan(renderProject,{padDurations:{0:2},vocalDurations:{'render-vocal':2},videoDurations:{'video-two':2}});
+const renderFrameVisuals=songRenderVisualsAtTime(renderProject,renderPlan,.1);
 let browser,temp;
 try{
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -66,6 +91,34 @@ try{
   assert.ok(Math.abs(offlineWav.duration-1)<.001,'the decoded offline mix should keep the exact planned Song duration');
   assert.ok(offlineWav.bytes>48000&&offlineWav.rms.every(level=>level>.03),'decoded audio samples should contain the local pad and generated MIDI mix');
   console.log(`Offline Song WAV acceptance passed: ${offlineWav.duration.toFixed(3)} s decoded, ${offlineWav.bytes} bytes, stereo RMS ${offlineWav.rms.map(level=>level.toFixed(3)).join('/')}.`);
+  assert.equal(renderPlan.bars,72);
+  assert.equal(renderPlan.durationSeconds,192);
+  assert.deepEqual(renderFrameVisuals.map(tile=>tile.kind),['midi','still','video','video','waveform','waveform'],'the same Song timestamp must align a generated note, still, two videos and both audible waveform tracks');
+  const fullSongWav=await page.evaluate(async plan=>{
+    const {renderSongAudioWav}=await import('/song-render.js');
+    const rate=44100,context=new AudioContext({sampleRate:rate});
+    const makeTone=(frequency,amplitude)=>{
+      const buffer=context.createBuffer(1,rate*2,rate),channel=buffer.getChannelData(0);
+      for(let frame=0;frame<channel.length;frame++)channel[frame]=amplitude*Math.sin(2*Math.PI*frequency*frame/rate);
+      return buffer;
+    };
+    const sources={pads:new Map([[0,makeTone(110,.2)]]),vocals:new Map([['render-vocal',makeTone(220,.16)]]),videos:new Map([['video-two',makeTone(330,.1)]])};
+    try{
+      const result=await renderSongAudioWav(plan,sources,{sampleRate:rate});
+      const encoded=await result.blob.arrayBuffer(),header=new DataView(encoded);
+      const decoded=await context.decodeAudioData(encoded.slice(0));
+      const channel=decoded.getChannelData(0);let sum=0;
+      for(const sample of channel)sum+=sample*sample;
+      return {type:result.blob.type,bytes:result.blob.size,duration:decoded.duration,rate:header.getUint32(24,true),channels:decoded.numberOfChannels,rms:Math.sqrt(sum/channel.length)};
+    }finally{await context.close();}
+  },renderPlan);
+  assert.equal(fullSongWav.type,'audio/wav');
+  assert.equal(fullSongWav.duration,192,'the decoded artifact must span the complete 72-bar arrangement at 90 BPM');
+  assert.equal(fullSongWav.rate,44100);
+  assert.equal(fullSongWav.channels,2);
+  assert.ok(fullSongWav.rms>.01,'the full-length artifact must contain mixed local pad, vocal, video-source and MIDI audio');
+  assert.ok(fullSongWav.bytes<48*1024*1024,'the typical full-length song must fit the documented WAV size cap');
+  console.log(`Full 72-bar Song WAV acceptance passed: ${fullSongWav.duration.toFixed(1)} s, ${fullSongWav.bytes} bytes, stereo RMS ${fullSongWav.rms.toFixed(3)}; timestamp shows two videos, a still and MIDI.`);
   await page.addInitScript(()=>{
     window.__songVideoFramesDrawn=0;window.__songVideoFirstSourceTime=null;
     const drawImage=CanvasRenderingContext2D.prototype.drawImage;
