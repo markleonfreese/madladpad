@@ -197,7 +197,7 @@ function renderWordRemix(project, transcript, save, barState, getMediaFiles) {
     button.addEventListener('click',()=>{
       const existing=events.findIndex(item=>item.step===absoluteStep);
       if(existing>=0)barState.selectedStep=absoluteStep;
-      else if(transcript&&wordSelect.value&&events.length<64){events.push({id:crypto.randomUUID?.()||`word-event-${Date.now()}-${absoluteStep}`,transcriptId:transcript.id,wordId:wordSelect.value,step:absoluteStep,pitch:0});barState.selectedStep=absoluteStep;}
+      else if(transcript&&wordSelect.value&&events.length<64){events.push({id:crypto.randomUUID?.()||`word-event-${Date.now()}-${absoluteStep}`,transcriptId:transcript.id,wordId:wordSelect.value,step:absoluteStep,pitch:0,lengthPercent:100});barState.selectedStep=absoluteStep;}
       save();renderWordRemix(project,transcript,save,barState,getMediaFiles);
     });
     grid.append(button);
@@ -205,7 +205,11 @@ function renderWordRemix(project, transcript, save, barState, getMediaFiles) {
   const selectedEvent=events.find(item=>item.step===barState.selectedStep),selectedTranscript=selectedEvent&&project.voice.transcripts.find(item=>item.id===selectedEvent.transcriptId),selectedFile=selectedTranscript&&getMediaFiles().get(selectedTranscript.sourcePad),pitchControl=$('word-remix-pitch');
   pitchControl.value=String(selectedEvent?.pitch??0);$('word-remix-pitch-value').textContent=`${Number(selectedEvent?.pitch??0)>0?'+':''}${Number(selectedEvent?.pitch??0)} st`;
   pitchControl.disabled=!selectedEvent||!selectedFile?.type?.startsWith('audio/');
-  $('word-remix-pitch-help').textContent=selectedEvent&&selectedFile?.type?.startsWith('video/')?'Pitch shift is unavailable for video sources in this preview.':'Pitch shifts keep word duration on audio sources. Video-source pitch is not available yet.';
+  $('word-remix-pitch-help').textContent=selectedEvent&&selectedFile?.type?.startsWith('video/')?'Pitch shift is unavailable for video sources in this preview.':'Pitch changes do not alter cue length. Video-source pitch is not available yet.';
+  const lengthControl=$('word-remix-length'),lengthPercent=clamp(selectedEvent?.lengthPercent??100,25,100);
+  lengthControl.value=String(lengthPercent);$('word-remix-length-value').textContent=`${lengthPercent}%`;
+  lengthControl.disabled=!selectedEvent;
+  $('word-remix-length-help').textContent=selectedEvent?'Trim this cue to a percentage of its reviewed transcript range.':'Select a word event to trim its playback length.';
   $('word-remix-remove').disabled=!selectedEvent;
   $('word-remix-clear').disabled=!events.length;
   $('word-remix-play').disabled=!events.length;
@@ -623,7 +627,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       for(const event of events){
         const transcript=currentProject.voice.transcripts.find(item=>item.id===event.transcriptId),word=transcript?.words.find(item=>item.id===event.wordId),file=transcript&&getMediaFiles().get(transcript.sourcePad);
         if(!word||!file)throw new Error('A word source is missing. Re-import its original local clip before playing.');
-        const offset=event.step*secondsPerStep,rangeStart=clamp(word.start,0,3600),rangeEnd=clamp(word.end,rangeStart,3600),duration=Math.min(rangeEnd-rangeStart,totalDuration-offset);
+        const offset=event.step*secondsPerStep,rangeStart=clamp(word.start,0,3600),rangeEnd=clamp(word.end,rangeStart,3600),duration=Math.min((rangeEnd-rangeStart)*clamp(event.lengthPercent??100,25,100)/100,totalDuration-offset);
         if(duration<=.01)continue;
         if(file.type.startsWith('video/')){
           if(Math.abs(Number(event.pitch)||0)>.01)throw new Error('Pitch shifting video-backed words is not available in this preview.');
@@ -666,6 +670,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
           const timer=setTimeout(()=>{
             if(wordRemixPlayback!==token)return;
             const video=token.video;token.currentVideoPlan=plan;video.pause();video.currentTime=Math.min(plan.rangeStart,Math.max(0,video.duration-.02));
+            const trimTimer=setTimeout(()=>{if(wordRemixPlayback===token&&token.currentVideoPlan===plan)video.pause();},Math.max(0,Math.round(plan.duration*1000)));token.timers.push(trimTimer);
             video.play().catch(error=>{if(wordRemixPlayback===token)$('word-remix-status').textContent=`Video playback was blocked: ${error.message}. Tap Play again.`;});
           },Math.max(0,Math.round(plan.offset*1000)));
           token.timers.push(timer);
@@ -1856,6 +1861,8 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   $('word-remix-stop').addEventListener('click',()=>stopWordRemix());
   $('word-remix-pitch').addEventListener('input',()=>{$('word-remix-pitch-value').textContent=`${Number($('word-remix-pitch').value)>0?'+':''}${$('word-remix-pitch').value} st`;});
   $('word-remix-pitch').addEventListener('change',()=>{const event=project.voice.wordRemix.events.find(item=>item.step===wordRemixBar.selectedStep);if(!event)return;event.pitch=clamp($('word-remix-pitch').value,-12,12);save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);});
+  $('word-remix-length').addEventListener('input',()=>{$('word-remix-length-value').textContent=`${$('word-remix-length').value}%`;});
+  $('word-remix-length').addEventListener('change',()=>{const event=project.voice.wordRemix.events.find(item=>item.step===wordRemixBar.selectedStep);if(!event)return;event.lengthPercent=Math.round(clamp($('word-remix-length').value,25,100));save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);});
   $('word-remix-remove').addEventListener('click',()=>{const index=project.voice.wordRemix.events.findIndex(item=>item.step===wordRemixBar.selectedStep);if(index<0)return;project.voice.wordRemix.events.splice(index,1);wordRemixBar.selectedStep=null;save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);});
   $('word-remix-clear').addEventListener('click',()=>{project.voice.wordRemix.events=[];wordRemixBar.selectedStep=null;stopWordRemix('Cleared all Word Remix events.');save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);});
   window.addEventListener('pagehide',()=>stopWordRemix('Stopped when this page closed.'),{once:true});

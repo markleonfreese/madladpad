@@ -322,13 +322,13 @@ test('voice projects add bounded transcripts, phrases, vocal layers, melody, tun
 });
 test('Word Remix persists bounded source-linked events and drops missing, out-of-range and duplicate steps',()=>{
   const voice=normaliseProject({voice:{transcripts:[{id:'take-a',sourcePad:2,words:[{id:'ah',text:'ah',start:.1,end:.3},{id:'turtle',text:'turtle',start:.4,end:.8}]}],wordRemix:{events:[
-    {id:'repeat-ah',transcriptId:'take-a',wordId:'ah',step:63,pitch:99},
-    {id:'pitch-floor',transcriptId:'take-a',wordId:'turtle',step:0,pitch:-99},
+    {id:'repeat-ah',transcriptId:'take-a',wordId:'ah',step:63,pitch:99,lengthPercent:150},
+    {id:'pitch-floor',transcriptId:'take-a',wordId:'turtle',step:0,pitch:-99,lengthPercent:2},
     {id:'missing-word',transcriptId:'take-a',wordId:'gone',step:2},
     {id:'bad-step',transcriptId:'take-a',wordId:'turtle',step:64},
     {id:'duplicate-step',transcriptId:'take-a',wordId:'turtle',step:63}
   ]}}}).voice.wordRemix;
-  assert.deepEqual(voice.events,[{id:'repeat-ah',transcriptId:'take-a',wordId:'ah',step:63,pitch:12},{id:'pitch-floor',transcriptId:'take-a',wordId:'turtle',step:0,pitch:-12}]);
+  assert.deepEqual(voice.events,[{id:'repeat-ah',transcriptId:'take-a',wordId:'ah',step:63,pitch:12,lengthPercent:100},{id:'pitch-floor',transcriptId:'take-a',wordId:'turtle',step:0,pitch:-12,lengthPercent:25}]);
   assert.deepEqual(normaliseProject({}).voice.wordRemix,{events:[]},'older project packs should gain an empty Word Remix without migration loss');
 });
 test('beat-directed video layout and aspect ratios are stored, bounded and backwards compatible',()=>{

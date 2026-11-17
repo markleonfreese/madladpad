@@ -934,6 +934,8 @@ try {
   assert.equal(await page.locator('#word-remix-pitch').isDisabled(),false,'audio-backed word events should expose independent pitch');
   await page.locator('#word-remix-pitch').evaluate(slider=>{slider.value='3';slider.dispatchEvent(new Event('input',{bubbles:true}));slider.dispatchEvent(new Event('change',{bubbles:true}));});
   assert.equal(await page.locator('#word-remix-pitch-value').textContent(),'+3 st','the selected audio event should expose its semitone shift');
+  await page.locator('#word-remix-length').evaluate(slider=>{slider.value='50';slider.dispatchEvent(new Event('input',{bubbles:true}));slider.dispatchEvent(new Event('change',{bubbles:true}));});
+  assert.equal(await page.locator('#word-remix-length-value').textContent(),'50%','the selected audio event should expose its playback trim');
   await page.locator('#word-remix-bars button').nth(1).click();
   await page.locator('#word-remix-word').selectOption({label:'MadLadPad'});
   await page.locator('#word-remix-grid button[aria-label="Bar 2, step 1; place MadLadPad"]').click();
@@ -944,6 +946,7 @@ try {
   await page.waitForFunction(()=>window.__wordRemixStarts.length===2,null,{timeout:5000});
   const remixStarts=await page.evaluate(()=>window.__wordRemixStarts);
   assert.ok(Math.abs(remixStarts[0][1]-.15)<.002,'Word Remix should play the original edited source offset');
+  assert.ok(Math.abs(remixStarts[0][2]-.24)<.003,`the 50% event length should trim the corrected 400ms word while retaining pitch processor latency compensation: ${JSON.stringify(remixStarts[0])}`);
   assert.ok(Math.abs((remixStarts[1][0]-(remixStarts[0][0]+.04))-2)<.03,'pitch latency compensation should keep the next bar aligned on the beat clock');
   assert.ok(await page.evaluate(()=>window.__wordPitchValues.length>0),'the selected source word should enter the time-preserving pitch processor at +3 semitones');
   assert.match(await page.locator('#word-remix-status').textContent(),/source-linked word events across four bars/);
@@ -1010,9 +1013,13 @@ try {
   await page.locator('#word-remix-word').selectOption({label:'visible'});
   await page.locator('#word-remix-grid button[aria-label="Bar 1, step 1; place visible"]').click();
   assert.equal(await page.locator('#word-remix-pitch').isDisabled(),true,'video-backed events should not offer pitch changes that alter playback speed');
+  assert.equal(await page.locator('#word-remix-length').isDisabled(),false,'video-backed events should allow duration trims without changing pitch');
+  await page.locator('#word-remix-length').evaluate(slider=>{slider.value='50';slider.dispatchEvent(new Event('input',{bubbles:true}));slider.dispatchEvent(new Event('change',{bubbles:true}));});
   await page.locator('#word-remix-play').click();
   await page.waitForFunction(()=>{const video=document.querySelector('#voice-word-video');return !video.hidden&&video.readyState>=2&&!video.paused&&video.currentSrc.startsWith('blob:');},null,{timeout:5000});
   assert.match(await page.locator('#word-remix-status').textContent(),/video seek timing is best-effort/i,'video-backed word events must disclose approximate seek timing');
+  await page.waitForFunction(()=>{const video=document.querySelector('#voice-word-video');return video.paused&&video.currentTime<.2;},null,{timeout:2000});
+  assert.ok(await page.locator('#word-remix-length-value').textContent()==='50%','video word cues should preserve their saved event trim');
   await page.locator('#word-remix-stop').click();
   assert.equal(await page.locator('#voice-word-video').isHidden(),true,'stopping Word Remix should release and hide its source video');
   const videoWordPreview=page.getByRole('button',{name:'Preview word 1, visible from original clip'});
@@ -2193,6 +2200,7 @@ try {
   assert.equal(pack.project.voice.wordRemix.events[0].transcriptId,pack.project.voice.transcripts[videoTranscriptIndex].id,'Word Remix events should retain transcript provenance');
   assert.equal(pack.project.voice.wordRemix.events[0].wordId,pack.project.voice.transcripts[videoTranscriptIndex].words[0].id,'Word Remix events should reference their original timed word');
   assert.equal(pack.project.voice.wordRemix.events[0].pitch,0,'project packs should retain the bounded event pitch');
+  assert.equal(pack.project.voice.wordRemix.events[0].lengthPercent,50,'project packs should retain the word event trim percentage');
   assert.equal(pack.project.voice.phrases.length,3,'project packs should preserve original phrases and the combined story');
   assert.ok(pack.project.voice.melody.notes.some(note=>note.midi===69&&note.word==='MadLadPad'),'project packs should preserve melody pitch and its transcript-word cue');
   assert.equal(pack.project.voice.rap.bars[0],'Hello from the other side','project packs should preserve the written rap bars');
