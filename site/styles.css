@@ -604,3 +604,11 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
 .word-remix-transport-bar-label{color:#aebcab;text-align:center;font:12px var(--mono)}
 .word-remix-transport-step{height:25px;border:1px solid #435343;border-radius:4px;background:#101710}
 .word-remix-transport-step.active{display:grid;place-items:center;border-color:var(--acid);background:#263729;color:var(--acid);font:700 11px var(--mono)}
+
+/* One read-only speaker monitor shared by Beat Maker and Tracks while Word Remix plays. */
+.word-remix-live{position:fixed;z-index:15;right:14px;bottom:calc(105px + env(safe-area-inset-bottom,0px));width:min(232px,52vw);display:grid;gap:5px;padding:8px;border:1px solid #728e68;border-radius:12px;background:#111b13;box-shadow:0 8px 25px #000b;pointer-events:none}
+.word-remix-live[hidden],.word-remix-live video[hidden]{display:none!important}
+.word-remix-live video{display:block;width:100%;aspect-ratio:16/9;max-height:132px;object-fit:contain;border-radius:6px;background:#050805}
+.word-remix-live span{color:#ecf4e7;font:600 12px/1.4 'DM Sans',system-ui;overflow-wrap:anywhere}
+@media(max-width:380px){.word-remix-live{right:7px;bottom:calc(116px + env(safe-area-inset-bottom,0px));width:min(172px,47vw);padding:6px}.word-remix-live video{max-height:98px}.word-remix-live span{font-size:11px}}
+@media(prefers-reduced-motion:reduce){.word-remix-live{animation:none;transition:none}}

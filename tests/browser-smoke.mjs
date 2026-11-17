@@ -1055,7 +1055,9 @@ try {
   await page.locator('#word-remix-bars button').first().click();
   await page.locator('#word-remix-word').selectOption({label:'visible'});
   await page.locator('#word-remix-grid button[aria-label="Bar 1, step 1; place visible"]').click();
-  assert.equal(await page.locator('#word-remix-pitch').isDisabled(),true,'video-backed events should not offer pitch changes that alter playback speed');
+  assert.equal(await page.locator('#word-remix-pitch').isDisabled(),false,'video-word pitch should be available through the local time-preserving audio processor');
+  await page.locator('#word-remix-pitch').evaluate(slider=>{slider.value='5';slider.dispatchEvent(new Event('input',{bubbles:true}));slider.dispatchEvent(new Event('change',{bubbles:true}));});
+  assert.equal(await page.locator('#word-remix-pitch-value').textContent(),'+5 st');
   assert.equal(await page.locator('#word-remix-length').isDisabled(),false,'video-backed events should allow duration trims without changing pitch');
   await page.locator('#word-remix-length').evaluate(slider=>{slider.value='50';slider.dispatchEvent(new Event('input',{bubbles:true}));slider.dispatchEvent(new Event('change',{bubbles:true}));});
   await page.locator('#word-remix-play').click();
@@ -1065,6 +1067,33 @@ try {
   assert.ok(await page.locator('#word-remix-length-value').textContent()==='50%','video word cues should preserve their saved event trim');
   await page.locator('#word-remix-stop').click();
   assert.equal(await page.locator('#voice-word-video').isHidden(),true,'stopping Word Remix should release and hide its source video');
+  // RED on baseline main: a video-backed cue was forbidden from Beat/Song transport.
+  // Test the new one-source audiovisual lane, repeated word retrigger and Stop.
+  await page.locator('#word-remix-bars button').first().click();
+  await page.locator('#word-remix-grid button[aria-label="Bar 1, step 9; place visible"]').click();
+  await page.locator('#word-remix-follow-transport').check();
+  assert.equal(await page.locator('#word-remix-follow-transport').isChecked(),true,'a source-linked video cue should be transport-enabled');
+  await openScreen('beats');
+  assert.equal(await page.locator('#word-remix-track-lane').isVisible(),true,'the video-backed word should appear on the transport lane');
+  await page.evaluate(()=>{
+    window.__wordRemixVideoMonitorPlays=[];
+    const video=document.querySelector('#word-remix-live-video');
+    video.addEventListener('playing',()=>{
+      window.__wordRemixVideoMonitorPlays.push({src:video.currentSrc.startsWith('blob:'),label:document.querySelector('#word-remix-live-label').textContent,visible:!document.querySelector('#word-remix-live').hidden,time:video.currentTime});
+    });
+  });
+  await page.locator('#studio-play').click();
+  await page.waitForFunction(()=>window.__wordRemixVideoMonitorPlays.length>=2,null,{timeout:8000});
+  const videoMonitorEvents=await page.evaluate(()=>window.__wordRemixVideoMonitorPlays);
+  assert.ok(videoMonitorEvents.every(cue=>cue.src&&cue.visible&&cue.label==='visible'),`word repeats must display the original local video: ${JSON.stringify(videoMonitorEvents)}`);
+  assert.ok(videoMonitorEvents.every(cue=>cue.time>=.03&&cue.time<.4),'each repeated word should seek to the reviewed video time range');
+  await page.locator('#studio-play').click();
+  await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='false');
+  assert.equal(await page.locator('#word-remix-live').isHidden(),true,'Stop should hide the global Word Remix video monitor');
+  assert.equal(await page.locator('#word-remix-live-video').evaluate(video=>video.paused),true,'Stop should pause source video immediately');
+  await openScreen('voice');
+  await page.locator('#word-remix-follow-transport').uncheck();
+  assert.equal(await page.locator('#word-remix-follow-transport').isChecked(),false,'transport opt-out should persist');
   const videoWordPreview=page.getByRole('button',{name:'Preview word 1, visible from original clip'});
   await videoWordPreview.click();
   await page.locator('#voice-word-video').waitFor({state:'visible'});

@@ -71,6 +71,11 @@
       </div>
     </section>
 
+    <aside id="word-remix-live" class="word-remix-live" aria-label="Word Remix source video during song playback" hidden>
+      <video id="word-remix-live-video" playsinline preload="metadata" aria-label="Original source video for current Word Remix word" hidden></video>
+      <span id="word-remix-live-label" aria-live="off"></span>
+    </aside>
+
     <div class="workspace" id="studio-workspace">
       <section class="performance-area" aria-label="Sampler grid">
         <div class="playground-actions"><button type="button" id="pad-edit-mode" aria-pressed="false" aria-label="Switch to Edit pads mode">Edit pads</button></div>
@@ -247,9 +252,9 @@
             <label class="voice-label">WORD FOR NEW EVENTS<select id="word-remix-word" aria-label="Word to place in the remix"></select></label>
             <div id="word-remix-bars" class="word-remix-bars" role="group" aria-label="Choose remix bar"></div>
             <div id="word-remix-grid" class="word-remix-grid" role="group" aria-label="Sixteenth-note word remix grid"></div>
-            <label class="consent-line word-remix-follow-line"><input type="checkbox" id="word-remix-follow-transport" aria-label="Play audio word cues with the Beat and Song transport" disabled> PLAY AUDIO CUES WITH BEAT / SONG</label>
-            <p id="word-remix-follow-help" class="word-remix-follow-help">Audio cues can follow the four-bar cycle in Beat or Song. Video-source cues stay in preview mode.</p>
-            <label class="word-remix-pitch">SELECTED EVENT PITCH <output id="word-remix-pitch-value" for="word-remix-pitch">0 st</output><input id="word-remix-pitch" type="range" min="-12" max="12" step="1" value="0" aria-label="Selected word event pitch in semitones" disabled><small id="word-remix-pitch-help">Select an audio word event to shift its pitch without changing its duration.</small></label>
+            <label class="consent-line word-remix-follow-line"><input type="checkbox" id="word-remix-follow-transport" aria-label="Play source-linked audio and video words with Beat and Song" disabled> PLAY WORDS WITH BEAT / SONG</label>
+            <p id="word-remix-follow-help" class="word-remix-follow-help">Audio and video words follow the four-bar Beat/Song cycle. One original speaker video at a time; rapid video cuts may lag.</p>
+            <label class="word-remix-pitch">SELECTED EVENT PITCH <output id="word-remix-pitch-value" for="word-remix-pitch">0 st</output><input id="word-remix-pitch" type="range" min="-12" max="12" step="1" value="0" aria-label="Selected word event pitch in semitones" disabled><small id="word-remix-pitch-help">Pitch shifts the selected spoken word without changing its speed. Video-word pitch needs the local audio processor.</small></label>
             <label class="word-remix-length">SELECTED EVENT LENGTH <output id="word-remix-length-value" for="word-remix-length">100%</output><input id="word-remix-length" type="range" min="25" max="100" step="1" value="100" aria-label="Selected word event playback length as a percentage" disabled><small id="word-remix-length-help">Trim event playback while keeping the original source and transcript timing.</small></label>
             <div class="voice-actions"><button class="pill-button" id="word-remix-play" type="button">▶ PLAY 4 BARS</button><button class="pill-button" id="word-remix-stop" type="button" disabled>■ STOP</button><button class="pill-button" id="word-remix-export" type="button" disabled>DOWNLOAD 4-BAR WAV</button><button class="pill-button" id="word-remix-remove" type="button" disabled>REMOVE SELECTED EVENT</button><button class="pill-button" id="word-remix-clear" type="button">CLEAR EVENTS</button></div>
             <p id="word-remix-export-help" class="word-remix-follow-help" role="status" aria-live="polite">Build an audio-only WAV from the four-bar word grid. Rendering stays on this device.</p>
