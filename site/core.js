@@ -140,7 +140,7 @@ function normaliseVoice(value) {
     const step = rawStep;
     if (!transcript || !transcript.words.some(word => word.id === wordId) || occupiedRemixSteps.has(step)) return [];
     occupiedRemixSteps.add(step);
-    return [{ id:String(event?.id || `word-event-${index+1}`).slice(0,80), transcriptId, wordId, step, pitch:clamp(event?.pitch??0,-12,12) }];
+    return [{ id:String(event?.id || `word-event-${index+1}`).slice(0,80), transcriptId, wordId, step, pitch:clamp(event?.pitch??0,-12,12), lengthPercent:Math.round(clamp(event?.lengthPercent??100,25,100)) }];
   }) };
   const layers = Array.isArray(source.layers) ? source.layers.slice(0, MAX_VOCAL_LAYERS).map((layer, index) => ({
     id: String(layer?.id || `vocal-${index + 1}`).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || `vocal-${index + 1}`,
