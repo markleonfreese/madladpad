@@ -1,4 +1,4 @@
-import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, melodyClipEvents, melodyClipNotesAtStep, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_MELODY_CLIPS, MAX_MELODY_EXPORT_NOTES, MAX_MELODY_STEPS, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, MAX_SONG_BARS, MAX_REVERSED_AUDIO_BYTES, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, findRecorderMime, extensionForAudioMime, extensionForMime, vocalLayerClip, songVideoPositionAtStep, songLayerPlaybackEvents, songTotalBars, editSongTrackOnTimeline, AsyncActivity, localRecordingBudget, localJournaledRecordingBudget, createBoundedRecordingCapture } from './core.js';
+import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPositionLabel, midiFile, melodyClipEvents, melodyClipNotesAtStep, audioBufferToWav, estimateSyllables, HARMONY_INTERVALS, MELODY_ROOTS, MELODY_SCALES, snapMidiToScale, MAX_MEDIA_BYTES, MAX_MELODY_NOTES, MAX_MELODY_CLIPS, MAX_MELODY_EXPORT_NOTES, MAX_MELODY_STEPS, MAX_TRANSCRIPT_WORDS, MAX_VOICE_PHRASES, MAX_VOCAL_LAYERS, MAX_SONG_BARS, MAX_REVERSED_AUDIO_BYTES, RECORDING_STORAGE_RESERVE_BYTES, findAudioRecorderMime, findRecorderMime, extensionForAudioMime, extensionForMime, vocalLayerClip, songVideoPositionAtStep, activeSongAudioVisuals, songMelodyVisualTracks, songLayerPlaybackEvents, songTotalBars, editSongTrackOnTimeline, AsyncActivity, localRecordingBudget, localJournaledRecordingBudget, createBoundedRecordingCapture } from './core.js';
 import { getValue, saveVoiceLayer, deleteVoiceLayer, saveSongVideoLayer, deleteSongVideoLayer, beginAudioRecordingRecovery, appendAudioRecordingRecoveryChunk, listInterruptedAudioRecordings, deleteInterruptedAudioRecording, beginVideoRecordingRecovery, appendVideoRecordingRecoveryChunk, listInterruptedVideoRecordings, deleteInterruptedVideoRecording } from './storage.js';
 import { detectPitch } from './tuner.js';
 import { renderMelodyRoll } from './melody-roll.js';
@@ -451,6 +451,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   const videoFiles = new Map(), videoUrls = new Map();
   const videoPlaybackElements = new Map();
   const videoAudioRoutes = new Map();
+  const visualWaveformCache = new WeakMap();
   let songVideoAudioFrameId=null;
   let overdubZoom=1;
   const songTimelineSteps=()=>{
@@ -867,6 +868,38 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   }
 
   function songVideoFramesAtStep(absoluteStep){return updateSongVideoTracksAtStep(absoluteStep);}
+
+  function waveformPeaks(buffer){
+    let peaks=visualWaveformCache.get(buffer);
+    if(peaks)return peaks;
+    const bins=64,channels=buffer.numberOfChannels,frames=buffer.length;
+    peaks=new Float32Array(bins);
+    for(let bin=0;bin<bins;bin++){
+      const from=Math.floor(bin*frames/bins),to=Math.max(from+1,Math.floor((bin+1)*frames/bins));
+      let peak=0;
+      for(let channel=0;channel<channels;channel++){
+        const samples=buffer.getChannelData(channel);
+        const stride=Math.max(1,Math.floor((to-from)/128));
+        for(let index=from;index<to;index+=stride)peak=Math.max(peak,Math.abs(samples[index]||0));
+      }
+      peaks[bin]=peak;
+    }
+    visualWaveformCache.set(buffer,peaks);
+    return peaks;
+  }
+
+  function songAudioFramesAtStep(absoluteStep){
+    const buffers=new Map(project.voice.layers.map(layer=>[layer.id,audio.vocalSources.get(layer.id)?.buffer]));
+    const durations=new Map([...buffers].flatMap(([id,buffer])=>buffer?[[id,buffer.duration]]:[]));
+    return activeSongAudioVisuals(project.voice.layers,durations,absoluteStep,project.bpm,songTotalBars(project.song)).map(track=>({
+      ...track,
+      peaks:waveformPeaks(buffers.get(track.id))
+    }));
+  }
+
+  function songMelodyVisualTracksAtStep(absoluteStep){
+    return songMelodyVisualTracks(project.voice.melody,absoluteStep,songTotalBars(project.song));
+  }
 
   function songVideoAudioPlaybackFrame(){
     songVideoAudioFrameId=null;
@@ -1677,6 +1710,8 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     transportStarted(epoch, bpm) { audio.playVocalLayers(project.voice.layers, epoch, bpm, songTotalBars(project.song)); startSongVideoAudioPlayback();updateSongCycleControlAvailability();updateOverdubControls(); },
     transportStopped() { audio.stopVocalLayers();stopSongVideoAudioPlayback(); if (vocalRecording) stopOverdub(); if(videoRecordingActivity.phase==='starting')stopSongVideoRecording(true);else if(videoRecording)stopSongVideoRecording(false);updateSongCycleControlAvailability();updateOverdubControls(); },
     songVideoFramesAtStep,
+    songAudioFramesAtStep,
+    songMelodyVisualTracksAtStep,
     stopSongVideoVisualPlayback,
     stopTuner,
     refreshTimeline() { renderOverdubTimeline(); },

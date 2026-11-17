@@ -56,6 +56,21 @@ test('beat selection and recording are clear, video framing defaults to followin
   assert.match(html,/<summary>Video framing &amp; formats<\/summary>/);
 });
 
+test('live Song video discloses and represents active local audio tracks',()=>{
+  assert.match(html,/audio tracks appear as local waveforms/);
+  assert.match(html,/not a deterministic full-Song render/);
+  assert.match(html,/beat-following Melody and harmony appear as note lanes/);
+  assert.match(html,/aria-label="Live performance composition with pad, audio waveform, Melody note lanes and video tiles"/);
+  assert.match(app,/songAudioFramesAtStep\?\.\(songStep\)/,'live capture should ask the Song timeline for active audio clips');
+  assert.match(app,/songMelodyVisualTracksAtStep\?\.\(songStep\)/,'live capture should ask the Song timeline for beat-following Melody notes');
+  assert.match(app,/AUDIO · \$\{cell\.track\.name\}/,'audio waveform tiles should identify the source track');
+  assert.match(app,/cell\.track\.peaks/,'waveform tiles should use the locally decoded source waveform');
+  assert.match(app,/MELODY · \$\{cell\.track\.name\}/,'generated note lanes should identify Melody and harmony');
+  assert.match(app,/note\.velocity\/127/,'note lanes should visualize note velocity');
+  assert.match(app,/note\.step\/totalSteps/,'note lanes should use absolute arrangement time');
+  assert.match(readFileSync(new URL('../site/sw.js',import.meta.url),'utf8'),/madladpad-shell-v35/,'the offline shell version should refresh updated capture rendering');
+});
+
 test('one Song arrangement owner, visible named patterns and no redundant action buttons',()=>{
   const beat=html.indexOf('id="sequencer"');
   const tracks=html.indexOf('id="overdub-lab"');

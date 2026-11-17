@@ -268,6 +268,45 @@ export function songVideoPositionAtStep(layer, absoluteStep, bpm, songBars=0) {
   return sourceTime<trimEnd?sourceTime:null;
 }
 
+/** Return source-local playback positions for the audio tracks that should be visible now. */
+export function activeSongAudioVisuals(layers, sourceDurations, absoluteStep, bpm, songBars=0) {
+  if(!Array.isArray(layers)||!Number.isFinite(absoluteStep))return [];
+  const hasSolo=layers.some(layer=>layer?.solo&&!layer?.muted);
+  return layers.flatMap(layer=>{
+    if(!layer||layer.muted||(hasSolo&&!layer.solo)||Number(layer.gain??1)<=0)return [];
+    const duration=sourceDurations instanceof Map?sourceDurations.get(layer.id):sourceDurations?.[layer.id];
+    if(!Number.isFinite(duration)||duration<=0)return [];
+    const positioned={...layer,trimEndSec:layer.trimEndSec??duration};
+    const positionSec=songVideoPositionAtStep(positioned,absoluteStep,bpm,songBars);
+    if(positionSec===null)return [];
+    const start=clamp(layer.trimStartSec??0,0,duration),end=clamp(layer.trimEndSec??duration,start,duration);
+    if(end<=start)return [];
+    const sourceProgress=clamp((positionSec-start)/(end-start),0,1),reverse=Boolean(layer.reverseEnabled);
+    return [{id:layer.id,name:String(layer.name||'Audio track'),positionSec:reverse?end-(positionSec-start):positionSec,progress:reverse?1-sourceProgress:sourceProgress,reverse}];
+  });
+}
+
+/** Build the musical-note lanes that are audible during live Song playback. */
+export function songMelodyVisualTracks(melody, absoluteStep, songBars=0) {
+  if(!melody?.followBeat||!Array.isArray(melody.notes)||!melody.notes.length||!Number.isFinite(absoluteStep))return [];
+  const arrangedBars=clamp(Math.round(songBars),0,MAX_SONG_BARS);
+  const arrangedSteps=arrangedBars?arrangedBars*STEP_COUNT:0;
+  const lastNoteStep=Math.max(0,...melody.notes.map(note=>clamp(Math.round(note?.step??0),0,MAX_MELODY_STEPS-1)+clamp(note?.duration??1,.125,MAX_MELODY_STEPS)));
+  const totalSteps=arrangedSteps||clamp(Math.ceil(lastNoteStep),STEP_COUNT,MAX_MELODY_STEPS);
+  if(arrangedSteps&&absoluteStep>=arrangedSteps)return [];
+  const progress=clamp((arrangedSteps?absoluteStep:absoluteStep%totalSteps)/totalSteps,0,1);
+  return ['lead','harmony'].flatMap(layer=>{
+    const notes=melody.notes.flatMap(note=>{
+      if((note?.layer==='harmony'?'harmony':'lead')!==layer)return [];
+      const step=clamp(Math.round(note?.step??0),0,MAX_MELODY_STEPS-1);
+      if(step>=totalSteps)return [];
+      const duration=Math.min(clamp(note?.duration??1,.125,MAX_MELODY_STEPS),totalSteps-step);
+      return [{step,duration,midi:clamp(Math.round(note?.midi??60),24,108),velocity:clamp(Math.round(note?.velocity??96),1,127)}];
+    });
+    return notes.length?[{layer,name:layer==='lead'?'Melody':'Harmony',notes,totalSteps,progress}]:[];
+  });
+}
+
 /** Build non-destructive one-shot or repeated playback events for a placed audio clip. */
 export function songLayerPlaybackEvents(layer, rawDuration, bpm, songBars=0){
   const crop=vocalLayerClip(layer,rawDuration);

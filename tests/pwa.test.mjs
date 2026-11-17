@@ -102,7 +102,7 @@ test('network-first asset response waits for durable cache update and tolerates 
 test('service worker activation removes stale app shells without deleting the Whisper model cache', async () => {
   const sw = readFileSync(join(site, 'sw.js'), 'utf8');
   const handlers = new Map();
-  const cacheNames = ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13', 'madladpad-shell-v14', 'madladpad-shell-v15', 'madladpad-shell-v16', 'madladpad-shell-v17', 'madladpad-shell-v18', 'madladpad-shell-v19', 'madladpad-shell-v20', 'madladpad-shell-v21', 'madladpad-shell-v22', 'madladpad-shell-v23', 'madladpad-shell-v24', 'madladpad-shell-v25', 'madladpad-shell-v26', 'madladpad-shell-v27', 'madladpad-shell-v28', 'madladpad-shell-v29', 'madladpad-shell-v30', 'madladpad-shell-v31', 'madladpad-shell-v32', 'madladpad-shell-v33', 'madladpad-shell-v34', 'transformers-cache', 'another-app-cache'];
+  const cacheNames = ['madladpad-shell-v11', 'madladpad-shell-v12', 'madladpad-shell-v13', 'madladpad-shell-v14', 'madladpad-shell-v15', 'madladpad-shell-v16', 'madladpad-shell-v17', 'madladpad-shell-v18', 'madladpad-shell-v19', 'madladpad-shell-v20', 'madladpad-shell-v21', 'madladpad-shell-v22', 'madladpad-shell-v23', 'madladpad-shell-v24', 'madladpad-shell-v25', 'madladpad-shell-v26', 'madladpad-shell-v27', 'madladpad-shell-v28', 'madladpad-shell-v29', 'madladpad-shell-v30', 'madladpad-shell-v31', 'madladpad-shell-v32', 'madladpad-shell-v33', 'madladpad-shell-v34', 'madladpad-shell-v35', 'transformers-cache', 'another-app-cache'];
   const deleted = [];
   const context = {
     self: {

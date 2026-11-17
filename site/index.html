@@ -353,7 +353,7 @@
     <section id="export-lab" class="studio-stage" aria-labelledby="export-title" hidden>
       <div class="section-label"><span>05 / FINAL MIX</span><span>PREVIEW · DOWNLOAD · BACK UP</span></div>
       <h2 id="export-title">Capture and share your track.</h2>
-      <p class="voice-intro">Record your performance, then review the result below. When the Song is playing, video includes active placed video tracks alongside the pad visuals. Track source audio is muted unless you turn on MIX SOURCE AUDIO; enabled tracks join the live and recorded master mix. Recording stops when you tap the same button again.</p>
+      <p class="voice-intro">Record your performance, then review the result below. While a Song plays, video includes active placed video and audio tracks alongside the pad visuals; audio tracks appear as local waveforms and beat-following Melody and harmony appear as note lanes. Track source audio is muted unless you turn on MIX SOURCE AUDIO; enabled tracks join the live and recorded master mix. This captures the live performance; it is not a deterministic full-Song render. Recording stops when you tap the same button again.</p>
       <div class="export-controls">
         <button class="accent-button" id="start-record" aria-pressed="false"><span class="record-dot"></span> RECORD VIDEO</button>
         <button class="accent-button audio-record-button" id="record-audio" aria-pressed="false">♪ RECORD AUDIO</button>
@@ -365,7 +365,7 @@
         </div></details>
       </div>
       <p id="export-record-status" class="voice-status" role="status">Record a video or audio take to preview it here. Completed takes also download automatically.</p>
-      <canvas id="capture-canvas" class="export-live-preview" width="960" height="720" aria-label="Live performance composition" hidden></canvas>
+      <canvas id="capture-canvas" class="export-live-preview" width="960" height="720" aria-label="Live performance composition with pad, audio waveform, Melody note lanes and video tiles" hidden></canvas>
       <div class="export-previews">
         <div><h3>Video performance</h3><video id="export-video-preview" controls playsinline preload="metadata" hidden></video><p id="export-video-empty" class="voice-note">No recorded video in this session yet.</p><button id="export-video-download" class="pill-button" disabled>DOWNLOAD VIDEO AGAIN</button></div>
         <div><h3>Audio mix</h3><audio id="export-audio-preview" controls preload="metadata" hidden></audio><p id="export-audio-empty" class="voice-note">No recorded audio in this session yet.</p><button id="export-audio-download" class="pill-button" disabled>DOWNLOAD AUDIO AGAIN</button><button id="export-audio-wav" class="pill-button" disabled>MAKE WAV COPY · UP TO 30 SEC</button><p id="export-audio-wav-status" class="voice-note" role="status">A short mix can be converted locally to a 16-bit PCM WAV.</p></div>

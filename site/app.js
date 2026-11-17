@@ -1534,8 +1534,11 @@ function drawPerformanceFrame() {
   const activePads=layout==='directed'?directedPads(shot,triggered,PAD_COUNT[project.layout]):adaptive?triggered:Array.from({length:PAD_COUNT[project.layout]},(_,id)=>id);
   const secondsPerStep=60/project.bpm/4;
   const songStep=(transportTimer||songEndTimer!==null)&&Number.isFinite(audio.transportEpoch)?(audio.context.currentTime-audio.transportEpoch)/secondsPerStep:null;
-  const songVideos=layout==='directed'&&shot.mode==='black'?[]:voiceLab?.songVideoFramesAtStep?.(songStep)||[];
-  const cells=[...songVideos.map(track=>({kind:'song-video',track})),...activePads.map(id=>({kind:'pad',id}))];
+  const blackCut=layout==='directed'&&shot.mode==='black';
+  const songVideos=blackCut?[]:voiceLab?.songVideoFramesAtStep?.(songStep)||[];
+  const songAudios=blackCut?[]:voiceLab?.songAudioFramesAtStep?.(songStep)||[];
+  const songMelodies=blackCut?[]:voiceLab?.songMelodyVisualTracksAtStep?.(songStep)||[];
+  const cells=[...songVideos.map(track=>({kind:'song-video',track})),...songAudios.map(track=>({kind:'song-audio',track})),...songMelodies.map(track=>({kind:'song-melody',track})),...activePads.map(id=>({kind:'pad',id}))];
   if(adaptive&&!cells.length){
     if(!(layout==='directed'&&shot.mode==='black')){context.fillStyle='#d7fc5a';context.font='bold 28px sans-serif';context.textAlign='center';context.fillText('PLAY A PAD TO BEGIN',canvas.width/2,canvas.height/2);context.textAlign='left';}
     requestAnimationFrame(drawPerformanceFrame);return;
@@ -1547,17 +1550,43 @@ function drawPerformanceFrame() {
   for(let index=0;index<total;index++) {
     const cell=cells[index],col=index%cols,row=Math.floor(index/cols),x=margin+col*(width+gap),y=margin+row*(height+gap);
     const pad=cell.kind==='pad'?pads[cell.id]:null,config=cell.kind==='pad'?project.pads[cell.id]:null;
-    context.fillStyle=cell.kind==='song-video'?'#c89aff':(activeUntil.get(cell.id)||0)>performance.now()?'#d7fc5a':'#26372c';
+    context.fillStyle=cell.kind==='song-video'||(cell.kind==='song-melody'&&cell.track.layer==='harmony')?'#c89aff':cell.kind==='song-audio'||cell.kind==='song-melody'?'#a9d87b':(activeUntil.get(cell.id)||0)>performance.now()?'#d7fc5a':'#26372c';
     context.fillRect(x-3,y-3,width+6,height+6);
     context.fillStyle='#172219';context.fillRect(x,y,width,height);
     try {
       if(cell.kind==='song-video'&&cell.track.video.readyState>=2)drawMediaCover(context,cell.track.video,x,y,width,height);
+      if(cell.kind==='song-audio'){
+        const peaks=cell.track.peaks,baseline=y+height*.56,barWidth=Math.max(1,(width-28)/peaks.length-2);
+        context.fillStyle='#b9ec94';
+        for(let bin=0;bin<peaks.length;bin++){
+          const peak=peaks[cell.track.reverse?peaks.length-1-bin:bin];
+          const extent=Math.max(2,peak*height*.38),barX=x+14+bin*(width-28)/peaks.length;
+          context.fillRect(barX,baseline-extent,barWidth,extent*2);
+        }
+        const playhead=x+14+clamp(cell.track.progress,0,1)*(width-28);
+        context.fillStyle='#fff3b0';context.fillRect(playhead-1,y+8,2,height-43);
+      }
+      if(cell.kind==='song-melody'){
+        const {notes,totalSteps,progress,layer}=cell.track,top=y+8,graphHeight=Math.max(4,height-43),left=x+14,graphWidth=width-28;
+        const minimum=Math.min(...notes.map(note=>note.midi)),maximum=Math.max(...notes.map(note=>note.midi)),pitchSpan=Math.max(12,maximum-minimum);
+        context.fillStyle=layer==='harmony'?'#e2c2ff':'#b9ec94';
+        for(const note of notes){
+          const noteX=left+note.step/totalSteps*graphWidth,noteWidth=Math.max(1,Math.min(graphWidth*(1-note.step/totalSteps),note.duration/totalSteps*graphWidth));
+          const noteY=top+(maximum-note.midi)/pitchSpan*graphHeight,noteHeight=Math.max(2,graphHeight/(pitchSpan+1)*2.2);
+          context.globalAlpha=.35+.65*note.velocity/127;
+          context.fillRect(noteX,noteY,noteWidth,noteHeight);
+        }
+        context.globalAlpha=1;
+        const playhead=left+clamp(progress,0,1)*graphWidth;
+        context.fillStyle='#fff3b0';context.fillRect(playhead-1,top,2,graphHeight);
+      }
       if(config?.kind==='video' && pad.video.readyState>=2) drawMediaCover(context,pad.video,x,y,width,height);
       if(config?.kind==='image' && pad.image.complete && pad.image.naturalWidth) drawMediaCover(context,pad.image,x,y,width,height);
     } catch { /* A frame may not be ready yet; preserve the previous capture. */ }
     context.fillStyle='#0d150fcc'; context.fillRect(x,y+height-27,width,27);
     context.fillStyle='#f0f6e8'; context.font='bold 17px sans-serif';
-    context.fillText((cell.kind==='song-video'?`VIDEO · ${cell.track.name}`:config.name).slice(0,21),x+10,y+height-8);
+    const label=cell.kind==='song-video'?`VIDEO · ${cell.track.name}`:cell.kind==='song-audio'?`AUDIO · ${cell.track.name}`:cell.kind==='song-melody'?`MELODY · ${cell.track.name}`:config.name;
+    context.fillText(label.slice(0,21),x+10,y+height-8);
   }
   requestAnimationFrame(drawPerformanceFrame);
 }
