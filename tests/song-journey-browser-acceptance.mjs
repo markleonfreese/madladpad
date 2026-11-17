@@ -264,6 +264,43 @@ try{
   assert.match(await recordedTrack.locator('.vocal-layer-meta').textContent(),/starts at bar (9|10|11|12)/,'the visible track placement should match the later Song section');
   assert.match(await page.locator('#overdub-timeline .overdub-wave-row svg').nth(1).getAttribute('aria-label'),/from bar (9|10|11|12)/,'the waveform should expose the later Song placement');
 
+  const firstTakeHash=await page.evaluate(async id=>{
+    const {getValue}=await import('/storage.js');
+    const file=await getValue(`voice-layer:${id}`);
+    return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await file.arrayBuffer()))).map(byte=>byte.toString(16).padStart(2,'0')).join('');
+  },recordedId);
+  await page.locator('#studio-play').click();
+  await page.waitForFunction(()=>document.querySelector('#studio-play').textContent.includes('PLAY SONG'));
+  await page.locator('#song-seek-bar').fill('17');
+  await page.locator('#song-go-to-bar').click();
+  await page.locator('#studio-play').click();
+  await page.waitForFunction(()=>document.querySelector('#studio-play').textContent.includes('STOP'));
+  assert.equal(await page.locator('#voice-overdub-record').isDisabled(),false,'a running Song should allow recording another vocal take');
+  await page.locator('#voice-overdub-record').click();
+  await page.waitForFunction(()=>{
+    const status=document.querySelector('#voice-overdub-status').textContent;
+    return status.includes('Recording microphone audio over the playing sequence')||status.startsWith('Could not start local vocal recording:')||status.includes('Start the sequencer before recording');
+  });
+  assert.match(await page.locator('#voice-overdub-status').textContent(),/Recording microphone audio over the playing sequence/,`the selected-bar retake should start successfully, got: ${await page.locator('#voice-overdub-status').textContent()}`);
+  await page.waitForTimeout(1300);
+  await page.locator('#voice-overdub-stop').click();
+  await page.waitForFunction(()=>document.querySelectorAll('#voice-overdub-layers .vocal-layer').length===3,null,{timeout:10000});
+  const secondRecordedTrack=page.locator('#voice-overdub-layers .vocal-layer').nth(2);
+  const secondRecordedId=await secondRecordedTrack.getAttribute('data-layer');
+  const secondTake=await page.evaluate(async({firstId,secondId})=>{
+    const {getValue,listInterruptedAudioRecordings}=await import('/storage.js');
+    const [first,second]=await Promise.all([getValue(`voice-layer:${firstId}`),getValue(`voice-layer:${secondId}`)]);
+    const digest=async file=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await file.arrayBuffer()))).map(byte=>byte.toString(16).padStart(2,'0')).join('');
+    const project=JSON.parse(localStorage.getItem('madladpad-project-recovery-v1'));
+    return {firstHash:await digest(first),secondBytes:second?.size,secondStartStep:project?.voice?.layers?.find(item=>item.id===secondId)?.startStep,layerCount:project?.voice?.layers?.length,journals:(await listInterruptedAudioRecordings()).length};
+  },{firstId:recordedId,secondId:secondRecordedId});
+  assert.equal(secondTake.layerCount,3,'recording another verse take should append a new track and preserve the original');
+  assert.ok(secondTake.secondBytes>100,'the second synthetic vocal take should have its own locally saved media');
+  assert.ok(secondTake.secondStartStep>=256&&secondTake.secondStartStep<288,`the second take should start at the selected bar 17 within one bar of capture alignment, got step ${secondTake.secondStartStep}`);
+  assert.equal(secondTake.firstHash,firstTakeHash,'recording a retake must not rewrite the first raw take');
+  assert.equal(secondTake.journals,0,'saving the second take should clear its recovery journal');
+  assert.match(await secondRecordedTrack.locator('.vocal-layer-meta').textContent(),/starts at bar (17|18)/,'the second raw take should show its selected later-bar placement');
+
   await page.locator('#overdub-video-record').click();
   await page.waitForFunction(()=>document.querySelector('#song-video-status').textContent.includes('Recording camera and microphone locally over the Song'));
   await page.waitForTimeout(1300);
@@ -279,7 +316,7 @@ try{
     return {bytes:file?.size,type:file?.type,startStep:layer?.startStep,journals:(await listInterruptedVideoRecordings()).length};
   },recordedVideoId);
   assert.ok(recordedVideo.bytes>100&&recordedVideo.type.startsWith('video/'),`the camera take should be saved as local video: ${JSON.stringify(recordedVideo)}`);
-  assert.ok(recordedVideo.startStep>=128&&recordedVideo.startStep<384,`the camera take should begin in Song section B, got step ${recordedVideo.startStep}`);
+  assert.ok(recordedVideo.startStep>=256&&recordedVideo.startStep<288,`the camera take should follow the selected bar 17 start, got step ${recordedVideo.startStep}`);
   assert.equal(recordedVideo.journals,0,'a saved section-B camera take should clear its recovery journal');
   assert.match(await recordedVideoTrack.locator('.song-video-meta').textContent(),/bar (?:9|1[0-9]|2[0-4])\b/,'the visible camera track placement should match section B');
   assert.match(await page.locator('#overdub-timeline .overdub-wave-row[data-video-layer]').nth(1).locator('.overdub-video-clip').first().getAttribute('aria-label'),/video repeat 1 from bar (?:9|1[0-9]|2[0-4])\b/,'the timeline should expose the section-B camera placement');
