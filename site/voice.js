@@ -202,6 +202,15 @@ function renderWordRemix(project, transcript, save, barState, getMediaFiles) {
     });
     grid.append(button);
   }
+  const hasVideoEvent=events.some(event=>{
+    const sourceTranscript=project.voice.transcripts.find(item=>item.id===event.transcriptId),file=sourceTranscript&&getMediaFiles().get(sourceTranscript.sourcePad);
+    return file?.type?.startsWith('video/');
+  });
+  if((hasVideoEvent||!events.length)&&project.voice.wordRemix.followTransport){project.voice.wordRemix.followTransport=false;window.dispatchEvent(new Event('madladpad-stop-word-remix-track'));save();}
+  const followTransport=$('word-remix-follow-transport');
+  followTransport.checked=Boolean(project.voice.wordRemix.followTransport);
+  followTransport.disabled=!events.length||hasVideoEvent;
+  $('word-remix-follow-help').textContent=hasVideoEvent?'Transport sync supports audio-source cues only. Remove the video cue to use the Beat/Song lane.':'Audio cues follow a four-bar loop in Beat or Song. Source files remain local and are not copied.';
   const selectedEvent=events.find(item=>item.step===barState.selectedStep),selectedTranscript=selectedEvent&&project.voice.transcripts.find(item=>item.id===selectedEvent.transcriptId),selectedFile=selectedTranscript&&getMediaFiles().get(selectedTranscript.sourcePad),pitchControl=$('word-remix-pitch');
   pitchControl.value=String(selectedEvent?.pitch??0);$('word-remix-pitch-value').textContent=`${Number(selectedEvent?.pitch??0)>0?'+':''}${Number(selectedEvent?.pitch??0)} st`;
   pitchControl.disabled=!selectedEvent||!selectedFile?.type?.startsWith('audio/');
@@ -213,6 +222,7 @@ function renderWordRemix(project, transcript, save, barState, getMediaFiles) {
   $('word-remix-remove').disabled=!selectedEvent;
   $('word-remix-clear').disabled=!events.length;
   $('word-remix-play').disabled=!events.length;
+  window.dispatchEvent(new Event('madladpad-word-remix-change'));
 }
 
 function renderPhrases(project, audio, notify, save, assignWordsToPads) {
@@ -526,6 +536,35 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   let wordPreviewToken = 0;
   let wordRemixPlayback = null;
   const wordRemixBar={value:0};
+  const wordRemixTransportVoices=new Set();
+  let wordRemixTransportReady=false,wordRemixTransportPreparing=null;
+  const stopWordRemixTransport=()=>{
+    const now=audio.context.currentTime;
+    for(const voice of wordRemixTransportVoices){
+      voice.gain.gain.cancelScheduledValues(now);voice.gain.gain.setTargetAtTime(0,now,.003);
+      try{voice.node.stop(now+.015);}catch{}
+    }
+    wordRemixTransportVoices.clear();
+  };
+  const prepareWordRemixTransport=async()=>{
+    if(wordRemixTransportReady)return;
+    if(wordRemixTransportPreparing)return wordRemixTransportPreparing;
+    wordRemixTransportPreparing=(async()=>{
+      const events=project.voice.wordRemix.events;
+      if(!events.length)throw new Error('Add at least one Word Remix cue first.');
+      for(const event of events){
+        const transcript=project.voice.transcripts.find(item=>item.id===event.transcriptId),file=transcript&&getMediaFiles().get(transcript.sourcePad);
+        if(!file?.type?.startsWith('audio/'))throw new Error('Beat/Song sync currently supports audio-backed word cues only. Video cues remain available in Word Remix preview.');
+        const source=audio.sources.get(transcript.sourcePad);
+        if(!source?.file)throw new Error(`The original audio for “${transcript.words.find(item=>item.id===event.wordId)?.text||'this word'}” is not loaded.`);
+        if(!source.buffer)source.buffer=await audio.context.decodeAudioData(await source.file.arrayBuffer());
+      }
+      if(events.some(event=>Math.abs(Number(event.pitch)||0)>.01)&&!audio.pitchReady)throw new Error('The local time-preserving pitch processor is unavailable on this browser.');
+      wordRemixTransportReady=true;
+    })();
+    try{await wordRemixTransportPreparing;}finally{wordRemixTransportPreparing=null;}
+  };
+  window.addEventListener('madladpad-stop-word-remix-track',stopWordRemixTransport);
   const stopWordPreview = (message = 'Word preview stopped.') => {
     wordPreviewToken++;
     const active = activeWordPreview;
@@ -1855,16 +1894,27 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   await reloadLayers();
   await refreshInterruptedAudioRecordings();
   await refreshInterruptedVideoRecordings();
-  window.addEventListener('madladpad-media-change', render);
+  window.addEventListener('madladpad-media-change',()=>{
+    wordRemixTransportReady=false;
+    if(project.voice.wordRemix.followTransport)prepareWordRemixTransport().catch(error=>{project.voice.wordRemix.followTransport=false;stopWordRemixTransport();save();notify(`Word Remix transport was turned off: ${error.message}`);});
+    render();
+  });
   $('word-remix-word').addEventListener('change',()=>renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles));
   $('word-remix-play').addEventListener('click',playWordRemix);
   $('word-remix-stop').addEventListener('click',()=>stopWordRemix());
+  $('word-remix-follow-transport').addEventListener('change',async event=>{
+    const control=event.currentTarget;
+    if(!control.checked){project.voice.wordRemix.followTransport=false;stopWordRemixTransport();save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);return;}
+    control.disabled=true;$('word-remix-follow-help').textContent='Preparing local audio cues for the Beat/Song transport…';
+    try{await prepareWordRemixTransport();project.voice.wordRemix.followTransport=true;save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);}
+    catch(error){project.voice.wordRemix.followTransport=false;control.checked=false;notify(`Could not enable Word Remix transport: ${error.message}`);renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);}
+  });
   $('word-remix-pitch').addEventListener('input',()=>{$('word-remix-pitch-value').textContent=`${Number($('word-remix-pitch').value)>0?'+':''}${$('word-remix-pitch').value} st`;});
   $('word-remix-pitch').addEventListener('change',()=>{const event=project.voice.wordRemix.events.find(item=>item.step===wordRemixBar.selectedStep);if(!event)return;event.pitch=clamp($('word-remix-pitch').value,-12,12);save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);});
   $('word-remix-length').addEventListener('input',()=>{$('word-remix-length-value').textContent=`${$('word-remix-length').value}%`;});
   $('word-remix-length').addEventListener('change',()=>{const event=project.voice.wordRemix.events.find(item=>item.step===wordRemixBar.selectedStep);if(!event)return;event.lengthPercent=Math.round(clamp($('word-remix-length').value,25,100));save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);});
   $('word-remix-remove').addEventListener('click',()=>{const index=project.voice.wordRemix.events.findIndex(item=>item.step===wordRemixBar.selectedStep);if(index<0)return;project.voice.wordRemix.events.splice(index,1);wordRemixBar.selectedStep=null;save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);});
-  $('word-remix-clear').addEventListener('click',()=>{project.voice.wordRemix.events=[];wordRemixBar.selectedStep=null;stopWordRemix('Cleared all Word Remix events.');save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);});
+  $('word-remix-clear').addEventListener('click',()=>{project.voice.wordRemix.events=[];project.voice.wordRemix.followTransport=false;wordRemixBar.selectedStep=null;stopWordRemix('Cleared all Word Remix events.');stopWordRemixTransport();save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);});
   window.addEventListener('pagehide',()=>stopWordRemix('Stopped when this page closed.'),{once:true});
   $('voice-source-pad').addEventListener('change', () => {
     if (transcriptionActivity.phase!=='idle') cancelTranscription('Source changed. Previous transcription canceled.');
@@ -2090,7 +2140,30 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   $('rap-scheme').addEventListener('change', () => { project.voice.rap.scheme = $('rap-scheme').value; save(); renderRap(project, save, audio, notify); });
   $('rap-export').addEventListener('click', () => { const lines = project.voice.rap.bars.map((line, index) => {const flow=project.voice.rap.flow[index];const guide=flow.some(Boolean)?`\n    FLOW  ${flow.map((active,step)=>active?(step%4===0?'●':'x'):'·').join(' ')}`:'';return `${String(index + 1).padStart(2, '0')}  ${line}${guide}`;}); const blob = new Blob([`# ${project.title} · ${project.bpm} BPM · ${project.voice.rap.scheme}\n\n${lines.join('\n')}\n`], { type: 'text/plain;charset=utf-8' }); download(blob, `${project.title || 'madladpad'}-lyrics.txt`); });
   render();
+  if(project.voice.wordRemix.followTransport){try{await prepareWordRemixTransport();}catch(error){project.voice.wordRemix.followTransport=false;save();notify(`Word Remix transport was turned off: ${error.message}`);renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);}}
   return {
+    scheduleWordRemixStep(absoluteStep,time,bpm,isSourceAudible=()=>true){
+      if(!project.voice.wordRemix.followTransport||!wordRemixTransportReady)return;
+      const position=absoluteStep%64,secondsPerStep=60/clamp(bpm,40,240)/4,loopDuration=64*secondsPerStep;
+      for(const event of project.voice.wordRemix.events){
+        if(event.step!==position)continue;
+        const transcript=project.voice.transcripts.find(item=>item.id===event.transcriptId),word=transcript?.words.find(item=>item.id===event.wordId),sourcePad=transcript?.sourcePad,source=transcript&&audio.sources.get(sourcePad),buffer=source?.buffer,pad=Number.isInteger(sourcePad)?project.pads[sourcePad]:null;
+        if(pad&&!isSourceAudible(sourcePad))continue;
+        if(!word||!buffer)continue;
+        const start=clamp(word.start,0,Math.max(0,buffer.duration-.01)),duration=Math.min((word.end-word.start)*clamp(event.lengthPercent??100,25,100)/100,loopDuration-event.step*secondsPerStep,buffer.duration-start);
+        if(duration<=.01)continue;
+        const pitch=clamp(event.pitch??0,-12,12),when=time,latency=Math.abs(pitch)>.01?Math.round(audio.context.sampleRate*.04)/audio.context.sampleRate:0,pitchNode=Math.abs(pitch)>.01?audio.createPitchNode():null;
+        if(Math.abs(pitch)>.01&&!pitchNode){wordRemixTransportReady=false;notify('Word Remix transport stopped: the local pitch processor is unavailable.');stopWordRemixTransport();return;}
+        const node=audio.context.createBufferSource(),gain=audio.context.createGain(),fade=Math.min(.008,duration/3);
+        node.buffer=buffer;
+        if(pitchNode){pitchNode.parameters.get('semitones').setValueAtTime(pitch,when-latency);node.connect(pitchNode);pitchNode.connect(gain);}else node.connect(gain);
+        const level=clamp(.82*clamp(pad?.volume??.9,0,1.5)/.9,0,1.5);
+        gain.connect(audio.master);gain.gain.setValueAtTime(0,when);gain.gain.linearRampToValueAtTime(level,when+fade);gain.gain.setValueAtTime(level,when+duration-fade);gain.gain.linearRampToValueAtTime(0,when+duration);
+        const voice={node,gain,pitchNode};wordRemixTransportVoices.add(voice);
+        node.onended=()=>{node.disconnect();pitchNode?.disconnect();gain.disconnect();wordRemixTransportVoices.delete(voice);};
+        node.start(when-latency,start,duration+latency);
+      }
+    },
     scheduleMelodyStep(absoluteStep,time,bpm){
       if(!project.voice.melody.followBeat)return;
       const position=absoluteStep%MAX_MELODY_STEPS,secondsPerStep=60/bpm/4;
@@ -2102,8 +2175,8 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const bar=Math.floor(absoluteStep/16)%16;
       for(const row of $('rap-bars').children)row.classList.toggle('current',Number(row.dataset.bar)===bar);
     },
-    transportStarted(epoch, bpm) { audio.playVocalLayers(project.voice.layers, epoch, bpm, songTotalBars(project.song)); startSongVideoAudioPlayback();updateSongCycleControlAvailability();updateOverdubControls(); },
-    transportStopped() { audio.stopVocalLayers();stopSongVideoAudioPlayback(); if (vocalRecording) stopOverdub(); if(videoRecordingActivity.phase==='starting')stopSongVideoRecording(true);else if(videoRecording)stopSongVideoRecording(false);updateSongCycleControlAvailability();updateOverdubControls(); },
+    transportStarted(epoch, bpm) { if(project.voice.wordRemix.followTransport&&!wordRemixTransportReady)prepareWordRemixTransport().catch(error=>{project.voice.wordRemix.followTransport=false;save();notify(`Word Remix transport was turned off: ${error.message}`);renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);});audio.playVocalLayers(project.voice.layers, epoch, bpm, songTotalBars(project.song)); startSongVideoAudioPlayback();updateSongCycleControlAvailability();updateOverdubControls(); },
+    transportStopped() { stopWordRemixTransport();audio.stopVocalLayers();stopSongVideoAudioPlayback(); if (vocalRecording) stopOverdub(); if(videoRecordingActivity.phase==='starting')stopSongVideoRecording(true);else if(videoRecording)stopSongVideoRecording(false);updateSongCycleControlAvailability();updateOverdubControls(); },
     songVideoFramesAtStep,
     songAudioFramesAtStep,
     songMelodyVisualTracksAtStep,

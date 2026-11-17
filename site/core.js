@@ -133,7 +133,7 @@ function normaliseVoice(value) {
   }) : [];
   const remixSource = source.wordRemix && typeof source.wordRemix === 'object' ? source.wordRemix : {};
   const occupiedRemixSteps = new Set();
-  const wordRemix = { events: (Array.isArray(remixSource.events) ? remixSource.events : []).slice(0, 64).flatMap((event,index) => {
+  const wordRemix = { followTransport:Boolean(remixSource.followTransport), events: (Array.isArray(remixSource.events) ? remixSource.events : []).slice(0, 64).flatMap((event,index) => {
     const transcriptId = String(event?.transcriptId || '').slice(0,80), wordId = String(event?.wordId || '').slice(0,100);
     const transcript = transcripts.find(item => item.id === transcriptId), rawStep = Number(event?.step);
     if (!Number.isInteger(rawStep) || rawStep < 0 || rawStep >= 64) return [];

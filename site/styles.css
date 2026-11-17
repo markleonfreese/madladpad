@@ -592,3 +592,14 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
 .word-remix-length small{grid-column:1/-1;color:#b9cabb;font:14px/1.5 system-ui}
 .word-remix .voice-label{font-size:14px}
 .word-remix-bars button,.word-remix-grid button{font-size:14px}
+.word-remix-follow-line{min-height:44px;margin:12px 0 4px;font-size:14px}
+.word-remix-follow-help{margin:4px 0 10px;color:#b9cabb;font:14px/1.5 system-ui}
+.word-remix-track-lane{display:grid;gap:8px;margin:12px 0;padding:12px;border:1px solid #435343;border-radius:9px;background:#172019}
+.word-remix-track-lane[hidden]{display:none}
+.word-remix-track-lane strong{color:var(--acid);font:700 12px var(--mono)}
+.word-remix-track-lane p{margin:0;color:#c8d4c4;font:14px/1.5 system-ui}
+.word-remix-transport-bars{display:grid;gap:4px}
+.word-remix-transport-bar{display:grid;grid-template-columns:24px repeat(16,minmax(0,1fr));gap:3px;align-items:center}
+.word-remix-transport-bar-label{color:#aebcab;text-align:center;font:12px var(--mono)}
+.word-remix-transport-step{height:25px;border:1px solid #435343;border-radius:4px;background:#101710}
+.word-remix-transport-step.active{display:grid;place-items:center;border-color:var(--acid);background:#263729;color:var(--acid);font:700 11px var(--mono)}
