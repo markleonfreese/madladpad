@@ -2268,11 +2268,16 @@ try {
   assert.deepEqual(pack.project.voice.transcripts[0].words.map(word=>word.text),['Hello','from edited','MadLadPad'],'project packs should preserve corrected transcript words');
   assert.ok(pack.project.voice.transcripts.some(transcript=>transcript.words.some(word=>word.text==='by hand')),'project packs should preserve manual corrections in the selected transcript');
   assert.ok(pack.project.voice.transcripts.some(transcript=>transcript.sourcePad===1&&transcript.words.some(word=>word.text==='visible')),'project packs should preserve a manually aligned word and its video source pad');
-  assert.equal(pack.project.voice.wordRemix.events.length,1,'project packs should retain source-linked Word Remix events without copying word media');
-  assert.equal(pack.project.voice.wordRemix.events[0].transcriptId,pack.project.voice.transcripts[videoTranscriptIndex].id,'Word Remix events should retain transcript provenance');
-  assert.equal(pack.project.voice.wordRemix.events[0].wordId,pack.project.voice.transcripts[videoTranscriptIndex].words[0].id,'Word Remix events should reference their original timed word');
-  assert.equal(pack.project.voice.wordRemix.events[0].pitch,0,'project packs should retain the bounded event pitch');
-  assert.equal(pack.project.voice.wordRemix.events[0].lengthPercent,50,'project packs should retain the word event trim percentage');
+  assert.equal(pack.project.voice.wordRemix.events.length,2,'project packs should retain both repeated Word Remix events without copying word media');
+  assert.deepEqual(pack.project.voice.wordRemix.events.map(event=>event.step),[0,8],'repeated video-word events keep independent rhythmic positions');
+  for(const event of pack.project.voice.wordRemix.events){
+    assert.equal(event.transcriptId,pack.project.voice.transcripts[videoTranscriptIndex].id,'every repeat retains the original transcript provenance');
+    assert.equal(event.wordId,pack.project.voice.transcripts[videoTranscriptIndex].words[0].id,'every repeat references the same original timed word');
+  }
+  assert.equal(pack.project.voice.wordRemix.events[0].pitch,5,'project packs should preserve a time-preserving semitone shift on the first video word');
+  assert.equal(pack.project.voice.wordRemix.events[0].lengthPercent,50,'project packs should retain the first event trim percentage');
+  assert.equal(pack.project.voice.wordRemix.events[1].pitch,0,'a repeated video word may retain its own neutral pitch');
+  assert.equal(pack.project.voice.wordRemix.events[1].lengthPercent,100,'a repeated video word retains its own full audible duration');
   assert.equal(pack.project.voice.phrases.length,3,'project packs should preserve original phrases and the combined story');
   assert.ok(pack.project.voice.melody.notes.some(note=>note.midi===69&&note.word==='MadLadPad'),'project packs should preserve melody pitch and its transcript-word cue');
   assert.equal(pack.project.voice.rap.bars[0],'Hello from the other side','project packs should preserve the written rap bars');
