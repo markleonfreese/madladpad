@@ -14,6 +14,7 @@ import {
   stepGateDuration,
   stepLoopGateDuration
 } from './core.js';
+import { effectivePitchSemitones, pitchShiftPcm } from './pitch-dsp.js';
 
 /**
  * Expand the saved Song into a stable, absolute-time event list for offline
@@ -251,12 +252,6 @@ function assertSourceWindow(event, buffer, { start = event.sourceStartSeconds, e
   }
 }
 
-function assertPitchSupported(event) {
-  if (Math.abs(Number(event.semitones) || 0) > .01) {
-    throw new Error(`Offline WAV export cannot yet preserve the independent Pitch setting on “${event.name || event.trackId}”. Set Pitch to 0 semitones or record this mix in real time.`);
-  }
-}
-
 function setEnvelope(gain, start, end, amount) {
   const inTime = Math.min(.008, Math.max(.001, (end - start) / 8));
   const outTime = Math.min(.008, Math.max(.001, (end - start) / 8));
@@ -291,8 +286,31 @@ function scheduleBufferEvent(context, master, event, buffer, start, end, { offse
   }
 }
 
-/** Mix the supported Song events to a local stereo PCM WAV. Unsupported Pitch
- * processing fails closed instead of silently substituting a different sound.
+async function pitchBufferForEvent(context, buffer, { offset, sourceEnd, outputDuration, speed, semitones, loop }, cache) {
+  const sampleRate=buffer.sampleRate,first=Math.max(0,Math.floor(offset*sampleRate)),last=Math.min(buffer.length,Math.floor(sourceEnd*sampleRate));
+  const clipFrames=last-first;if(clipFrames<=0)return null;
+  const targetFrames=Math.max(1,Math.ceil(outputDuration*speed*sampleRate));
+  const frames=loop?targetFrames:Math.min(clipFrames,targetFrames);
+  const adjustedPitch=effectivePitchSemitones(semitones,speed),loopSource=Boolean(loop&&clipFrames<frames);
+  const key=`${first}:${last}:${frames}:${speed}:${adjustedPitch}:${loopSource}`;
+  let bySettings=cache.get(buffer);
+  if(!bySettings){bySettings=new Map();cache.set(buffer,bySettings);}
+  if(bySettings.has(key))return bySettings.get(key);
+  const bytes=frames*buffer.numberOfChannels*Float32Array.BYTES_PER_ELEMENT;
+  if(cache.bytes+bytes>48*1024*1024)throw new Error('Pitch-processed Song sources exceed the local 48 MB working limit. Shorten the Song or use real-time recording.');
+  const pitched=context.createBuffer(buffer.numberOfChannels,frames,sampleRate);
+  const sourceChannels=Array.from({length:buffer.numberOfChannels},(_,channel)=>buffer.getChannelData(channel));
+  const outputChannels=Array.from({length:buffer.numberOfChannels},(_,channel)=>pitched.getChannelData(channel));
+  await pitchShiftPcm({channels:buffer.numberOfChannels,sampleRate,semitones:adjustedPitch,frames,outputChannels,
+    readFrame:(channel,frame)=>{
+      const sourceFrame=loopSource?frame%clipFrames:frame;
+      return sourceFrame<clipFrames?sourceChannels[channel][first+sourceFrame]:0;
+    }});
+  cache.bytes+=bytes;bySettings.set(key,pitched);return pitched;
+}
+
+/** Mix the supported Song events to a local stereo PCM WAV using the same local
+ * granular time-preserving Pitch processor as live playback.
  */
 export async function renderSongAudioWav(plan, sources, {
   OfflineAudioContextClass = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext,
@@ -322,7 +340,6 @@ export async function renderSongAudioWav(plan, sources, {
       continue;
     }
     if (event.kind === 'midi') continue;
-    assertPitchSupported(event);
     const buffer = bufferFor(event);
     if (!audioBufferLike(buffer)) throw new Error(`A local audio source for “${event.name || event.trackId}” is unavailable or cannot be decoded in this browser.`);
     const sourceEnd = event.sourceEndSeconds ?? event.sourceStartSeconds + event.durationSeconds;
@@ -347,18 +364,18 @@ export async function renderSongAudioWav(plan, sources, {
   compressor.connect(offline.destination);
   const sortedSamples = playable.filter(event => event.kind === 'sample').sort((a, b) => a.startSeconds - b.startSeconds);
   const reversedBuffers = new Map();
+  const pitchCache = new WeakMap();pitchCache.bytes=0;
   for (const event of playable) {
     const start = clamp(event.startSeconds, 0, plan.durationSeconds);
     if (event.kind === 'midi') {
       const cue = event.word ? cues.get(event.word) : null;
       if (cue) {
-        assertPitchSupported({ ...event, semitones: event.midi - 60 });
         const end = Math.min(plan.durationSeconds, start + event.durationSeconds);
-        scheduleBufferEvent(offline, compressor, event, cue.buffer, start, end, {
-          offset: clamp(cue.start, 0, cue.buffer.duration),
-          sourceEnd: clamp(cue.end, 0, cue.buffer.duration),
-          gain: clamp((cue.gain ?? 1) * event.velocity / 96, 0, 1.5), loop: true
-        });
+        const offset=clamp(cue.start,0,cue.buffer.duration),sourceEnd=clamp(cue.end,0,cue.buffer.duration),gain=clamp((cue.gain??1)*event.velocity/96,0,1.5),pitch=event.midi-60;
+        if(Math.abs(pitch)>.01){
+          const rendered=await pitchBufferForEvent(offline,cue.buffer,{offset,sourceEnd,outputDuration:end-start,speed:1,semitones:pitch,loop:true},pitchCache);
+          if(rendered)scheduleBufferEvent(offline,compressor,event,rendered,start,end,{gain,offset:0,sourceEnd:rendered.duration});
+        }else scheduleBufferEvent(offline,compressor,event,cue.buffer,start,end,{offset,sourceEnd,gain,loop:true});
       } else {
         const end = Math.min(plan.durationSeconds, start + event.durationSeconds);
         const oscillator = offline.createOscillator(), gain = offline.createGain();
@@ -390,16 +407,17 @@ export async function renderSongAudioWav(plan, sources, {
         }
         reversedBuffers.set(key, reversed);
       }
-      scheduleBufferEvent(offline, compressor, event, reversed, start, end, { gain: event.gain });
+      if(Math.abs(Number(event.semitones)||0)>.01){
+        const rendered=await pitchBufferForEvent(offline,reversed,{offset:0,sourceEnd:reversed.duration,outputDuration:end-start,speed:1,semitones:event.semitones,loop:false},pitchCache);
+        if(rendered)scheduleBufferEvent(offline,compressor,event,rendered,start,end,{gain:event.gain,offset:0,sourceEnd:rendered.duration});
+      }else scheduleBufferEvent(offline, compressor, event, reversed, start, end, { gain: event.gain });
       continue;
     }
-    scheduleBufferEvent(offline, compressor, event, buffer, start, end, {
-      offset: event.sourceStartSeconds,
-      sourceEnd: event.sourceEndSeconds ?? buffer.duration,
-      speed: event.kind === 'sample' ? event.speed : 1,
-      gain: event.gain,
-      loop: event.loop
-    });
+    const offset=event.sourceStartSeconds,sourceEnd=event.sourceEndSeconds??buffer.duration,speed=event.kind==='sample'?event.speed:1,semitones=event.semitones??0;
+    if(Math.abs(effectivePitchSemitones(semitones,speed))>.01){
+      const rendered=await pitchBufferForEvent(offline,buffer,{offset,sourceEnd,outputDuration:end-start,speed,semitones,loop:event.loop},pitchCache);
+      if(rendered)scheduleBufferEvent(offline,compressor,event,rendered,start,end,{offset:0,sourceEnd:rendered.duration,speed,gain:event.gain});
+    }else scheduleBufferEvent(offline, compressor, event, buffer, start, end, {offset,sourceEnd,speed,gain:event.gain,loop:event.loop});
   }
   const rendered = await offline.startRendering();
   return { buffer: rendered, blob: makeWav ? audioBufferToWav(rendered) : null, durationSeconds: rendered.duration };

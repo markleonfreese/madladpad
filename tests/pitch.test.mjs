@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {SamplerAudio} from '../site/audio.js';
-import {effectivePitchSemitones,GranularPitchShifter} from '../site/pitch-dsp.js';
+import {effectivePitchSemitones,GranularPitchShifter,pitchShiftPcm} from '../site/pitch-dsp.js';
 
 test('speed compensation keeps pitch independent for decoded audio',()=>{
   assert.equal(effectivePitchSemitones(0,1),0);
@@ -43,6 +43,16 @@ test('granular processor shifts frequency while preserving output duration',()=>
   const measured=crossings/((stop-first)/rate);
   assert.ok(Math.abs(measured-440*2**(4/12))<35,`expected about 554 Hz; measured ${measured}`);
   assert.equal(output.length,total);
+});
+
+test('offline PCM pitch processing shifts frequency and returns source-length output',async()=>{
+  const rate=8000,frames=rate,source=Float32Array.from({length:frames},(_,index)=>Math.sin(2*Math.PI*440*index/rate)),output=new Float32Array(frames);
+  await pitchShiftPcm({channels:1,sampleRate:rate,semitones:4,frames,readFrame:(channel,index)=>source[index],outputChannels:[output]});
+  const segment=output.subarray(rate/2,rate);let crossings=0;
+  for(let index=1;index<segment.length;index++)if(segment[index-1]<=0&&segment[index]>0)crossings++;
+  const measured=crossings/(segment.length/rate);
+  assert.ok(Math.abs(measured-440*2**(4/12))<35,`expected about 554 Hz, measured ${measured}`);
+  assert.equal(output.length,source.length);
 });
 
 test('zero semitone mode is a sample-accurate bypass',()=>{

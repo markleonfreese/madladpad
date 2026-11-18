@@ -3,6 +3,34 @@ export function effectivePitchSemitones(pitch,speed){
   return Math.min(24,Math.max(-24,(Number(pitch)||0)-12*Math.log2(boundedSpeed)));
 }
 
+/** Pitch-process PCM into same-length output, compensating the live worklet's 40ms look-ahead. */
+export async function pitchShiftPcm({channels,sampleRate,semitones,frames,readFrame,outputChannels}){
+  if(!Number.isInteger(channels)||channels<1||!Number.isInteger(frames)||frames<0||!Number.isFinite(sampleRate)||sampleRate<1||typeof readFrame!=='function'||!Array.isArray(outputChannels)||outputChannels.length<channels)throw new TypeError('Pitch rendering needs valid PCM channels, a sample rate, and a frame reader.');
+  const outputFrames=outputChannels.slice(0,channels).map(channel=>channel.length);
+  if(outputFrames.some(length=>length!==frames))throw new RangeError('Pitch render output channels must have the requested frame count.');
+  const amount=Math.max(-24,Math.min(24,Number(semitones)||0));
+  if(Math.abs(amount)<=.01){for(let channel=0;channel<channels;channel++)for(let frame=0;frame<frames;frame++)outputChannels[channel][frame]=readFrame(channel,frame);return outputChannels;}
+  const shifter=new GranularPitchShifter(sampleRate,channels),latency=Math.round(sampleRate*.04),blockSize=128;
+  const yieldEveryFrames=Math.max(blockSize,Math.floor(sampleRate*.25/blockSize)*blockSize);
+  const input=Array.from({length:channels},()=>new Float32Array(blockSize)),output=Array.from({length:channels},()=>new Float32Array(blockSize));
+  for(let offset=0;offset<frames+latency;offset+=blockSize){
+    const count=Math.min(blockSize,frames+latency-offset);
+    for(let channel=0;channel<channels;channel++){
+      const inChannel=input[channel];
+      for(let index=0;index<count;index++)inChannel[index]=offset+index<frames?readFrame(channel,offset+index)||0:0;
+      inChannel.fill(0,count);
+    }
+    shifter.process(input,output,amount);
+    for(let index=0;index<count;index++){
+      const target=offset+index-latency;
+      if(target<0||target>=frames)continue;
+      for(let channel=0;channel<channels;channel++)outputChannels[channel][target]=output[channel][index];
+    }
+    if(offset&&offset%yieldEveryFrames===0)await new Promise(resolve=>setTimeout(resolve,0));
+  }
+  return outputChannels;
+}
+
 export class GranularPitchShifter {
   constructor(sampleRate,channels=2){
     this.sampleRate=sampleRate;this.channels=channels;

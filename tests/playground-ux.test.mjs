@@ -74,7 +74,7 @@ test('live Song video discloses and represents active local audio tracks',()=>{
 test('offline Song WAV export is accessible and describes its local support boundary',()=>{
   assert.match(html,/<button class=\"pill-button\" id=\"render-song-audio\"[^>]*aria-describedby=\"render-song-audio-note\"[^>]*>RENDER SONG MIX · OFFLINE WAV<\/button>/);
   assert.match(html,/<p id=\"render-song-audio-note\"[^>]*>Mixes saved Song steps with local pad and vocal audio, opted-in video-track audio, repeated Word Remix cues and beat-following Melody into a deterministic stereo WAV/);
-  assert.match(html,/Non-zero independent Pitch and generated demo synth lanes are reported as unsupported/);
+  assert.match(html,/Independent Pitch uses the app’s local time-preserving processor/);
   assert.match(html,/<p id=\"render-song-audio-status\" class=\"voice-status\" role=\"status\" aria-live=\"polite\"/);
   assert.match(app,/rememberAudioTake:\(blob,duration\)=>\{rememberTake\('audio',blob,duration\);download\(blob,lastTakes\.audio\.name\);\}/,'a finished WAV should use the existing preview and take recovery path');
   assert.match(readFileSync(new URL('../site/sw.js',import.meta.url),'utf8'),/\/song-render\.js/,'offline rendering should be precached with the PWA shell');
@@ -85,7 +85,7 @@ test('full Song video export is local, cancellable, bounded and available for of
   assert.match(html,/<button class="pill-button" id="render-song-video"[^>]*aria-describedby="render-song-video-note"[^>]*>RENDER SONG VIDEO · MP4 \/ WEBM<\/button>/);
   assert.match(html,/<p id="render-song-video-note"[^>]*>Builds a complete local 24 fps video/);
   assert.match(html,/source-linked Word Remix cues/);
-  assert.match(html,/reported as unsupported\. The first online export downloads a 455 KB local render engine/);
+  assert.match(html,/generated demo synth lanes remain unsupported\. The first online export downloads a 455 KB local render engine/);
   assert.match(html,/<p id="render-song-video-status" class="voice-status song-video-render-status" role="status" aria-live="polite"/);
   assert.match(readFileSync(new URL('../site/voice.js',import.meta.url),'utf8'),/videoButton\.textContent=songVideoAbortController\?'× CANCEL VIDEO RENDER'/,'long video rendering should expose a cancel control');
   assert.match(readFileSync(new URL('../site/app.js',import.meta.url),'utf8'),/rememberVideoTake:\(blob,duration\)=>\{rememberTake\('video',blob,duration\);download\(blob,lastTakes\.video\.name\);\}/,'a completed video should use the existing preview, local recovery and download path');
