@@ -240,6 +240,7 @@ function renderWordRemix(project, transcript, save, barState, getMediaFiles) {
     const transcript=project.voice.transcripts.find(item=>item.id===event.transcriptId),file=transcript&&getMediaFiles().get(transcript.sourcePad);
     return file?.type?.startsWith('video/')?[transcript.sourcePad]:[];
   }));
+  const hasVideoEvent=videoSources.size>0;
   const unsupported=videoSources.size>1;
   if((unsupported||!events.length)&&project.voice.wordRemix.followTransport){project.voice.wordRemix.followTransport=false;window.dispatchEvent(new Event('madladpad-stop-word-remix-track'));save();}
   const followTransport=$('word-remix-follow-transport');
