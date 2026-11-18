@@ -568,7 +568,7 @@ function renderRap(project, save, audio, notify) {
   renderLyricInsights(project);
 }
 
-export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTransport, notify, save, assignWordsToPads, onTimelineScale, rememberAudioTake }) {
+export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTransport, notify, save, assignWordsToPads, onTimelineScale, rememberAudioTake, rememberVideoTake }) {
   const project = getProject(), audio = getAudio();
   let activeTranscript = null;
   let activeWordPreview = null;
