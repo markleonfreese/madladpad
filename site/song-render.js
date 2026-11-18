@@ -15,6 +15,7 @@ import {
   stepLoopGateDuration
 } from './core.js';
 import { effectivePitchSemitones, pitchShiftPcm } from './pitch-dsp.js';
+import { DEMO_SOUND_SPECS } from './demo-sounds.js';
 
 /**
  * Expand the saved Song into a stable, absolute-time event list for offline
@@ -286,6 +287,44 @@ function scheduleBufferEvent(context, master, event, buffer, start, end, { offse
   }
 }
 
+function demoNoise(context,cache,key,seconds,seed){
+  const cacheKey=`${key}:${context.sampleRate}`;
+  if(cache.has(cacheKey))return cache.get(cacheKey);
+  const frames=Math.max(1,Math.ceil(context.sampleRate*seconds)),buffer=context.createBuffer(1,frames,context.sampleRate),channel=buffer.getChannelData(0);
+  let state=(seed>>>0)||0x6d2b79f5;
+  for(let frame=0;frame<frames;frame++){state^=state<<13;state^=state>>>17;state^=state<<5;channel[frame]=(state>>>0)/2147483648-1;}
+  cache.set(cacheKey,buffer);return buffer;
+}
+
+function hashDemoNoise(value){let hash=2166136261;for(const character of value)hash=Math.imul(hash^character.charCodeAt(0),16777619);return hash>>>0;}
+
+function scheduleDemoEvent(context,master,event,start,end,noiseCache){
+  const id=Math.max(0,Number(event.padId)||0),spec=DEMO_SOUND_SPECS[event.demoSound],naturalLength=spec?.length??(.14+(id%4)*.055),length=Math.min(naturalLength,end-start);
+  if(length<.006)return;
+  const peak=Math.max(.0001,Math.min(1.5,Number(event.gain)||0)*(spec?.level??.35)),gain=context.createGain();
+  gain.gain.setValueAtTime(.0001,start);
+  gain.gain.exponentialRampToValueAtTime(spec?peak:Math.max(.001,peak),start+Math.min(spec?.bursts?.004:.008,length/10));
+  gain.gain.exponentialRampToValueAtTime(.0001,start+length);gain.connect(master);
+  const connect=node=>{
+    if(spec?.filter){const filter=context.createBiquadFilter();filter.type=spec.kind==='noise'?spec.filter:'lowpass';filter.frequency.value=spec.cutoff||spec.filter;node.connect(filter).connect(gain);}
+    else node.connect(gain);
+  };
+  if(spec?.kind==='noise'){
+    const noise=demoNoise(context,noiseCache,`preset:${event.demoSound}`,naturalLength,hashDemoNoise(`preset:${event.demoSound}`)),source=context.createBufferSource();
+    source.buffer=noise;connect(source);source.start(start);source.stop(start+length);
+    if(spec.tone&&length>.006){const toneLength=Math.min(.11,length),tone=context.createOscillator();tone.type='triangle';tone.frequency.setValueAtTime(spec.tone,start);tone.frequency.exponentialRampToValueAtTime(65,start+Math.min(.1,toneLength));tone.connect(gain);tone.start(start);tone.stop(start+toneLength);}
+    if(spec.bursts)for(const offset of [.035,.075,.115])if(offset<length){gain.gain.setValueAtTime(peak*.75,start+offset);gain.gain.exponentialRampToValueAtTime(.0001,start+Math.min(length,offset+.035));}
+  }else if(spec){
+    const frequencies=spec.kind==='chord'?spec.frequencies:[spec.frequency||spec.from];
+    for(const frequency of frequencies){const oscillator=context.createOscillator();oscillator.type=spec.wave||'triangle';oscillator.frequency.setValueAtTime(frequency,start);if(spec.kind==='sweep')oscillator.frequency.exponentialRampToValueAtTime(spec.to,start+length);connect(oscillator);oscillator.start(start);oscillator.stop(start+length);}
+  }else if(id%3===2){
+    const key=`default:${id}`,noise=demoNoise(context,noiseCache,key,naturalLength,hashDemoNoise(key)),source=context.createBufferSource(),filter=context.createBiquadFilter();
+    source.buffer=noise;filter.type='highpass';filter.frequency.value=2400+id*130;source.connect(filter).connect(gain);source.start(start);source.stop(start+length);
+  }else{
+    const oscillator=context.createOscillator();oscillator.type=id%3===0?'sine':'triangle';oscillator.frequency.setValueAtTime(80+id*48,start);oscillator.frequency.exponentialRampToValueAtTime(42+id*14,start+length);oscillator.connect(gain);oscillator.start(start);oscillator.stop(start+length);
+  }
+}
+
 async function pitchBufferForEvent(context, buffer, { offset, sourceEnd, outputDuration, speed, semitones, loop }, cache) {
   const sampleRate=buffer.sampleRate,first=Math.max(0,Math.floor(offset*sampleRate)),last=Math.min(buffer.length,Math.floor(sourceEnd*sampleRate));
   const clipFrames=last-first;if(clipFrames<=0)return null;
@@ -332,7 +371,7 @@ export async function renderSongAudioWav(plan, sources, {
       : event.kind === 'video-audio' ? videos.get(event.trackId)
         : event.kind === 'word-remix-audio' || event.kind === 'word-remix-video' ? sources?.wordRemix?.get(event.id)?.buffer : null;
   for (const event of playable) {
-    if (event.kind === 'demo') throw new Error('This Song uses a generated demo pad sound that offline WAV export cannot render yet. Replace that lane with a local audio clip, or use real-time audio recording.');
+    if (event.kind === 'demo') continue;
     if (event.kind === 'midi' && event.word && cues.has(event.word)) {
       const cue = cues.get(event.word);
       if (!audioBufferLike(cue?.buffer)) throw new Error(`The local phrase audio for “${event.word}” is unavailable.`);
@@ -362,7 +401,8 @@ export async function renderSongAudioWav(plan, sources, {
   compressor.attack.value = .003;
   compressor.release.value = .08;
   compressor.connect(offline.destination);
-  const sortedSamples = playable.filter(event => event.kind === 'sample').sort((a, b) => a.startSeconds - b.startSeconds);
+  const sortedSamples = playable.filter(event => event.kind === 'sample'||event.kind==='demo').sort((a, b) => a.startSeconds - b.startSeconds);
+  const demoNoiseCache=new Map();
   const reversedBuffers = new Map();
   const pitchCache = new WeakMap();pitchCache.bytes=0;
   for (const event of playable) {
@@ -386,6 +426,12 @@ export async function renderSongAudioWav(plan, sources, {
         oscillator.start(start);
         oscillator.stop(end + .001);
       }
+      continue;
+    }
+    if(event.kind==='demo'){
+      const nextSamePad=sortedSamples.find(other=>other.padId===event.padId&&other.startSeconds>event.startSeconds)?.startSeconds;
+      const end=Math.min(plan.durationSeconds,start+event.durationSeconds,nextSamePad??Infinity);
+      scheduleDemoEvent(offline,compressor,event,start,end,demoNoiseCache);
       continue;
     }
     const buffer = bufferFor(event);
