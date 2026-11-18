@@ -53,7 +53,7 @@ const renderProject=normaliseProject({
 });
 const renderPlan=buildSongRenderPlan(renderProject,{padDurations:{0:2},vocalDurations:{'render-vocal':2},videoDurations:{'video-two':2},wordRemixDurations:{'render-cue':2}});
 const renderFrameVisuals=songRenderVisualsAtTime(renderProject,renderPlan,.1);
-let browser,temp;
+let browser,temp,remixExportContext;
 try{
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const origin=`http://localhost:${server.address().port}`;
@@ -389,11 +389,78 @@ try{
     element.src=url;
   }),videoExport.toString('base64'));
   assert.ok(decodedVideo.width>0&&decodedVideo.height>0&&decodedVideo.readyState>=2,`the audiovisual export should decode a video frame, got ${JSON.stringify(decodedVideo)}`);
+  remixExportContext=await browser.newContext({acceptDownloads:true});
+  const remixExportPage=await remixExportContext.newPage();
+  await remixExportPage.goto(origin);await remixExportPage.locator('.pad-hit').first().waitFor();
+  const remixExportProject=normaliseProject({
+    ...makeProject(),bpm:240,
+    pads:makeProject().pads.map((pad,index)=>index===0?{...pad,kind:'audio',fileName:'remix-source.wav',start:0,end:.5,volume:.9,speed:1,pitch:0}
+      :index===2?{...pad,kind:'video',fileName:'remix-speaker.mp4',start:0,end:2,volume:.9,speed:1,pitch:0}:pad),
+    scenes:[renderPattern('remix-scene','A',0)],
+    song:normaliseSong({clips:[{id:'remix-section',sceneId:'remix-scene',bars:1}]}),
+    voice:{...makeProject().voice,transcripts:[
+      {id:'remix-audio-transcript',sourcePad:0,words:[{id:'remix-audio-word',text:'yeah',start:.05,end:.25}]},
+      {id:'remix-video-transcript',sourcePad:2,words:[{id:'remix-video-word',text:'go',start:.1,end:.3}]}
+    ],wordRemix:{followTransport:true,events:[
+      {id:'remix-audio-event',transcriptId:'remix-audio-transcript',wordId:'remix-audio-word',step:1,pitch:0,lengthPercent:100},
+      {id:'remix-video-event',transcriptId:'remix-video-transcript',wordId:'remix-video-word',step:0,pitch:0,lengthPercent:100}
+    ]}}
+  });
+  await remixExportPage.evaluate(async({project,audioBytes,videoBytes})=>{
+    const {putValue}=await import('/storage.js');
+    localStorage.removeItem('madladpad-project-recovery-v1');
+    await putValue('project',project);
+    await putValue('media:0',new File([Uint8Array.from(audioBytes)],'remix-source.wav',{type:'audio/wav'}));
+    await putValue('media:2',new File([Uint8Array.from(videoBytes)],'remix-speaker.mp4',{type:'video/mp4'}));
+  },{project:remixExportProject,audioBytes:Array.from(padFixture),videoBytes:Array.from(videoBytes)});
+  await remixExportPage.reload();
+  await remixExportPage.waitForFunction(()=>document.querySelector('#render-song-audio')&&!document.querySelector('#render-song-audio').disabled,null,{timeout:10000});
+  await remixExportPage.locator('[data-studio-screen="export"]').click();
+  await remixExportPage.waitForFunction(()=>document.body.dataset.screen==='export');
+  const remixAudioDownload=remixExportPage.waitForEvent('download',{timeout:15000});
+  await remixExportPage.locator('#render-song-audio').click();
+  await remixExportPage.waitForFunction(()=>document.querySelector('#render-song-audio-status').textContent.includes('Offline Song mix ready'),null,{timeout:15000});
+  const remixAudioBytes=await readFile(await (await remixAudioDownload).path());
+  const remixAudio=await remixExportPage.evaluate(async encoded=>{
+    const bytes=Uint8Array.from(atob(encoded),character=>character.charCodeAt(0)),context=new AudioContext();
+    try{const buffer=await context.decodeAudioData(bytes.buffer),samples=buffer.getChannelData(0);return {duration:buffer.duration,rms:Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length)};}
+    finally{await context.close();}
+  },remixAudioBytes.toString('base64'));
+  assert.ok(Math.abs(remixAudio.duration-1)<.02,'the app-level Word Remix Song export should span its one-bar arrangement');
+  assert.ok(remixAudio.rms>.01,'the app-level WAV should mix both locally decoded Word Remix source events');
+  await remixExportPage.locator('#render-song-video').click();
+  for(let attempt=0;attempt<30;attempt++){
+    const status=await remixExportPage.locator('#render-song-video-status').textContent();
+    if(status.includes('Local Song video ready'))break;
+    if(attempt===29)throw new Error(`App-level Song video render did not become ready: ${status}`);
+    if(attempt%5===4)console.log(`App-level Song video render status: ${status}`);
+    await remixExportPage.waitForTimeout(1000);
+  }
+  await remixExportPage.waitForFunction(()=>!document.querySelector('#export-video-download').disabled,null,{timeout:5000});
+  const remixVideoDownload=remixExportPage.waitForEvent('download',{timeout:10000});
+  await remixExportPage.locator('#export-video-download').click();
+  const remixVideoFile=await remixVideoDownload,remixVideoBytes=await readFile(await remixVideoFile.path());
+  const remixVideo=await remixExportPage.evaluate(async({encoded,filename})=>{
+    const Media=await import('/media-codec-kit.bundle.js');
+    const bytes=Uint8Array.from(atob(encoded),character=>character.charCodeAt(0));
+    const type=filename.toLowerCase().endsWith('.mp4')?'video/mp4':'video/webm';
+    const input=new Media.Input({source:new Media.BlobSource(new Blob([bytes],{type})),formats:[Media.MP4,Media.QTFF,Media.WEBM]});
+    try{
+      const track=await input.getPrimaryVideoTrack(),sink=new Media.VideoSampleSink(track),sample=await sink.getSample(.05);
+      if(!sample)throw new Error('No video frame decoded for the local Word Remix source.');
+      const frame={duration:await track.computeDuration(),width:sample.displayWidth,height:sample.displayHeight};sample.close();
+      return frame;
+    }finally{input.dispose();}
+  },{encoded:remixVideoBytes.toString('base64'),filename:remixVideoFile.suggestedFilename()});
+  assert.ok(Math.abs(remixVideo.duration-1)<.08,`the app-level Word Remix video should span the Song bar, got ${remixVideo.duration}s`);
+  assert.ok(remixVideo.width>0&&remixVideo.height>0,'the app-level video export should decode the source-linked speaker frame');
+  console.log(`Song app-level Word Remix export passed: ${remixAudio.duration.toFixed(2)} s WAV RMS ${remixAudio.rms.toFixed(3)}; ${remixVideo.duration.toFixed(2)} s decoded ${remixVideo.width}×${remixVideo.height} video.`);
   await openScreen('beats');await page.locator('#studio-play').click();
   await page.waitForFunction(()=>document.querySelector('#studio-play').getAttribute('aria-pressed')==='false');
   console.log(`Song journey browser acceptance passed: 36-bar A-B-C-A, offline WAV ${uiRender.duration.toFixed(1)} s / ${offlineBytes.length} bytes / RMS ${uiRender.rms.toFixed(3)}, four-minute local audio/video pack recovery, synthetic microphone take ${recorded.duration.toFixed(2)} s from Song step ${recordedStartStep}, camera clip ${recordedVideo.bytes} bytes from Song step ${recordedVideo.startStep}, decoded 8+ second live mix RMS ${mixStats.rms.toFixed(3)}, and a decoded ${decodedVideo.width}×${decodedVideo.height} video frame.`);
   await context.close();
 }finally{
+  await remixExportContext?.close();
   if(browser)await browser.close();
   if(temp)await rm(temp,{recursive:true,force:true});
   await new Promise(resolve=>server.close(resolve));
