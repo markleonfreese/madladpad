@@ -97,6 +97,47 @@ test('one render timestamp aligns two video clips, a still pad, and a generated 
   assert.deepEqual(songRenderVisualsAtTime(project, plan, plan.durationSeconds), [], 'the exclusive final Song timestamp has no active frame tiles');
 });
 
+function wordRemixProject(kind = 'audio') {
+  const project = renderProject();
+  project.pads[0] = { ...project.pads[0], kind, fileName: kind === 'video' ? 'speaker.webm' : 'speaker.wav' };
+  project.voice.transcripts = [{ id: 'transcript', sourcePad: 0, words: [{ id: 'word-1', text: 'go', start: .25, end: .75 }] }];
+  project.voice.wordRemix = { followTransport: true, events: [{ id: 'cue-1', transcriptId: 'transcript', wordId: 'word-1', step: 1, pitch: 0, lengthPercent: 50 }] };
+  return project;
+}
+
+test('opted-in Word Remix expands source-linked cues over each four-bar Song cycle', () => {
+  const project = wordRemixProject();
+  const plan = buildSongRenderPlan(project, { wordRemixDurations: { 'cue-1': 1 } });
+  const cues = plan.events.filter(event => event.kind === 'word-remix-audio');
+  assert.equal(cues.length, 18, 'a 72-bar Song contains eighteen four-bar Word Remix cycles');
+  assert.deepEqual(cues.slice(0, 3).map(event => event.startStep), [1, 65, 129]);
+  assert.ok(Math.abs(cues[0].startSeconds - 60 / 90 / 4) < 1e-9);
+  assert.equal(cues[0].sourceStartSeconds, .25);
+  assert.equal(cues[0].sourceEndSeconds, .75);
+  assert.equal(cues[0].durationSeconds, .25, 'the 50% trim controls output duration without changing source offsets');
+  assert.equal(cues[0].sourcePad, 0);
+  assert.equal(cues[0].cycle, 0);
+  assert.equal(cues[1].cycle, 1);
+  const atCue = songRenderVisualsAtTime(project, plan, cues[0].startSeconds + .05);
+  assert.deepEqual(atCue.filter(tile => tile.trackId === 'word-remix-cue-1').map(tile => [tile.kind, tile.name]), [['waveform', 'go']]);
+  assert.ok(Math.abs(atCue.find(tile => tile.trackId === 'word-remix-cue-1').sourceSeconds - .3) < 1e-9);
+  assert.equal(songRenderVisualsAtTime(project, plan, cues[0].startSeconds + cues[0].durationSeconds)
+    .some(tile => tile.trackId === 'word-remix-cue-1'), false, 'the frame after the trimmed cue has no tile');
+  project.voice.wordRemix.followTransport = false;
+  assert.equal(buildSongRenderPlan(project).events.some(event => event.kind.startsWith('word-remix-')), false,
+    'non-opted-in Word Remix events do not enter the Song');
+});
+
+test('video-backed Word Remix frames retain the original local video source offset', () => {
+  const project = wordRemixProject('video');
+  const plan = buildSongRenderPlan(project, { wordRemixDurations: { 'cue-1': 1 } });
+  const cue = plan.events.find(event => event.kind === 'word-remix-video');
+  assert.equal(cue.sourcePad, 0);
+  const frame = songRenderVisualsAtTime(project, plan, cue.startSeconds + .125)
+    .find(tile => tile.trackId === 'word-remix-cue-1');
+  assert.deepEqual(frame, { kind: 'video-pad', trackId: 'word-remix-cue-1', name: 'go', sourceSeconds: .375 });
+});
+
 class FakeParam {
   constructor(value = 0) { this.value = value; this.events = []; }
   setValueAtTime(value, time) { this.value = value; this.events.push({ value, time }); }
@@ -154,6 +195,25 @@ test('offline WAV renderer schedules sample and MIDI events and returns an actua
   assert.ok(Math.abs(sample.started[2] - .1) < 1e-9);
   const midi = context.nodes.find(node => node.frequency.events.length);
   assert.equal(midi.frequency.events[0].value, 440);
+});
+
+test('offline WAV renderer schedules Word Remix audio from its transcript source window', async () => {
+  FakeOfflineAudioContext.instances.length = 0;
+  const source = new FakeAudioBuffer(1, 48000, 48000);
+  const plan = { durationSeconds: 1, events: [{ kind: 'word-remix-audio', id: 'cue-1', trackId: 'word-remix-cue-1', name: 'go',
+    startSeconds: .1, durationSeconds: .25, sourceStartSeconds: .25, sourceEndSeconds: .75, gain: .82, semitones: 0 }] };
+  await renderSongAudioWav(plan, { wordRemix: new Map([['cue-1', { buffer: source }]]) },
+    { OfflineAudioContextClass: FakeOfflineAudioContext, sampleRate: 24000, makeWav: false });
+  const node = FakeOfflineAudioContext.instances.at(-1).nodes.find(item => item.started?.length === 3);
+  assert.ok(node);
+  assert.deepEqual(node.started.slice(0, 2), [.1, .25]);
+  assert.ok(Math.abs(node.started[2] - .25) < 1e-9, 'the shortened remix cue only reads its requested source duration');
+
+  FakeOfflineAudioContext.instances.length = 0;
+  const pitched = { ...plan, events: [{ ...plan.events[0], semitones: 3 }] };
+  await assert.rejects(renderSongAudioWav(pitched, { wordRemix: new Map([['cue-1', { buffer: source }]]) },
+    { OfflineAudioContextClass: FakeOfflineAudioContext }), /cannot yet preserve the independent Pitch/);
+  assert.equal(FakeOfflineAudioContext.instances.length, 0, 'unsupported pitch fails before the offline context is allocated');
 });
 
 test('offline WAV renderer fails closed for pitch shifts and long memory-heavy output', async () => {
