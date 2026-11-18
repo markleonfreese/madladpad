@@ -112,3 +112,11 @@ test('one Song arrangement owner, visible named patterns and no redundant action
   assert.match(app,/if\(screen==='beats'&&sequenceView!=='patterns'\)setSequenceView\('patterns'\)/);
   assert.match(app,/renderSong\(\);voiceLab\?\.refreshTimeline\?\.\(\);queueSave\(\)/,'song changes should update the waveform ruler');
 });
+
+test('Word Remix reuses one original speaker video monitor in the existing studio transport',()=>{
+  assert.match(html,/<aside id="word-remix-live"[^>]*hidden>/);
+  assert.match(html,/<video id="word-remix-live-video" playsinline preload="metadata"/);
+  assert.match(html,/id="word-remix-follow-transport"/);
+  assert.equal((html.match(/id="word-remix-live-video"/g)||[]).length,1);
+  assert.match(css,/\.word-remix-live\{position:fixed/);
+});

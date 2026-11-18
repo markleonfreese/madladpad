@@ -236,19 +236,21 @@ function renderWordRemix(project, transcript, save, barState, getMediaFiles) {
     });
     grid.append(button);
   }
-  const hasVideoEvent=events.some(event=>{
-    const sourceTranscript=project.voice.transcripts.find(item=>item.id===event.transcriptId),file=sourceTranscript&&getMediaFiles().get(sourceTranscript.sourcePad);
-    return file?.type?.startsWith('video/');
-  });
-  if((hasVideoEvent||!events.length)&&project.voice.wordRemix.followTransport){project.voice.wordRemix.followTransport=false;window.dispatchEvent(new Event('madladpad-stop-word-remix-track'));save();}
+  const videoSources=new Set(events.flatMap(event=>{
+    const transcript=project.voice.transcripts.find(item=>item.id===event.transcriptId),file=transcript&&getMediaFiles().get(transcript.sourcePad);
+    return file?.type?.startsWith('video/')?[transcript.sourcePad]:[];
+  }));
+  const hasVideoEvent=videoSources.size>0;
+  const unsupported=videoSources.size>1;
+  if((unsupported||!events.length)&&project.voice.wordRemix.followTransport){project.voice.wordRemix.followTransport=false;window.dispatchEvent(new Event('madladpad-stop-word-remix-track'));save();}
   const followTransport=$('word-remix-follow-transport');
   followTransport.checked=Boolean(project.voice.wordRemix.followTransport);
-  followTransport.disabled=!events.length||hasVideoEvent;
-  $('word-remix-follow-help').textContent=hasVideoEvent?'Transport sync supports audio-source cues only. Remove the video cue to use the Beat/Song lane.':'Audio cues follow a four-bar loop in Beat or Song. Source files remain local and are not copied.';
+  followTransport.disabled=!events.length||unsupported;
+  $('word-remix-follow-help').textContent=unsupported?'Choose words from one video speaker at a time for this local POC.':'Audio and original-video words follow the four-bar Beat/Song cycle without copying media. Short video cuts may lag; test actual devices.';
   const selectedEvent=events.find(item=>item.step===barState.selectedStep),selectedTranscript=selectedEvent&&project.voice.transcripts.find(item=>item.id===selectedEvent.transcriptId),selectedFile=selectedTranscript&&getMediaFiles().get(selectedTranscript.sourcePad),pitchControl=$('word-remix-pitch');
   pitchControl.value=String(selectedEvent?.pitch??0);$('word-remix-pitch-value').textContent=`${Number(selectedEvent?.pitch??0)>0?'+':''}${Number(selectedEvent?.pitch??0)} st`;
-  pitchControl.disabled=!selectedEvent||!selectedFile?.type?.startsWith('audio/');
-  $('word-remix-pitch-help').textContent=selectedEvent&&selectedFile?.type?.startsWith('video/')?'Pitch shift is unavailable for video sources in this preview.':'Pitch changes do not alter cue length. Video-source pitch is not available yet.';
+  pitchControl.disabled=!selectedEvent||!selectedFile||(!selectedFile.type?.startsWith('audio/')&&!selectedFile.type?.startsWith('video/'));
+  $('word-remix-pitch-help').textContent=selectedFile?.type?.startsWith('video/')?'Video-word pitch requires the local AudioWorklet. Playback speed remains unchanged; video/audio start may lag on phones.':'Pitch changes do not alter cue length or the original recording.';
   const lengthControl=$('word-remix-length'),lengthPercent=clamp(selectedEvent?.lengthPercent??100,25,100);
   lengthControl.value=String(lengthPercent);$('word-remix-length-value').textContent=`${lengthPercent}%`;
   lengthControl.disabled=!selectedEvent;
@@ -574,8 +576,37 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   let wordRemixPlayback = null;
   const wordRemixBar={value:0};
   const wordRemixTransportVoices=new Set();
+  // Two monitors use one MediaElementAudioSourceNode each for their lifetime.
+  // No edited WAV/video files are generated from the original transcript words.
+  let wordRemixLiveRoute=null,wordRemixLiveFile=null,wordRemixLiveUrl=null,wordRemixLiveCue=null,wordPreviewVideoRoute=null;
+  const wordRemixVideoTimers=new Set();
+  const connectWordVideoAudio=(video,existing)=>{
+    if(existing)return existing;
+    const mediaNode=audio.context.createMediaElementSource(video),gain=audio.context.createGain();
+    gain.connect(audio.master);
+    const source={element:video,mediaNode,gain,pitchNode:null,pitch:0,speed:1,mediaRoute:''};
+    if(!audio.routeMediaPitch(source))throw new Error('Could not route source video through local mixer.');
+    gain.gain.value=0;
+    return source;
+  };
+  const stopLiveVideoCue=()=>{
+    if(wordRemixLiveCue?.timer)clearTimeout(wordRemixLiveCue.timer);
+    if(wordRemixLiveCue?.onTime)$('word-remix-live-video').removeEventListener('timeupdate',wordRemixLiveCue.onTime);
+    wordRemixLiveCue=null;
+    const video=$('word-remix-live-video');video.pause();
+    if(wordRemixLiveRoute)audio.fadeMediaOutput(wordRemixLiveRoute);
+    video.hidden=true;$('word-remix-live').hidden=true;
+  };
+  const releaseWordRemixLiveVideo=()=>{
+    stopLiveVideoCue();
+    const video=$('word-remix-live-video');video.removeAttribute('src');video.load();
+    if(wordRemixLiveUrl)URL.revokeObjectURL(wordRemixLiveUrl);
+    wordRemixLiveUrl=null;wordRemixLiveFile=null;
+  };
   let wordRemixTransportReady=false,wordRemixTransportPreparing=null;
   const stopWordRemixTransport=()=>{
+    for(const timer of wordRemixVideoTimers)clearTimeout(timer);
+    wordRemixVideoTimers.clear();stopLiveVideoCue();
     const now=audio.context.currentTime;
     for(const voice of wordRemixTransportVoices){
       voice.gain.gain.cancelScheduledValues(now);voice.gain.gain.setTargetAtTime(0,now,.003);
@@ -589,19 +620,40 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     wordRemixTransportPreparing=(async()=>{
       const events=project.voice.wordRemix.events;
       if(!events.length)throw new Error('Add at least one Word Remix cue first.');
+      const videos=new Map();
       for(const event of events){
         const transcript=project.voice.transcripts.find(item=>item.id===event.transcriptId),file=transcript&&getMediaFiles().get(transcript.sourcePad);
-        if(!file?.type?.startsWith('audio/'))throw new Error('Beat/Song sync currently supports audio-backed word cues only. Video cues remain available in Word Remix preview.');
+        if(!transcript||!file)throw new Error('An original local word source is missing; re-import it before using transport.');
+        if(file.type.startsWith('video/')){videos.set(transcript.sourcePad,file);continue;}
+        if(!file.type.startsWith('audio/'))throw new Error('Word Remix only supports locally playable audio and video.');
         const source=audio.sources.get(transcript.sourcePad);
-        if(!source?.file)throw new Error(`The original audio for “${transcript.words.find(item=>item.id===event.wordId)?.text||'this word'}” is not loaded.`);
+        if(!source?.file)throw new Error('The original source audio is unavailable.');
         if(!source.buffer)source.buffer=await audio.context.decodeAudioData(await source.file.arrayBuffer());
       }
-      if(events.some(event=>Math.abs(Number(event.pitch)||0)>.01)&&!audio.pitchReady)throw new Error('The local time-preserving pitch processor is unavailable on this browser.');
+      if(videos.size>1)throw new Error('Use one original speaker video at a time in this POC.');
+      if(events.some(event=>Math.abs(Number(event.pitch)||0)>.01)&&!audio.pitchReady)throw new Error('Local time-preserving pitch is unavailable on this browser.');
+      if(videos.size){
+        const file=[...videos.values()][0],video=$('word-remix-live-video');
+        if(!wordRemixLiveRoute)wordRemixLiveRoute=connectWordVideoAudio(video,wordRemixLiveRoute);
+        if(wordRemixLiveFile!==file){
+          releaseWordRemixLiveVideo();
+          wordRemixLiveFile=file;wordRemixLiveUrl=URL.createObjectURL(file);
+          video.src=wordRemixLiveUrl;video.load();
+          await new Promise((resolve,reject)=>{
+            if(video.readyState>=1){resolve();return;}
+            const cleanup=()=>{clearTimeout(timer);video.removeEventListener('loadedmetadata',onReady);video.removeEventListener('error',onError);};
+            const onReady=()=>{cleanup();resolve();},onError=()=>{cleanup();reject(new Error('Could not decode the original speaker video.'));};
+            const timer=setTimeout(()=>{cleanup();reject(new Error('The original speaker video did not load.'));},5000);
+            video.addEventListener('loadedmetadata',onReady);video.addEventListener('error',onError);
+          });
+        }
+      }else if(wordRemixLiveFile)releaseWordRemixLiveVideo();
       wordRemixTransportReady=true;
     })();
     try{await wordRemixTransportPreparing;}finally{wordRemixTransportPreparing=null;}
   };
-  window.addEventListener('madladpad-stop-word-remix-track',stopWordRemixTransport);
+  window.addEventListener('madladpad-stop-word-remix-track',()=>{stopWordRemixTransport();releaseWordRemixLiveVideo();wordRemixTransportReady=false;});
+  window.addEventListener('pagehide',()=>{stopWordRemixTransport();releaseWordRemixLiveVideo();},{once:true});
   const stopWordPreview = (message = 'Word preview stopped.') => {
     wordPreviewToken++;
     const active = activeWordPreview;
@@ -637,6 +689,8 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const stopAtWordEnd = () => { if (element.currentTime >= end - .015) stopWordPreview(`Finished previewing “${wordText}”. Video timing is best-effort on this browser.`); };
       const onEnded = () => stopWordPreview(`Finished previewing “${wordText}”.`);
       element.hidden = false; $('voice-word-preview').hidden = false;
+      // Word-only preview remains available even if audio routing is unsupported.
+      try{wordPreviewVideoRoute=connectWordVideoAudio(element,wordPreviewVideoRoute);wordPreviewVideoRoute.pitch=0;audio.routeMediaPitch(wordPreviewVideoRoute);audio.setMediaOutputGain(wordPreviewVideoRoute,.82);}catch{ /* Browser retains its native video-preview fallback. */ }
       element.src = url;
       element.currentTime = range.start;
       element.addEventListener('timeupdate', stopAtWordEnd);
@@ -645,7 +699,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       button.textContent = 'Ⅱ';
       button.setAttribute('aria-label', `Stop preview of word ${wordIndex + 1}, ${wordText}`);
       $('voice-word-preview-status').textContent = `Previewing “${wordText}” at ${range.start.toFixed(2)}–${range.end.toFixed(2)} seconds from the original clip. Audio and video seek timing is best-effort.`;
-      try { await element.play(); }
+      try { await audio.unlock(); await element.play(); }
       catch (error) { if (activeWordPreview?.url === url) stopWordPreview(`Could not play this source video: ${error.message}`); }
       return;
     }
@@ -684,7 +738,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     wordRemixPlayback=null;
     playback.timers.forEach(timer=>clearTimeout(timer));
     playback.sources.forEach(({node,gain,pitchNode})=>{try{node.stop();}catch{}node.disconnect();pitchNode?.disconnect();gain.disconnect();});
-    if(playback.video){playback.video.pause();playback.video.removeEventListener('timeupdate',playback.onVideoTime);playback.video.removeAttribute('src');playback.video.load();playback.video.hidden=true;}
+    if(playback.video){playback.video.pause();playback.video.removeEventListener('timeupdate',playback.onVideoTime);if(wordPreviewVideoRoute)audio.fadeMediaOutput(wordPreviewVideoRoute);playback.video.removeAttribute('src');playback.video.load();playback.video.hidden=true;}
     if(playback.videoUrl)URL.revokeObjectURL(playback.videoUrl);
     $('word-remix-play').disabled=!getProject().voice.wordRemix.events.length;
     $('word-remix-stop').disabled=true;
@@ -706,7 +760,6 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
         const offset=event.step*secondsPerStep,rangeStart=clamp(word.start,0,3600),rangeEnd=clamp(word.end,rangeStart,3600),duration=Math.min((rangeEnd-rangeStart)*clamp(event.lengthPercent??100,25,100)/100,totalDuration-offset);
         if(duration<=.01)continue;
         if(file.type.startsWith('video/')){
-          if(Math.abs(Number(event.pitch)||0)>.01)throw new Error('Pitch shifting video-backed words is not available in this preview.');
           plans.push({event,word,file,rangeStart,duration,offset,transcript});
         }
         else if(file.type.startsWith('audio/')){
@@ -716,12 +769,14 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
           if(playDuration>.01)plans.push({event,word,file,buffer,start,duration:playDuration,offset,transcript});
         }else throw new Error(`The source for “${word.text}” is not playable audio or video.`);
       }
-      if(plans.some(plan=>plan.buffer&&Math.abs(Number(plan.event.pitch)||0)>.01)&&!audio.pitchReady)throw new Error('The local time-preserving pitch processor is unavailable on this browser.');
+      if(plans.some(plan=>Math.abs(Number(plan.event.pitch)||0)>.01)&&!audio.pitchReady)throw new Error('The local time-preserving pitch processor is unavailable on this browser.');
       const videoPads=new Set(plans.filter(plan=>plan.file.type.startsWith('video/')).map(plan=>plan.transcript.sourcePad));
       if(videoPads.size>1)throw new Error('This preview supports one original video source at a time. Use words from one transcript.');
       if(videoPads.size){
         const pad=[...videoPads][0],file=getMediaFiles().get(pad),video=$('voice-word-video');
-        token.video=video;token.videoUrl=URL.createObjectURL(file);video.hidden=false;video.src=token.videoUrl;video.load();
+        token.video=video;token.videoUrl=URL.createObjectURL(file);video.hidden=false;
+        wordPreviewVideoRoute=connectWordVideoAudio(video,wordPreviewVideoRoute);wordPreviewVideoRoute.pitch=0;audio.routeMediaPitch(wordPreviewVideoRoute);
+        video.src=token.videoUrl;video.load();
         await new Promise((resolve,reject)=>{
           if(video.readyState>=1){resolve();return;}
           const timer=setTimeout(()=>reject(new Error('The source video did not become ready.')),5000);token.timers.push(timer);
@@ -746,6 +801,9 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
           const timer=setTimeout(()=>{
             if(wordRemixPlayback!==token)return;
             const video=token.video;token.currentVideoPlan=plan;video.pause();video.currentTime=Math.min(plan.rangeStart,Math.max(0,video.duration-.02));
+            wordPreviewVideoRoute.pitch=clamp(plan.event.pitch??0,-12,12);wordPreviewVideoRoute.speed=1;
+            if(!audio.routeMediaPitch(wordPreviewVideoRoute)){stopWordRemix('Local video pitch is unavailable.');return;}
+            audio.setMediaOutputGain(wordPreviewVideoRoute,.82);
             const trimTimer=setTimeout(()=>{if(wordRemixPlayback===token&&token.currentVideoPlan===plan)video.pause();},Math.max(0,Math.round(plan.duration*1000)));token.timers.push(trimTimer);
             video.play().catch(error=>{if(wordRemixPlayback===token)$('word-remix-status').textContent=`Video playback was blocked: ${error.message}. Tap Play again.`;});
           },Math.max(0,Math.round(plan.offset*1000)));
@@ -1932,7 +1990,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   await refreshInterruptedAudioRecordings();
   await refreshInterruptedVideoRecordings();
   window.addEventListener('madladpad-media-change',()=>{
-    wordRemixTransportReady=false;
+    wordRemixTransportReady=false;stopWordRemixTransport();releaseWordRemixLiveVideo();
     if(project.voice.wordRemix.followTransport)prepareWordRemixTransport().catch(error=>{project.voice.wordRemix.followTransport=false;stopWordRemixTransport();save();notify(`Word Remix transport was turned off: ${error.message}`);});
     render();
   });
@@ -1952,7 +2010,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   });
   $('word-remix-follow-transport').addEventListener('change',async event=>{
     const control=event.currentTarget;
-    if(!control.checked){project.voice.wordRemix.followTransport=false;stopWordRemixTransport();save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);return;}
+    if(!control.checked){project.voice.wordRemix.followTransport=false;wordRemixTransportReady=false;stopWordRemixTransport();releaseWordRemixLiveVideo();save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);return;}
     control.disabled=true;$('word-remix-follow-help').textContent='Preparing local audio cues for the Beat/Song transport…';
     try{await prepareWordRemixTransport();project.voice.wordRemix.followTransport=true;save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);}
     catch(error){project.voice.wordRemix.followTransport=false;control.checked=false;notify(`Could not enable Word Remix transport: ${error.message}`);renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);}
@@ -1962,7 +2020,7 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
   $('word-remix-length').addEventListener('input',()=>{$('word-remix-length-value').textContent=`${$('word-remix-length').value}%`;});
   $('word-remix-length').addEventListener('change',()=>{const event=project.voice.wordRemix.events.find(item=>item.step===wordRemixBar.selectedStep);if(!event)return;event.lengthPercent=Math.round(clamp($('word-remix-length').value,25,100));save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);});
   $('word-remix-remove').addEventListener('click',()=>{const index=project.voice.wordRemix.events.findIndex(item=>item.step===wordRemixBar.selectedStep);if(index<0)return;project.voice.wordRemix.events.splice(index,1);wordRemixBar.selectedStep=null;save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);});
-  $('word-remix-clear').addEventListener('click',()=>{project.voice.wordRemix.events=[];project.voice.wordRemix.followTransport=false;wordRemixBar.selectedStep=null;stopWordRemix('Cleared all Word Remix events.');stopWordRemixTransport();save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);});
+  $('word-remix-clear').addEventListener('click',()=>{project.voice.wordRemix.events=[];project.voice.wordRemix.followTransport=false;wordRemixTransportReady=false;wordRemixBar.selectedStep=null;stopWordRemix('Cleared all Word Remix events.');stopWordRemixTransport();releaseWordRemixLiveVideo();save();renderWordRemix(project,activeTranscript,save,wordRemixBar,getMediaFiles);});
   window.addEventListener('pagehide',()=>stopWordRemix('Stopped when this page closed.'),{once:true});
   $('voice-source-pad').addEventListener('change', () => {
     if (transcriptionActivity.phase!=='idle') cancelTranscription('Source changed. Previous transcription canceled.');
@@ -2195,9 +2253,45 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       const position=absoluteStep%64,secondsPerStep=60/clamp(bpm,40,240)/4,loopDuration=64*secondsPerStep;
       for(const event of project.voice.wordRemix.events){
         if(event.step!==position)continue;
-        const transcript=project.voice.transcripts.find(item=>item.id===event.transcriptId),word=transcript?.words.find(item=>item.id===event.wordId),sourcePad=transcript?.sourcePad,source=transcript&&audio.sources.get(sourcePad),buffer=source?.buffer,pad=Number.isInteger(sourcePad)?project.pads[sourcePad]:null;
+        const transcript=project.voice.transcripts.find(item=>item.id===event.transcriptId),word=transcript?.words.find(item=>item.id===event.wordId),sourcePad=transcript?.sourcePad,source=transcript&&audio.sources.get(sourcePad),buffer=source?.buffer,file=transcript&&getMediaFiles().get(sourcePad),pad=Number.isInteger(sourcePad)?project.pads[sourcePad]:null;
         if(pad&&!isSourceAudible(sourcePad))continue;
-        if(!word||!buffer)continue;
+        if(!word||!file)continue;
+        if(file.type.startsWith('video/')){
+          if(!wordRemixLiveRoute||wordRemixLiveFile!==file)continue;
+          const video=$('word-remix-live-video'),start=clamp(word.start,0,3600),duration=Math.min((word.end-word.start)*clamp(event.lengthPercent??100,25,100)/100,loopDuration-event.step*secondsPerStep);
+          if(duration<=.01)continue;
+          const timer=setTimeout(()=>{
+            wordRemixVideoTimers.delete(timer);
+            if(!project.voice.wordRemix.followTransport||!wordRemixTransportReady||wordRemixLiveFile!==file)return;
+            stopLiveVideoCue(); // a repeated spoken word cuts the previous one
+            const cue={timer:null,onTime:null};wordRemixLiveCue=cue;
+            video.currentTime=Math.min(start,Number.isFinite(video.duration)?Math.max(0,video.duration-.01):start);video.playbackRate=1;
+            wordRemixLiveRoute.pitch=clamp(event.pitch??0,-12,12);wordRemixLiveRoute.speed=1;
+            if(!audio.routeMediaPitch(wordRemixLiveRoute)){
+              notify('Word video playback cannot use the local audio pitch processor.');
+              project.voice.wordRemix.followTransport=false;stopWordRemixTransport();save();return;
+            }
+            const level=clamp(.82*clamp(pad?.volume??.9,0,1.5)/.9,0,1.5);
+            audio.setMediaOutputGain(wordRemixLiveRoute,level);
+            $('word-remix-live-label').textContent=word.text;
+            $('word-remix-live').hidden=false;video.hidden=false;
+            const finish=()=>{if(wordRemixLiveCue===cue)stopLiveVideoCue();};
+            cue.onTime=()=>{if(video.currentTime>=start+duration-.015)finish();};
+            video.addEventListener('timeupdate',cue.onTime);
+            // Video seeks are asynchronous. Keep a safety timer for stalled
+            // decoders, but start the audible/visual length once play succeeds.
+            cue.timer=setTimeout(finish,Math.max(1000,Math.ceil(duration*2000)));
+            video.play().then(()=>{
+              if(wordRemixLiveCue!==cue)return;
+              clearTimeout(cue.timer);
+              cue.timer=setTimeout(finish,Math.ceil(duration*1000));
+            }).catch(error=>{
+              if(wordRemixLiveCue===cue){stopLiveVideoCue();notify('Word Remix speaker video could not play: '+error.message);}
+            });
+          },Math.max(0,Math.round((time-audio.context.currentTime)*1000)));
+          wordRemixVideoTimers.add(timer);continue;
+        }
+        if(!buffer)continue;
         const start=clamp(word.start,0,Math.max(0,buffer.duration-.01)),duration=Math.min((word.end-word.start)*clamp(event.lengthPercent??100,25,100)/100,loopDuration-event.step*secondsPerStep,buffer.duration-start);
         if(duration<=.01)continue;
         const pitch=clamp(event.pitch??0,-12,12),when=time,latency=Math.abs(pitch)>.01?Math.round(audio.context.sampleRate*.04)/audio.context.sampleRate:0,pitchNode=Math.abs(pitch)>.01?audio.createPitchNode():null;

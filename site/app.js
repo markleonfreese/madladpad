@@ -925,7 +925,7 @@ function renderWordRemixTransportTrack(){
   host.hidden=false;
   const eventsByStep=new Map(remix.events.map(event=>[event.step,event]));
   const heading=document.createElement('strong');heading.textContent='WORD REMIX · SOURCE-LINKED TRANSPORT LANE';
-  const description=document.createElement('p');description.textContent=`${remix.events.length} audio cue${remix.events.length===1?'':'s'} follow the four-bar cycle in Beat and Song without copying source media.`;
+  const description=document.createElement('p');description.textContent=`${remix.events.length} source-linked word cue${remix.events.length===1?'':'s'} follow the four-bar Beat/Song cycle. Original audio and one speaker video are reused without source media copies.`;
   const bars=document.createElement('div');bars.className='word-remix-transport-bars';bars.setAttribute('role','group');bars.setAttribute('aria-label','Four-bar source-linked Word Remix lane');
   for(let bar=0;bar<4;bar++){
     const row=document.createElement('div');row.className='word-remix-transport-bar';
