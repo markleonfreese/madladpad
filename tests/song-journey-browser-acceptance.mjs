@@ -402,10 +402,11 @@ try{
       {id:'remix-audio-transcript',sourcePad:0,words:[{id:'remix-audio-word',text:'yeah',start:.05,end:.25}]},
       {id:'remix-video-transcript',sourcePad:2,words:[{id:'remix-video-word',text:'go',start:.1,end:.3}]}
     ],wordRemix:{followTransport:true,events:[
-      {id:'remix-audio-event',transcriptId:'remix-audio-transcript',wordId:'remix-audio-word',step:1,pitch:0,lengthPercent:100},
-      {id:'remix-video-event',transcriptId:'remix-video-transcript',wordId:'remix-video-word',step:0,pitch:0,lengthPercent:100}
+      {id:'remix-audio-event',transcriptId:'remix-audio-transcript',wordId:'remix-audio-word',step:1,pitch:4,lengthPercent:100},
+      {id:'remix-video-event',transcriptId:'remix-video-transcript',wordId:'remix-video-word',step:12,pitch:0,lengthPercent:100}
     ]}}
   });
+  remixExportProject.scenes[0].pads[0].steps.fill(false);
   await remixExportPage.evaluate(async({project,audioBytes,videoBytes})=>{
     const {putValue}=await import('/storage.js');
     localStorage.removeItem('madladpad-project-recovery-v1');
@@ -423,11 +424,12 @@ try{
   const remixAudioBytes=await readFile(await (await remixAudioDownload).path());
   const remixAudio=await remixExportPage.evaluate(async encoded=>{
     const bytes=Uint8Array.from(atob(encoded),character=>character.charCodeAt(0)),context=new AudioContext();
-    try{const buffer=await context.decodeAudioData(bytes.buffer),samples=buffer.getChannelData(0);return {duration:buffer.duration,rms:Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length)};}
+    try{const buffer=await context.decodeAudioData(bytes.buffer),samples=buffer.getChannelData(0),first=Math.floor(.11*buffer.sampleRate),last=Math.floor(.22*buffer.sampleRate);let crossings=0;for(let i=first+1;i<last;i++)if(samples[i-1]<=0&&samples[i]>0)crossings++;return {duration:buffer.duration,rms:Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length),frequency:crossings/((last-first)/buffer.sampleRate)};}
     finally{await context.close();}
   },remixAudioBytes.toString('base64'));
   assert.ok(Math.abs(remixAudio.duration-1)<.02,'the app-level Word Remix Song export should span its one-bar arrangement');
-  assert.ok(remixAudio.rms>.01,'the app-level WAV should mix both locally decoded Word Remix source events');
+  assert.ok(remixAudio.rms>.01,'the app-level WAV should mix locally decoded Word Remix sources');
+  assert.ok(Math.abs(remixAudio.frequency-440*2**(4/12))<40,`the app-level WAV should preserve the selected +4 semitone Word Remix Pitch, measured ${remixAudio.frequency} Hz`);
   await remixExportPage.locator('#render-song-video').click();
   for(let attempt=0;attempt<30;attempt++){
     const status=await remixExportPage.locator('#render-song-video-status').textContent();
@@ -446,7 +448,7 @@ try{
     const type=filename.toLowerCase().endsWith('.mp4')?'video/mp4':'video/webm';
     const input=new Media.Input({source:new Media.BlobSource(new Blob([bytes],{type})),formats:[Media.MP4,Media.QTFF,Media.WEBM]});
     try{
-      const track=await input.getPrimaryVideoTrack(),sink=new Media.VideoSampleSink(track),sample=await sink.getSample(.05);
+      const track=await input.getPrimaryVideoTrack(),sink=new Media.VideoSampleSink(track),sample=await sink.getSample(.8);
       if(!sample)throw new Error('No video frame decoded for the local Word Remix source.');
       const frame={duration:await track.computeDuration(),width:sample.displayWidth,height:sample.displayHeight};sample.close();
       return frame;

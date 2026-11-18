@@ -197,9 +197,10 @@ test('offline WAV renderer schedules sample and MIDI events and returns an actua
   assert.equal(midi.frequency.events[0].value, 440);
 });
 
-test('offline WAV renderer schedules Word Remix audio from its transcript source window', async () => {
+test('offline WAV renderer schedules and pitch-shifts Word Remix audio from its transcript source window', async () => {
   FakeOfflineAudioContext.instances.length = 0;
-  const source = new FakeAudioBuffer(1, 48000, 48000);
+  const source = new FakeAudioBuffer(1, 48000, 48000),samples=source.getChannelData(0);
+  for(let i=0;i<samples.length;i++)samples[i]=Math.sin(2*Math.PI*440*i/source.sampleRate);
   const plan = { durationSeconds: 1, events: [{ kind: 'word-remix-audio', id: 'cue-1', trackId: 'word-remix-cue-1', name: 'go',
     startSeconds: .1, durationSeconds: .25, sourceStartSeconds: .25, sourceEndSeconds: .75, gain: .82, semitones: 0 }] };
   await renderSongAudioWav(plan, { wordRemix: new Map([['cue-1', { buffer: source }]]) },
@@ -210,21 +211,45 @@ test('offline WAV renderer schedules Word Remix audio from its transcript source
   assert.ok(Math.abs(node.started[2] - .25) < 1e-9, 'the shortened remix cue only reads its requested source duration');
 
   FakeOfflineAudioContext.instances.length = 0;
-  const pitched = { ...plan, events: [{ ...plan.events[0], semitones: 3 }] };
-  await assert.rejects(renderSongAudioWav(pitched, { wordRemix: new Map([['cue-1', { buffer: source }]]) },
-    { OfflineAudioContextClass: FakeOfflineAudioContext }), /cannot yet preserve the independent Pitch/);
-  assert.equal(FakeOfflineAudioContext.instances.length, 0, 'unsupported pitch fails before the offline context is allocated');
+  const pitched = { ...plan, events: [{ ...plan.events[0], semitones: 4 }] };
+  await renderSongAudioWav(pitched, { wordRemix: new Map([['cue-1', { buffer: source }]]) },
+    { OfflineAudioContextClass: FakeOfflineAudioContext, sampleRate: 24000, makeWav: false });
+  const pitchedNode=FakeOfflineAudioContext.instances.at(-1).nodes.find(item=>item.buffer&&item.started?.length===3);
+  assert.ok(pitchedNode?.buffer,'the pitched cue is rendered into a local processed buffer');
+  assert.deepEqual(pitchedNode.started.slice(0,2),[.1,0],'the processed cue preserves its Song start and uses its rendered source from frame zero');
+  const shifted=pitchedNode.buffer.getChannelData(0),shiftedStart=2400;let crossings=0;
+  for(let i=shiftedStart;i<shifted.length;i++)if(shifted[i-1]<=0&&shifted[i]>0)crossings++;
+  const measured=crossings/((shifted.length-shiftedStart)/pitchedNode.buffer.sampleRate);
+  assert.ok(Math.abs(measured-440*2**(4/12))<35,`the exported cue should be shifted four semitones, measured ${measured} Hz`);
 });
 
-test('offline WAV renderer fails closed for pitch shifts and long memory-heavy output', async () => {
+test('offline WAV renderer preserves independent Pitch, compensates Speed, and bounds long output', async () => {
   FakeOfflineAudioContext.instances.length = 0;
-  const source = new FakeAudioBuffer(1, 4800, 24000);
+  const source = new FakeAudioBuffer(1, 24000, 24000);
+  const samples=source.getChannelData(0);for(let i=0;i<samples.length;i++)samples[i]=Math.sin(2*Math.PI*440*i/source.sampleRate);
   const pitched = { durationSeconds: 1, events: [{ kind: 'sample', trackId: 'pad-0', padId: 0,
-    startSeconds: 0, durationSeconds: .1, sourceStartSeconds: 0, sourceEndSeconds: .1, gain: 1, speed: 1, semitones: 2 }] };
-  await assert.rejects(renderSongAudioWav(pitched, { pads: new Map([[0, source]]) }, { OfflineAudioContextClass: FakeOfflineAudioContext }), /cannot yet preserve the independent Pitch/);
+    startSeconds: 0, durationSeconds: .5, sourceStartSeconds: 0, sourceEndSeconds: .5, gain: 1, speed: 1, semitones: 4 }] };
+  await renderSongAudioWav(pitched, { pads: new Map([[0, source]]) }, { OfflineAudioContextClass: FakeOfflineAudioContext, sampleRate: 24000, makeWav: false });
+  let node=FakeOfflineAudioContext.instances.at(-1).nodes.find(item=>item.buffer&&item.started?.length===3);
+  assert.equal(node.buffer.length,12000);
+  let output=node.buffer.getChannelData(0),crossings=0;
+  for(let i=2400;i<output.length;i++)if(output[i-1]<=0&&output[i]>0)crossings++;
+  let measured=crossings/((output.length-2400)/node.buffer.sampleRate);
+  assert.ok(Math.abs(measured-440*2**(4/12))<35,`the rendered pad should retain +4 semitones, measured ${measured} Hz`);
+
+  FakeOfflineAudioContext.instances.length=0;
+  const compensated={...pitched,events:[{...pitched.events[0],durationSeconds:.25,speed:2,semitones:0}]};
+  await renderSongAudioWav(compensated,{pads:new Map([[0,source]])},{OfflineAudioContextClass:FakeOfflineAudioContext,sampleRate:24000,makeWav:false});
+  node=FakeOfflineAudioContext.instances.at(-1).nodes.find(item=>item.buffer&&item.started?.length===3);
+  assert.equal(node.playbackRate.events[0].value,2);
+  output=node.buffer.getChannelData(0);crossings=0;
+  for(let i=2400;i<output.length;i++)if(output[i-1]<=0&&output[i]>0)crossings++;
+  measured=crossings/((output.length-2400)/node.buffer.sampleRate);
+  assert.ok(Math.abs(measured-220)<25,`Speed 2x should be compensated one octave down before playback, measured ${measured} Hz`);
+
   const tooLong = { durationSeconds: 241, events: [] };
   await assert.rejects(renderSongAudioWav(tooLong, {}, { OfflineAudioContextClass: FakeOfflineAudioContext }), /limited to 4 minutes/);
-  assert.equal(FakeOfflineAudioContext.instances.length, 0, 'unsupported work is rejected before allocating the offline buffer');
+  assert.equal(FakeOfflineAudioContext.instances.length, 1, 'the invalid long project is rejected before allocating a second offline buffer');
 });
 
 test('offline WAV renderer rejects invalid local trims and over-limit reversed vocals before scheduling', async () => {
