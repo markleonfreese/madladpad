@@ -20,7 +20,7 @@ import {
  * renderers. This describes the arrangement; it does not encode media or
  * claim that live MediaRecorder capture is deterministic.
  */
-export function buildSongRenderPlan(project, { padDurations = {}, vocalDurations = {}, videoDurations = {} } = {}) {
+export function buildSongRenderPlan(project, { padDurations = {}, vocalDurations = {}, videoDurations = {}, wordRemixDurations = {} } = {}) {
   const bars = songTotalBars(project?.song);
   if (!bars) throw new Error('Add saved patterns to Song before rendering.');
   for (const clip of project.song.clips) {
@@ -144,6 +144,45 @@ export function buildSongRenderPlan(project, { padDurations = {}, vocalDurations
     }
   }
 
+  const wordRemix = project.voice?.wordRemix;
+  if (wordRemix?.followTransport) {
+    const loopSteps = 64;
+    const loopSeconds = loopSteps * secondsPerStep;
+    for (const cue of wordRemix.events || []) {
+      const transcript = project.voice.transcripts.find(item => item.id === cue.transcriptId);
+      const word = transcript?.words.find(item => item.id === cue.wordId);
+      const sourcePad = transcript?.sourcePad;
+      const pad = Number.isInteger(sourcePad) ? activePads[sourcePad] : null;
+      if (!word || !pad || !isPadAudible(activePads, sourcePad)) continue;
+      const sourceDuration = Number(wordRemixDurations[cue.id]) || word.end;
+      const sourceStartSeconds = clamp(word.start, 0, Math.max(0, sourceDuration - .01));
+      const sourceEndSeconds = Math.min(word.end, sourceDuration);
+      const sourceLength = sourceEndSeconds - sourceStartSeconds;
+      if (sourceLength <= .01) continue;
+      for (let loopStartStep = 0; loopStartStep < totalSteps; loopStartStep += loopSteps) {
+        const startStep = loopStartStep + cue.step;
+        if (startStep >= totalSteps) continue;
+        const startSeconds = startStep * secondsPerStep;
+        const cueDurationSeconds = Math.min(
+          sourceLength * clamp(cue.lengthPercent ?? 100, 25, 100) / 100,
+          loopSeconds - cue.step * secondsPerStep,
+          durationSeconds - startSeconds
+        );
+        if (cueDurationSeconds <= .01) continue;
+        const videoSource = pad.kind === 'video';
+        events.push({
+          kind: videoSource ? 'word-remix-video' : 'word-remix-audio',
+          id: cue.id, transcriptId: cue.transcriptId, wordId: cue.wordId,
+          trackId: `word-remix-${cue.id}`, name: word.text, sourcePad,
+          startStep, startSeconds, durationSeconds: cueDurationSeconds, sourceStartSeconds, sourceEndSeconds,
+          semitones: clamp(cue.pitch ?? 0, -12, 12),
+          gain: clamp(.82 * clamp(pad.volume ?? .9, 0, 1.5) / .9, 0, 1.5),
+          cycle: Math.floor(loopStartStep / loopSteps), videoSource
+        });
+      }
+    }
+  }
+
   const melody = project.voice?.melody;
   if (melody?.followBeat) {
     const addNote = (note, trackId) => {
@@ -191,6 +230,10 @@ export function songRenderVisualsAtTime(project, plan, seconds) {
       visuals.push({ kind: 'waveform', trackId: event.trackId, name: event.name, sourceSeconds: event.sourceStartSeconds + seconds - event.startSeconds });
     } else if (event.kind === 'midi') {
       visuals.push({ kind: 'midi', trackId: event.trackId, name: event.name, midi: event.midi, velocity: event.velocity, sourceSeconds: seconds - event.startSeconds });
+    } else if (event.kind === 'word-remix-video') {
+      visuals.push({ kind: 'video-pad', trackId: event.trackId, name: event.name, sourceSeconds: event.sourceStartSeconds + seconds - event.startSeconds });
+    } else if (event.kind === 'word-remix-audio') {
+      visuals.push({ kind: 'waveform', trackId: event.trackId, name: event.name, sourceSeconds: event.sourceStartSeconds + seconds - event.startSeconds });
     }
   }
   return visuals.sort((a, b) => a.kind.localeCompare(b.kind) || a.trackId.localeCompare(b.trackId));
@@ -265,10 +308,11 @@ export async function renderSongAudioWav(plan, sources, {
   const estimatedBytes = 44 + frameCount * 4;
   if (estimatedBytes > 48 * 1024 * 1024) throw new Error('This WAV would exceed the local export size limit. Lower the Song duration before rendering.');
   const pads = sources?.pads || new Map(), vocals = sources?.vocals || new Map(), videos = sources?.videos || new Map(), cues = sources?.cues || new Map();
-  const playable = plan.events.filter(event => ['sample', 'vocal', 'video-audio', 'midi', 'demo'].includes(event.kind));
+  const playable = plan.events.filter(event => ['sample', 'vocal', 'video-audio', 'word-remix-audio', 'word-remix-video', 'midi', 'demo'].includes(event.kind));
   const bufferFor = event => event.kind === 'sample' ? pads.get(event.padId)
     : event.kind === 'vocal' ? vocals.get(event.trackId)
-      : event.kind === 'video-audio' ? videos.get(event.trackId) : null;
+      : event.kind === 'video-audio' ? videos.get(event.trackId)
+        : event.kind === 'word-remix-audio' || event.kind === 'word-remix-video' ? sources?.wordRemix?.get(event.id)?.buffer : null;
   for (const event of playable) {
     if (event.kind === 'demo') throw new Error('This Song uses a generated demo pad sound that offline WAV export cannot render yet. Replace that lane with a local audio clip, or use real-time audio recording.');
     if (event.kind === 'midi' && event.word && cues.has(event.word)) {

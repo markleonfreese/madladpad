@@ -928,8 +928,8 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       catch(error){throw new Error(`Could not decode “${label}” for the offline Song export: ${error?.message||'unsupported audio codec'}.`);}
     };
     if(!songTotalBars(project.song))throw new Error('Add saved patterns to Song before rendering.');
-    const pads=new Map(),vocals=new Map(),videos=new Map(),cues=new Map();
-    const vocalDurations={},videoDurations={};
+    const pads=new Map(),vocals=new Map(),videos=new Map(),cues=new Map(),wordRemix=new Map();
+    const vocalDurations={},videoDurations={},wordRemixDurations={};
     for(const layer of project.voice.layers){
       if(layer.muted)continue;
       const existing=audio.vocalSources.get(layer.id)?.buffer;
@@ -946,6 +946,18 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       videos.set(layer.id,buffer);videoDurations[layer.id]=Math.min(layer.durationSec,buffer.duration);
     }
     let plan=buildSongRenderPlan(project,{vocalDurations,videoDurations});
+    const mediaFiles=getMediaFiles();
+    for(const event of plan.events.filter(item=>item.kind==='word-remix-audio'||item.kind==='word-remix-video')){
+      if(wordRemix.has(event.id))continue;
+      const source=audio.sources.get(event.sourcePad),file=mediaFiles.get(event.sourcePad)||source?.file;
+      const word=project.voice.transcripts.find(item=>item.id===event.transcriptId)?.words.find(item=>item.id===event.wordId);
+      if(!word)throw new Error(`The transcript word for “${event.name}” is no longer available.`);
+      if(event.kind==='word-remix-video'&&!file)throw new Error(`The local source video for “${event.name}” is missing.`);
+      if(!file&&!source?.buffer)throw new Error(`The local source audio for “${event.name}” is missing.`);
+      const buffer=await decodeFile(file,word.text,source?.buffer);
+      wordRemix.set(event.id,{buffer,file,sourcePad:event.sourcePad,word});
+      wordRemixDurations[event.id]=buffer.duration;
+    }
     const activePadIds=[...new Set(plan.events.filter(event=>event.kind==='sample').map(event=>event.padId))];
     for(const id of activePadIds){
       const pad=project.pads[id],source=audio.sources.get(id),file=getMediaFiles().get(id)||source?.file;
@@ -962,16 +974,22 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
       cues.set(note.word,{buffer,start:word.start,end:word.end,gain:sourcePad.volume});
     }
     const padDurations=Object.fromEntries([...pads].map(([id,buffer])=>[id,buffer.duration]));
-    plan=buildSongRenderPlan(project,{padDurations,vocalDurations,videoDurations});
+    plan=buildSongRenderPlan(project,{padDurations,vocalDurations,videoDurations,wordRemixDurations});
     const visualFiles=new Map();
     for(const layer of project.voice.videoLayers){const file=videoFiles.get(layer.id);if(file)visualFiles.set(layer.id,file);}
     for(let id=0;id<project.pads.length;id++){
-      const pad=project.pads[id],file=getMediaFiles().get(id);
+      const pad=project.pads[id],file=mediaFiles.get(id);
       if(file&&(pad.kind==='image'||pad.kind==='video'))visualFiles.set(`pad-${id}`,file);
     }
     const waveformBuffers=new Map([...pads].map(([id,buffer])=>[`pad-${id}`,buffer]));
     for(const [id,buffer] of vocals)waveformBuffers.set(id,buffer);
-    return {plan,pads,vocals,videos,cues,visualFiles,waveformBuffers};
+    for(const event of plan.events){
+      if(event.kind!=='word-remix-audio'&&event.kind!=='word-remix-video')continue;
+      const source=wordRemix.get(event.id);
+      if(event.kind==='word-remix-video')visualFiles.set(event.trackId,source.file);
+      else waveformBuffers.set(event.trackId,source.buffer);
+    }
+    return {plan,pads,vocals,videos,cues,wordRemix,visualFiles,waveformBuffers};
   }
 
   async function renderSongAudioExport(){
@@ -982,10 +1000,10 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     status.textContent='Preparing local Song audio sources…';
     try{
       if(transportState().running)throw new Error('Stop Song playback before starting an offline WAV render.');
-      const {plan,pads,vocals,videos,cues}=await prepareSongRenderInputs();
+      const {plan,pads,vocals,videos,cues,wordRemix}=await prepareSongRenderInputs();
       if(!songRenderActivity.current(token))return;
       status.textContent=`Rendering ${plan.bars} bars to a local 44.1 kHz WAV. Keep this tab open…`;
-      const result=await renderSongAudioWav(plan,{pads,vocals,videos,cues});
+      const result=await renderSongAudioWav(plan,{pads,vocals,videos,cues,wordRemix});
       if(!songRenderActivity.current(token))return;
       rememberAudioTake?.(result.blob,result.durationSeconds);
       status.textContent=`Offline Song mix ready · ${result.durationSeconds.toFixed(1)} s · ${(result.blob.size/1024/1024).toFixed(1)} MB · stereo 16-bit PCM WAV. Review or download it below.`;

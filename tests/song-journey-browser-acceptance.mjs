@@ -42,6 +42,8 @@ const renderProject=normaliseProject({
   song:normaliseSong({clips:[{id:'render-intro',sceneId:'render-a',bars:8},{id:'render-verse',sceneId:'render-b',bars:16},{id:'render-hook',sceneId:'render-c',bars:24},{id:'render-outro',sceneId:'render-a',bars:24}]}),
   voice:{...renderBase.voice,
     layers:[{id:'render-vocal',name:'Lead vocal',startStep:0,trimStartSec:0,trimEndSec:2,repeatEnabled:true,repeatEveryBars:8,audibleLengthBars:2,placementEndBar:72}],
+    transcripts:[{id:'render-transcript',sourcePad:0,words:[{id:'remix-word',text:'yeah',start:.25,end:.75}]}],
+    wordRemix:{followTransport:true,events:[{id:'render-cue',transcriptId:'render-transcript',wordId:'remix-word',step:32,pitch:0,lengthPercent:100}]},
     videoLayers:[
       {id:'video-one',name:'Verse footage',startStep:0,trimStartSec:0,trimEndSec:2,durationSec:2},
       {id:'video-two',name:'Hook footage',startStep:0,trimStartSec:0,trimEndSec:2,durationSec:2,includeAudio:true,audioGain:.25,repeatEnabled:true,repeatEveryBars:4,audibleLengthBars:1,placementEndBar:72}
@@ -49,7 +51,7 @@ const renderProject=normaliseProject({
     melody:{...renderBase.voice.melody,followBeat:true,notes:[{midi:60,step:0,duration:4,velocity:100,layer:'lead'}]}
   }
 });
-const renderPlan=buildSongRenderPlan(renderProject,{padDurations:{0:2},vocalDurations:{'render-vocal':2},videoDurations:{'video-two':2}});
+const renderPlan=buildSongRenderPlan(renderProject,{padDurations:{0:2},vocalDurations:{'render-vocal':2},videoDurations:{'video-two':2},wordRemixDurations:{'render-cue':2}});
 const renderFrameVisuals=songRenderVisualsAtTime(renderProject,renderPlan,.1);
 let browser,temp;
 try{
@@ -93,6 +95,12 @@ try{
   console.log(`Offline Song WAV acceptance passed: ${offlineWav.duration.toFixed(3)} s decoded, ${offlineWav.bytes} bytes, stereo RMS ${offlineWav.rms.map(level=>level.toFixed(3)).join('/')}.`);
   assert.equal(renderPlan.bars,72);
   assert.equal(renderPlan.durationSeconds,192);
+  const remixEvent=renderPlan.events.find(event=>event.kind==='word-remix-audio');
+  assert.ok(remixEvent,'the opted-in audio Word Remix event must be part of the full-song plan');
+  assert.equal(renderPlan.events.filter(event=>event.kind==='word-remix-audio').length,18,
+    'the Word Remix grid must repeat through all eighteen four-bar cycles');
+  assert.equal(songRenderVisualsAtTime(renderProject,renderPlan,remixEvent.startSeconds+.1)
+    .find(tile=>tile.trackId==='word-remix-render-cue').kind,'waveform');
   assert.deepEqual(renderFrameVisuals.map(tile=>tile.kind),['midi','still','video','video','waveform','waveform'],'the same Song timestamp must align a generated note, still, two videos and both audible waveform tracks');
   const fullSongWav=await page.evaluate(async plan=>{
     const {renderSongAudioWav}=await import('/song-render.js');
@@ -102,7 +110,8 @@ try{
       for(let frame=0;frame<channel.length;frame++)channel[frame]=amplitude*Math.sin(2*Math.PI*frequency*frame/rate);
       return buffer;
     };
-    const sources={pads:new Map([[0,makeTone(110,.2)]]),vocals:new Map([['render-vocal',makeTone(220,.16)]]),videos:new Map([['video-two',makeTone(330,.1)]])};
+    const sources={pads:new Map([[0,makeTone(110,.2)]]),vocals:new Map([['render-vocal',makeTone(220,.16)]]),videos:new Map([['video-two',makeTone(330,.1)]]),
+      wordRemix:new Map([['render-cue',{buffer:makeTone(440,.08)}]])};
     try{
       const result=await renderSongAudioWav(plan,sources,{sampleRate:rate});
       const encoded=await result.blob.arrayBuffer(),header=new DataView(encoded);
@@ -118,7 +127,7 @@ try{
   assert.equal(fullSongWav.channels,2);
   assert.ok(fullSongWav.rms>.01,'the full-length artifact must contain mixed local pad, vocal, video-source and MIDI audio');
   assert.ok(fullSongWav.bytes<48*1024*1024,'the typical full-length song must fit the documented WAV size cap');
-  console.log(`Full 72-bar Song WAV acceptance passed: ${fullSongWav.duration.toFixed(1)} s, ${fullSongWav.bytes} bytes, stereo RMS ${fullSongWav.rms.toFixed(3)}; timestamp shows two videos, a still and MIDI.`);
+  console.log(`Full 72-bar Song WAV acceptance passed: ${fullSongWav.duration.toFixed(1)} s, ${fullSongWav.bytes} bytes, stereo RMS ${fullSongWav.rms.toFixed(3)}; includes repeated Word Remix audio and timestamp shows two videos, a still and MIDI.`);
   await page.addInitScript(()=>{
     window.__songVideoFramesDrawn=0;window.__songVideoFirstSourceTime=null;
     const drawImage=CanvasRenderingContext2D.prototype.drawImage;

@@ -60,20 +60,32 @@ try{
       const base=makeProject();
       const project=normaliseProject({...base,bpm:90,
         pads:base.pads.map((pad,index)=>index===0?{...pad,kind:'audio',fileName:'local-tone.wav',start:0,end:2,volume:.35,speed:1,pitch:0}
-          :index===1?{...pad,kind:'image',fileName:'artwork.png',start:0,end:1}:pad),
+          :index===1?{...pad,kind:'image',fileName:'artwork.png',start:0,end:1}
+            :index===2?{...pad,kind:'video',fileName:'speaker.webm',start:0,end:2}:pad),
         scenes:[makePattern('a','Intro'),makePattern('b','Verse'),makePattern('c','Hook')],
         song:normaliseSong({clips:[{id:'intro',sceneId:'a',bars:8},{id:'verse',sceneId:'b',bars:16},{id:'hook',sceneId:'c',bars:24},{id:'outro',sceneId:'a',bars:24}]}),
-        voice:{...base.voice,layers:[],videoLayers:[
+        voice:{...base.voice,layers:[],transcripts:[
+          {id:'audio-transcript',sourcePad:0,words:[{id:'audio-word',text:'yeah',start:.2,end:.8}]},
+          {id:'video-transcript',sourcePad:2,words:[{id:'video-word',text:'go',start:.3,end:.9}]}
+        ],wordRemix:{followTransport:true,events:[
+          {id:'audio-remix',transcriptId:'audio-transcript',wordId:'audio-word',step:1,pitch:0,lengthPercent:100},
+          {id:'video-remix',transcriptId:'video-transcript',wordId:'video-word',step:0,pitch:0,lengthPercent:100}
+        ]},videoLayers:[
           {id:'video-one',name:'Verse camera',startStep:0,trimStartSec:.2,trimEndSec:1.8,durationSec:2,repeatEnabled:true,repeatEveryBars:1,audibleLengthBars:.5,placementEndBar:72},
           {id:'video-two',name:'Hook camera',startStep:128,trimStartSec:.1,trimEndSec:1.9,durationSec:2,repeatEnabled:true,repeatEveryBars:1,audibleLengthBars:.5,placementEndBar:72}
         ],melody:{...base.voice.melody,followBeat:true,notes:Array.from({length:72},(_,bar)=>({midi:60+bar%12,step:bar*16,duration:16,velocity:100,layer:'lead'}))}}
       });
-      plan=buildSongRenderPlan(project,{padDurations:{0:2}});
+      plan=buildSongRenderPlan(project,{padDurations:{0:2},wordRemixDurations:{'audio-remix':2,'video-remix':2}});
       if(plan.bars!==72||plan.durationSeconds!==192)throw new Error(`Expected the full 72-bar / 192-second plan, received ${plan.bars} bars / ${plan.durationSeconds} s.`);
-      const mixed=await renderSongAudioWav(plan,{pads:new Map([[0,sourceAudio]])},{makeWav:false});
+      const mixed=await renderSongAudioWav(plan,{pads:new Map([[0,sourceAudio]]),wordRemix:new Map([
+        ['audio-remix',{buffer:sourceAudio}],['video-remix',{buffer:sourceAudio}]
+      ])},{makeWav:false});
       audioBuffer=mixed.buffer;
       visualsAtTime=seconds=>songRenderVisualsAtTime(project,plan,seconds);
-      visualFiles=new Map([['video-one',source.blob],['video-two',sourceTwo.blob],['pad-1',artwork]]);
+      visualFiles=new Map([['video-one',source.blob],['video-two',sourceTwo.blob],['pad-1',artwork],['word-remix-video-remix',source.blob]]);
+      const wordVideoFrame=visualsAtTime(.25).find(item=>item.trackId==='word-remix-video-remix');
+      if(wordVideoFrame?.kind!=='video-pad'||Math.abs(wordVideoFrame.sourceSeconds-.55)>1e-9)
+        throw new Error(`The video-backed Word Remix cue did not retain its source time: ${JSON.stringify(wordVideoFrame)}`);
       timelineChecks=[.5,22,65,128.5,189.5].map(seconds=>{
         const section=plan.sections.find(item=>seconds>=item.startStep*60/90/4&&seconds<item.endStep*60/90/4);
         return {seconds,section:section?.sceneId,kinds:visualsAtTime(seconds).map(item=>item.kind)};
@@ -94,7 +106,7 @@ try{
       const videoCount=kinds.filter(kind=>kind==='video').length;
       if(!['video','still','midi','waveform'].every(kind=>kinds.includes(kind))||videoCount<1||videoCount>2||(check.seconds>.5&&videoCount!==2))timelineCoverage=false;
     }
-    const composed=await renderSongVideo(plan,{audioBuffer,visualFiles,waveformBuffers:new Map([['pad-0',sourceAudio]]),visualsAtTime},
+    const composed=await renderSongVideo(plan,{audioBuffer,visualFiles,waveformBuffers:new Map([['pad-0',sourceAudio],['word-remix-audio-remix',sourceAudio]]),visualsAtTime},
     {Media,format:'auto',aspect:'16:9',onProgress:event=>{
         lastProgress=event.frames;
         if(durationSeconds>10&&event.frames%240===0)console.log(`LONG_VIDEO_PROGRESS ${event.frames}/${event.totalFrames}`);
@@ -123,7 +135,7 @@ try{
     assert.deepEqual(result.timelineChecks.map(check=>check.section),['a','b','c','a','a']);
   }
   assert.deepEqual(errors,[]);
-  console.log(`Synthetic offline video encode/decode passed: ${JSON.stringify(result.metadata)}; two local video tiles, local artwork, MIDI visualization and generated audio.`);
+  console.log(`Synthetic offline video encode/decode passed: ${JSON.stringify(result.metadata)}; two local video tiles, video-backed Word Remix, local artwork, MIDI visualization and generated audio.`);
 }finally{
   await browser?.close();
   await new Promise(resolve=>server.close(resolve));
