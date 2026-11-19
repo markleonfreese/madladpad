@@ -407,6 +407,8 @@ try{
     ]}}
   });
   remixExportProject.scenes[0].pads[0].steps.fill(false);
+  remixExportProject.pads[1]={...remixExportProject.pads[1],demoSound:'bell',fileName:'',volume:.8};
+  remixExportProject.scenes[0].pads[1].steps[8]=true;
   await remixExportPage.evaluate(async({project,audioBytes,videoBytes})=>{
     const {putValue}=await import('/storage.js');
     localStorage.removeItem('madladpad-project-recovery-v1');
@@ -424,12 +426,13 @@ try{
   const remixAudioBytes=await readFile(await (await remixAudioDownload).path());
   const remixAudio=await remixExportPage.evaluate(async encoded=>{
     const bytes=Uint8Array.from(atob(encoded),character=>character.charCodeAt(0)),context=new AudioContext();
-    try{const buffer=await context.decodeAudioData(bytes.buffer),samples=buffer.getChannelData(0),first=Math.floor(.11*buffer.sampleRate),last=Math.floor(.22*buffer.sampleRate);let crossings=0;for(let i=first+1;i<last;i++)if(samples[i-1]<=0&&samples[i]>0)crossings++;return {duration:buffer.duration,rms:Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length),frequency:crossings/((last-first)/buffer.sampleRate)};}
+    try{const buffer=await context.decodeAudioData(bytes.buffer),samples=buffer.getChannelData(0),first=Math.floor(.11*buffer.sampleRate),last=Math.floor(.22*buffer.sampleRate),bellFirst=Math.floor(.54*buffer.sampleRate),bellLast=Math.floor(.7*buffer.sampleRate);let crossings=0,bellCrossings=0;for(let i=first+1;i<last;i++)if(samples[i-1]<=0&&samples[i]>0)crossings++;for(let i=bellFirst+1;i<bellLast;i++)if(samples[i-1]<=0&&samples[i]>0)bellCrossings++;return {duration:buffer.duration,rms:Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length),frequency:crossings/((last-first)/buffer.sampleRate),bellFrequency:bellCrossings/((bellLast-bellFirst)/buffer.sampleRate)};}
     finally{await context.close();}
   },remixAudioBytes.toString('base64'));
   assert.ok(Math.abs(remixAudio.duration-1)<.02,'the app-level Word Remix Song export should span its one-bar arrangement');
   assert.ok(remixAudio.rms>.01,'the app-level WAV should mix locally decoded Word Remix sources');
   assert.ok(Math.abs(remixAudio.frequency-440*2**(4/12))<40,`the app-level WAV should preserve the selected +4 semitone Word Remix Pitch, measured ${remixAudio.frequency} Hz`);
+  assert.ok(Math.abs(remixAudio.bellFrequency-880)<35,`the app-level WAV should render a locally selected demo Bell without a source file, measured ${remixAudio.bellFrequency} Hz`);
   await remixExportPage.locator('#render-song-video').click();
   for(let attempt=0;attempt<30;attempt++){
     const status=await remixExportPage.locator('#render-song-video-status').textContent();

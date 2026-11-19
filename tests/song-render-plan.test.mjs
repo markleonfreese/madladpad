@@ -105,6 +105,13 @@ function wordRemixProject(kind = 'audio') {
   return project;
 }
 
+test('Song render plan includes selected locally generated demo instruments',()=>{
+  const project=makeProject();project.pads[1].demoSound='bell';project.scenes= [pattern('demo-scene','Demo',0)];project.scenes[0].pads[1].steps[0]=true;
+  project.song=normaliseSong({clips:[{id:'demo-section',sceneId:'demo-scene',bars:1}]});
+  const plan=buildSongRenderPlan(project),event=plan.events.find(item=>item.kind==='demo');
+  assert.equal(event.demoSound,'bell');assert.equal(event.padId,1);
+});
+
 test('opted-in Word Remix expands source-linked cues over each four-bar Song cycle', () => {
   const project = wordRemixProject();
   const plan = buildSongRenderPlan(project, { wordRemixDurations: { 'cue-1': 1 } });
@@ -142,6 +149,7 @@ class FakeParam {
   constructor(value = 0) { this.value = value; this.events = []; }
   setValueAtTime(value, time) { this.value = value; this.events.push({ value, time }); }
   linearRampToValueAtTime(value, time) { this.value = value; this.events.push({ value, time }); }
+  exponentialRampToValueAtTime(value, time) { this.value = value; this.events.push({ value, time }); }
 }
 class FakeAudioBuffer {
   constructor(channels, length, sampleRate) {
@@ -171,6 +179,7 @@ class FakeOfflineAudioContext {
   createBufferSource() { const node = new FakeNode(); this.nodes.push(node); return node; }
   createGain() { const node = new FakeNode(); this.nodes.push(node); return node; }
   createOscillator() { const node = new FakeNode(); this.nodes.push(node); return node; }
+  createBiquadFilter() { const node = new FakeNode(); this.nodes.push(node); return node; }
   createBuffer(channels, length, sampleRate) { return new FakeAudioBuffer(channels, length, sampleRate); }
   async startRendering() { return new FakeAudioBuffer(this.channels, this.length, this.sampleRate); }
 }
@@ -195,6 +204,27 @@ test('offline WAV renderer schedules sample and MIDI events and returns an actua
   assert.ok(Math.abs(sample.started[2] - .1) < 1e-9);
   const midi = context.nodes.find(node => node.frequency.events.length);
   assert.equal(midi.frequency.events[0].value, 440);
+});
+
+test('offline WAV renderer synthesizes selected and global demo sounds without sample files',async()=>{
+  const plan={durationSeconds:1,events:[
+    {kind:'demo',trackId:'pad-1',padId:1,demoSound:'bell',startSeconds:0,durationSeconds:.5,gain:.8,speed:1,semitones:0},
+    {kind:'demo',trackId:'pad-2',padId:2,demoSound:'',startSeconds:.5,durationSeconds:.5,gain:.7,speed:1,semitones:0}
+  ]};
+  FakeOfflineAudioContext.instances.length=0;
+  await renderSongAudioWav(plan,{}, {OfflineAudioContextClass:FakeOfflineAudioContext,sampleRate:24000,makeWav:false});
+  let context=FakeOfflineAudioContext.instances.at(-1),bell=context.nodes.find(node=>node.frequency.events.some(event=>event.value===880));
+  assert.ok(bell,'the selected Bell preset should schedule its local 880 Hz oscillator');
+  assert.deepEqual(bell.started,[0]);
+  let noise=context.nodes.find(node=>node.buffer);
+  assert.ok(noise?.buffer,'the global demo fallback should synthesize its filtered noise without a source file');
+  const firstNoise=[...noise.buffer.getChannelData(0)];
+  assert.ok(firstNoise.some(value=>value!==0));
+
+  FakeOfflineAudioContext.instances.length=0;
+  await renderSongAudioWav(plan,{}, {OfflineAudioContextClass:FakeOfflineAudioContext,sampleRate:24000,makeWav:false});
+  context=FakeOfflineAudioContext.instances.at(-1);noise=context.nodes.find(node=>node.buffer);
+  assert.deepEqual([...noise.buffer.getChannelData(0)],firstNoise,'noise-based demo exports should remain deterministic across renders');
 });
 
 test('offline WAV renderer schedules and pitch-shifts Word Remix audio from its transcript source window', async () => {
