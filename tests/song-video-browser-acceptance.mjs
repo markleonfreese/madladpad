@@ -55,13 +55,14 @@ try{
       const {buildSongRenderPlan,songRenderVisualsAtTime,renderSongAudioWav}=await import('/song-render.js');
       const makePattern=(id,name)=>{
         const pads=Array.from({length:16},()=>({steps:Array(16).fill(false),stepOffsets:Array(16).fill(0)}));
-        pads[0].steps[0]=true;pads[1].steps.fill(true);return{id,name,pads};
+        pads[0].steps[0]=true;pads[1].steps.fill(true);pads[3].steps[0]=true;return{id,name,pads};
       };
       const base=makeProject();
       const project=normaliseProject({...base,bpm:90,
         pads:base.pads.map((pad,index)=>index===0?{...pad,kind:'audio',fileName:'local-tone.wav',start:0,end:2,volume:.35,speed:1,pitch:0}
           :index===1?{...pad,kind:'image',fileName:'artwork.png',start:0,end:1}
-            :index===2?{...pad,kind:'video',fileName:'speaker.webm',start:0,end:2}:pad),
+            :index===2?{...pad,kind:'video',fileName:'speaker.webm',start:0,end:2}
+              :index===3?{...pad,demoSound:'bell',name:'Demo Bell',volume:.35}:pad),
         scenes:[makePattern('a','Intro'),makePattern('b','Verse'),makePattern('c','Hook')],
         song:normaliseSong({clips:[{id:'intro',sceneId:'a',bars:8},{id:'verse',sceneId:'b',bars:16},{id:'hook',sceneId:'c',bars:24},{id:'outro',sceneId:'a',bars:24}]}),
         voice:{...base.voice,layers:[],transcripts:[
@@ -104,7 +105,7 @@ try{
     for(const check of timelineChecks){
       const kinds=check.kinds;
       const videoCount=kinds.filter(kind=>kind==='video').length;
-      if(!['video','still','midi','waveform'].every(kind=>kinds.includes(kind))||videoCount<1||videoCount>2||(check.seconds>.5&&videoCount!==2))timelineCoverage=false;
+      if(!['video','still','midi','waveform','generated'].every(kind=>kinds.includes(kind))||videoCount<1||videoCount>2||(check.seconds>.5&&videoCount!==2))timelineCoverage=false;
     }
     const composed=await renderSongVideo(plan,{audioBuffer,visualFiles,waveformBuffers:new Map([['pad-0',sourceAudio],['word-remix-audio-remix',sourceAudio]]),visualsAtTime},
     {Media,format:'auto',aspect:'16:9',onProgress:event=>{
