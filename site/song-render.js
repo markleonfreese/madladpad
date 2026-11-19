@@ -222,7 +222,13 @@ export function songRenderVisualsAtTime(project, plan, seconds) {
   }
   for (const event of plan.events) {
     if (seconds < event.startSeconds || seconds >= event.startSeconds + event.durationSeconds) continue;
-    if (event.kind === 'sample' || event.kind === 'still' || event.kind === 'demo') {
+    if (event.kind === 'demo') {
+      const pad = project.pads[event.padId];
+      visuals.push({
+        kind: 'generated', trackId: event.trackId, name: pad?.name || `Demo Pad ${event.padId + 1}`,
+        sourceSeconds: seconds - event.startSeconds, demoSound: event.demoSound || '', padId: event.padId
+      });
+    } else if (event.kind === 'sample' || event.kind === 'still') {
       const pad = project.pads[event.padId];
       const sourceSeconds = event.sourceStartSeconds + (seconds - event.startSeconds) * event.speed;
       if (event.kind === 'still' || pad?.kind === 'image') visuals.push({ kind: 'still', trackId: event.trackId, name: pad.name, sourceSeconds: 0 });

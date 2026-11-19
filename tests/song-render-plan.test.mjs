@@ -110,6 +110,9 @@ test('Song render plan includes selected locally generated demo instruments',()=
   project.song=normaliseSong({clips:[{id:'demo-section',sceneId:'demo-scene',bars:1}]});
   const plan=buildSongRenderPlan(project),event=plan.events.find(item=>item.kind==='demo');
   assert.equal(event.demoSound,'bell');assert.equal(event.padId,1);
+  const visual=songRenderVisualsAtTime(project,plan,.1).find(item=>item.trackId===event.trackId);
+  assert.deepEqual([visual.kind,visual.demoSound,visual.padId],['generated','bell',1],
+    'a demo sound gets a generated video visual without requiring a source file or waveform buffer');
 });
 
 test('opted-in Word Remix expands source-linked cues over each four-bar Song cycle', () => {

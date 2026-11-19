@@ -98,6 +98,25 @@ function drawMidi(ctx, visual, x, y, width, height, time) {
   ctx.fillText(`MIDI ${midi}`, x + 12, y + height * .31);
 }
 
+function drawGeneratedSound(ctx, visual, x, y, width, height, time) {
+  const key = String(visual.demoSound || `pad-${visual.padId ?? 0}`);
+  let hash = 2166136261;
+  for (let index = 0; index < key.length; index++) hash = Math.imul(hash ^ key.charCodeAt(index), 16777619);
+  const hue = (hash >>> 0) % 360, elapsed = Number(visual.sourceSeconds) || 0;
+  const bars = Math.max(8, Math.min(48, Math.floor(width / 10)));
+  const gap = Math.max(2, width * .012), barWidth = Math.max(2, (width - gap * (bars - 1)) / bars);
+  for (let index = 0; index < bars; index++) {
+    const energy = .16 + .84 * Math.abs(Math.sin(elapsed * (2 + index % 5) + index * .73));
+    const barHeight = Math.max(3, height * .78 * energy);
+    const barX = x + index * (barWidth + gap);
+    ctx.fillStyle = `hsla(${(hue + index * 2) % 360}, 78%, 62%, .92)`;
+    ctx.fillRect(barX, y + (height - barHeight) / 2, barWidth, barHeight);
+  }
+  ctx.fillStyle = '#f4f1e9'; ctx.font = '700 12px system-ui, sans-serif';
+  ctx.textBaseline = 'top';
+  ctx.fillText(`LOCAL SYNTH · ${(visual.demoSound || 'DEMO').toUpperCase()}`, x + 8, y + 6, Math.max(8, width - 16));
+}
+
 async function loadVisualAsset(trackId, file, Media, inputs, images) {
   if (!file) throw new Error(`The local visual source for “${trackId}” is missing.`);
   if (file.type?.startsWith('image/')) {
@@ -165,6 +184,8 @@ async function drawFrame({ ctx, canvas, Media, inputs, images, visualFiles, wave
       }
     } else if (visual.kind === 'midi') {
       drawMidi(ctx, visual, x, contentY, tileWidth, contentHeight, time);
+    } else if (visual.kind === 'generated') {
+      drawGeneratedSound(ctx, visual, x + 8, contentY + 4, tileWidth - 16, contentHeight - 8, time);
     }
     drawLabel(ctx, `${visual.name || visual.trackId}${visual.kind === 'midi' ? ` · MIDI ${visual.midi}` : ''}`, x, y, tileWidth, labelHeight, Math.max(9, Math.round(height * .025)));
   }
