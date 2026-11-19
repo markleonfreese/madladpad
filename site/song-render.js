@@ -220,9 +220,16 @@ export function songRenderVisualsAtTime(project, plan, seconds) {
     const sourceSeconds = songVideoPositionAtStep(layer, step, plan.bpm, plan.bars);
     if (sourceSeconds !== null) visuals.push({ kind: 'video', trackId: layer.id, name: layer.name, sourceSeconds });
   }
+  const latestPadTrigger = new Map();
+  for (const event of plan.events) {
+    if ((event.kind === 'sample' || event.kind === 'demo') && event.startSeconds <= seconds) {
+      latestPadTrigger.set(event.padId, Math.max(latestPadTrigger.get(event.padId) ?? -Infinity, event.startSeconds));
+    }
+  }
   for (const event of plan.events) {
     if (seconds < event.startSeconds || seconds >= event.startSeconds + event.durationSeconds) continue;
     if (event.kind === 'demo') {
+      if (latestPadTrigger.get(event.padId) > event.startSeconds) continue;
       const pad = project.pads[event.padId];
       visuals.push({
         kind: 'generated', trackId: event.trackId, name: pad?.name || `Demo Pad ${event.padId + 1}`,
