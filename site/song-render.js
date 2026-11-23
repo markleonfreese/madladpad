@@ -236,6 +236,7 @@ export function songRenderVisualsAtTime(project, plan, seconds) {
         sourceSeconds: seconds - event.startSeconds, demoSound: event.demoSound || '', padId: event.padId
       });
     } else if (event.kind === 'sample' || event.kind === 'still') {
+      if (event.kind === 'sample' && latestPadTrigger.get(event.padId) > event.startSeconds) continue;
       const pad = project.pads[event.padId];
       const sourceSeconds = event.sourceStartSeconds + (seconds - event.startSeconds) * event.speed;
       if (event.kind === 'still' || pad?.kind === 'image') visuals.push({ kind: 'still', trackId: event.trackId, name: pad.name, sourceSeconds: 0 });

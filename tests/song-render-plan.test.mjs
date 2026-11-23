@@ -314,3 +314,12 @@ test('dense demo visual retriggers do not crowd out other audible lanes',()=>{
   assert.equal(visuals.filter(v=>v.padId===2).length,1);
   assert.equal(songRenderVisualsAtTime(project,plan,.125).filter(v=>v.padId===1).length,1);
 });
+
+
+test('sample visual retriggers retain only the current source position per pad',()=>{
+  const project={pads:[{kind:'video',name:'Synthetic camera'}],voice:{videoLayers:[]}};
+  const events=[0,.25].map(startSeconds=>({kind:'sample',trackId:'pad-0',padId:0,startSeconds,durationSeconds:2,sourceStartSeconds:0,sourceEndSeconds:2,speed:1}));
+  const visuals=songRenderVisualsAtTime(project,{bpm:120,bars:1,durationSeconds:2,events},.5);
+  assert.equal(visuals.length,1);
+  assert.equal(visuals[0].sourceSeconds,.25);
+});
