@@ -1,11 +1,16 @@
+// Opt-in review artifact: MADLADPAD_VIDEO_OUTPUT=/absolute/outside/repo/video.mp4 npm run test:song-video
+// Add MADLADPAD_VIDEO_DURATION_SECONDS=192 for the full arrangement. Existing files are never overwritten.
 // Synthetic local-source encode/decode test. It does not use user media or a production service.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { readFile, writeFile } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 import { chromium } from 'playwright';
 
 const root=resolve('site');
+const outputPath=process.env.MADLADPAD_VIDEO_OUTPUT;
+if(outputPath && (!outputPath.startsWith('/') || resolve(outputPath).startsWith(resolve('.')+'/')))throw new Error('Video output must be an absolute path outside the repository.');
 const renderDurationSeconds=Number(process.env.MADLADPAD_VIDEO_DURATION_SECONDS)||2;
 const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.png':'image/png'};
 const server=createServer(async(req,res)=>{
@@ -28,7 +33,7 @@ try{
   page.on('pageerror',error=>errors.push(error.message));
   page.on('console',message=>{if(message.type()==='log'&&message.text().startsWith('LONG_VIDEO_PROGRESS'))console.log(message.text());});
   await page.goto(`http://127.0.0.1:${server.address().port}/?duration=${renderDurationSeconds}`);
-  const result=await page.evaluate(async()=>{
+  const result=await page.evaluate(async(saveArtifact)=>{
     const Media=await import('/media-codec-kit.bundle.js');
     const {renderSongVideo,songVideoDimensions}=await import('/song-video-render.js');
     const dimensions=songVideoDimensions('16:9');
@@ -120,8 +125,9 @@ try{
     const metadata={format:composed.format,codec:composed.codec,size:composed.blob.size,duration:await videoTrack.computeDuration(),
       audioDuration:await audioTrack.computeDuration(),width:decoded.displayWidth,height:decoded.displayHeight,progress:lastProgress};
     decoded.close();input.dispose();
-    return {metadata,dimensions,sourceFormat:source.format,secondSourceFormat:sourceTwo.format,timelineChecks,timelineCoverage};
-  });
+    const artifact=saveArtifact?await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=()=>reject(reader.error);reader.readAsDataURL(composed.blob);}):null;
+    return {artifact,metadata,dimensions,sourceFormat:source.format,secondSourceFormat:sourceTwo.format,timelineChecks,timelineCoverage};
+  },Boolean(outputPath));
   assert.deepEqual(result.dimensions,{width:640,height:360});
   assert.ok(['mp4','webm'].includes(result.metadata.format));
   assert.equal(result.secondSourceFormat,'webm','the local renderer should support the browser-native WebM fallback as well as MP4');
@@ -136,6 +142,13 @@ try{
     assert.deepEqual(result.timelineChecks.map(check=>check.section),['a','b','c','a','a']);
   }
   assert.deepEqual(errors,[]);
+  if(outputPath){
+    assert.equal(extname(outputPath),'.'+result.metadata.format,'Output extension must match the actual encoded format');
+    const bytes=Buffer.from(result.artifact,'base64');
+    assert.equal(bytes.length,result.metadata.size);
+    await writeFile(outputPath,bytes,{flag:'wx'});
+    console.log(`Saved synthetic ${result.metadata.format} artifact: ${outputPath}; SHA256 ${createHash('sha256').update(bytes).digest('hex')}. Human viewing/listening is still required.`);
+  }
   console.log(`Synthetic offline video encode/decode passed: ${JSON.stringify(result.metadata)}; two local video tiles, video-backed Word Remix, local artwork, MIDI visualization and generated audio.`);
 }finally{
   await browser?.close();
