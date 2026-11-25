@@ -1,4 +1,4 @@
-import { clamp, MAX_MELODY_NOTES, MAX_MELODY_STEPS, MELODY_SCALES, melodyPositionLabel, midiNoteName } from './core.js';
+import { clamp, MAX_MELODY_NOTES, MAX_MELODY_STEPS, MELODY_SCALES, melodyClipEvents, melodyPositionLabel, midiNoteName } from './core.js';
 
 const AXIS=84,TOP=22,ROW=16,ROWS=24,HEIGHT=TOP+ROW*ROWS,STEP=16;
 const view={firstBar:1,bars:2,lowestMidi:48,drawLength:4,scaleGuide:true};
@@ -195,4 +195,69 @@ export function attachInteractions(svg,{notes,start,end,width,high,onChange,onAu
     }else return;
     onChange(index);
   });
+}
+
+
+// A synthetic full-phrase note lets the existing scheduler calculate placement,
+// independently of the actual note contents. No playback or project mutation.
+export function melodyClipMapBars(clip,songBars){
+  const total=clamp(Math.round(songBars)||1,1,MAX_MELODY_STEPS/16),cells=Array(total).fill('outside');
+  if(!clip)return cells;
+  const duration=clamp(Math.round(clip.patternBars??1),1,MAX_MELODY_STEPS/16)*16;
+  const windows=melodyClipEvents({...clip,notes:[{step:0,duration}]},total);
+  if(!windows.length)return cells;
+  if(clip.repeatEnabled){
+    const end=Number.isFinite(clip.placementEndBar)?Math.min(total,clamp(Math.round(clip.placementEndBar),1,MAX_MELODY_STEPS/16)-1):total;
+    for(let bar=Math.floor(windows[0].step/16);bar<end;bar++)cells[bar]='gap';
+  }
+  for(const {step,duration:span} of windows){
+    const first=Math.floor(step/16),last=Math.ceil((step+span)/16)-1;
+    for(let bar=first;bar<=last;bar++)if(cells[bar]!=='start')cells[bar]='phrase';
+    cells[first]='start';
+  }
+  return cells;
+}
+
+export function renderMelodyClipMap(host,melody,songBars,onSelect){
+  const doc=host.ownerDocument,clips=melody.clips||[],actualBars=Number(songBars)||0;
+  const previewBars=Math.max(16,...clips.map(clip=>{
+    const start=Math.ceil((clip.startStep||0)/16),span=clip.patternBars||1;
+    return Number.isFinite(clip.placementEndBar)?clip.placementEndBar-1:start+span+(clip.repeatEnabled?(clip.repeatPhaseBars||0)+2*(clip.repeatEveryBars||span):0);
+  }));
+  const total=clamp(Math.round(actualBars||previewBars),1,MAX_MELODY_STEPS/16),pageSize=16;
+  const page=clamp(Math.floor(((Number(host.dataset.firstBar)||1)-1)/pageSize),0,Math.ceil(total/pageSize)-1);
+  const first=page*pageSize+1,last=Math.min(total,first+pageSize-1);
+  host.dataset.firstBar=String(first);
+  host.replaceChildren();
+  const make=(tag,cls,label)=>{const node=doc.createElement(tag);if(cls)node.className=cls;if(label)node.textContent=label;return node;};
+  const toolbar=make('div','melody-map-toolbar');
+  for(const [label,offset] of [['Previous MIDI map bars',-pageSize],['Next MIDI map bars',pageSize]]){
+    const button=make('button','pill-button',offset<0?'‹':'›');button.type='button';
+    button.setAttribute('aria-label',label);button.disabled=offset<0?first===1:last===total;
+    button.addEventListener('click',()=>{
+      host.dataset.firstBar=String(first+offset);renderMelodyClipMap(host,melody,songBars,onSelect);
+      const next=host.querySelector('[aria-label="'+label+'"]');
+      if(next&&!next.disabled)next.focus();
+      else host.querySelector('[aria-label="'+(offset<0?'Next MIDI map bars':'Previous MIDI map bars')+'"]')?.focus();
+    });toolbar.append(button);
+  }
+  toolbar.append(make('span','',(actualBars?'Song':'Phrase preview')+' · bars '+first+'–'+last+' of '+total));host.append(toolbar);
+  const standalone=make('button','melody-map-lane','Melody · standalone notes ('+(melody.notes?.length||0)+')');
+  standalone.type='button';standalone.setAttribute('aria-pressed',String(!melody.activeClipId));standalone.setAttribute('aria-label','Edit standalone melody');
+  standalone.addEventListener('click',()=>onSelect(''));host.append(standalone);
+  if(!clips.length){host.append(make('p','voice-note','Create a MIDI clip to see its phrase placement here.'));return;}
+  const ruler=make('div','melody-map-ruler');ruler.setAttribute('aria-hidden','true');
+  for(let bar=first;bar<=last;bar++)ruler.append(make('span','',String(bar)));
+  host.append(ruler);
+  for(const clip of clips){
+    const states=melodyClipMapBars(clip,total).slice(first-1,last),lane=make('button','melody-map-lane');
+    lane.type='button';lane.setAttribute('aria-pressed',String(clip.id===melody.activeClipId));lane.setAttribute('aria-label','Edit MIDI clip '+clip.name);
+    const starts=states.flatMap((state,index)=>state==='start'?[first+index]:[]);
+    const gapCount=states.filter(state=>state==='gap').length;
+    const name=make('span','melody-map-name',clip.name+' · '+clip.patternBars+' bars · '+(clip.repeatEnabled?'every '+clip.repeatEveryBars+' bars':'once'));
+    const summary=make('span','melody-map-summary',(starts.length?'Starts '+starts.join(', '):states.includes('phrase')?'Phrase continues here':'No phrase starts in view')+(gapCount?' · '+gapCount+' gap bars':''));
+    const grid=make('span','melody-map-cells');grid.setAttribute('aria-hidden','true');
+    states.forEach((state,index)=>{const cell=make('span','melody-map-cell');cell.dataset.state=state;cell.title='Bar '+(first+index)+' · '+state;grid.append(cell);});
+    lane.append(name,summary,grid);lane.addEventListener('click',()=>onSelect(clip.id));host.append(lane);
+  }
 }

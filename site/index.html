@@ -290,6 +290,8 @@
           <label class="consent-line"><input id="melody-follow-beat" type="checkbox"> Loop the melody and harmony automatically with Sequence and include them in recorded mixes.</label>
           <section class="melody-clips" aria-labelledby="melody-clips-title">
             <div class="melody-clips-heading"><div><h4 id="melody-clips-title">MIDI clips</h4><p class="voice-note">Each clip owns an editable phrase. Its repeat period is independent of phrase length; gaps stay silent. Existing Melody notes are preserved.</p></div><button class="pill-button" id="melody-clip-add" type="button">NEW MIDI CLIP</button></div>
+            <div id="melody-clip-map" class="melody-clip-map" role="group" aria-label="Visual MIDI clip arrangement"></div>
+            <p class="voice-note">Select a lane to edit it. Filled bars show phrase placement, the brighter bar marks its start, and dotted bars are repeat gaps. This map shows the phrase structure, not whether every bar contains sound.</p>
             <div class="melody-clip-toolbar">
               <label>EDIT LANE<select id="melody-lane-select" aria-label="Piano roll lane"></select></label>
               <label class="melody-clip-only">CLIP NAME<input id="melody-clip-name" maxlength="48" aria-label="MIDI clip name"></label>

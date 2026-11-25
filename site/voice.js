@@ -2,7 +2,7 @@ import { clamp, boundTranscriptWordTimes, midiFrequency, midiNoteName, melodyPos
 import { getValue, saveVoiceLayer, deleteVoiceLayer, saveSongVideoLayer, deleteSongVideoLayer, beginAudioRecordingRecovery, appendAudioRecordingRecoveryChunk, listInterruptedAudioRecordings, deleteInterruptedAudioRecording, beginVideoRecordingRecovery, appendVideoRecordingRecoveryChunk, listInterruptedVideoRecordings, deleteInterruptedVideoRecording } from './storage.js';
 import { detectPitch } from './tuner.js';
 import { analyseLyrics } from './lyric-intelligence.js';
-import { renderMelodyRoll } from './melody-roll.js';
+import { renderMelodyRoll, renderMelodyClipMap } from './melody-roll.js';
 import { createMidiKeyboard, appendMidiStepNote } from './midi-keyboard.js';
 import { buildSongRenderPlan, renderSongAudioWav, songRenderVisualsAtTime } from './song-render.js';
 import { renderSongVideo } from './song-video-render.js';
@@ -378,6 +378,11 @@ function renderMelody(project, save, onAudition, rollFocusIndex) {
     $('melody-clip-status').textContent=`${selectedClip.patternBars}-bar phrase · ${selectedClip.repeatEnabled?`repeats every ${selectedClip.repeatEveryBars} bars`:'one-shot'} · starts bar ${Math.floor(selectedClip.startStep/16)+1}${selectedClip.repeatEnabled&&selectedClip.repeatPhaseBars?` with ${selectedClip.repeatPhaseBars}-bar first offset`:''} · ${selectedClip.placementEndBar?`stops before bar ${selectedClip.placementEndBar}`:'stops at Song end'}.`;
   }else $('melody-clip-status').textContent=`${melody.clips.length} of ${MAX_MELODY_CLIPS} MIDI clips. Create a clip to edit an independent phrase and placement.`;
   laneSelect.onchange=()=>{melody.activeClipId=laneSelect.value;save();renderMelody(project,save,onAudition);};
+  renderMelodyClipMap($('melody-clip-map'),melody,songTotalBars(project.song),id=>{
+    if(id===(selectedClip?.id||''))return;
+    laneSelect.value=id;laneSelect.onchange();
+    $('melody-clip-map').querySelector('.melody-map-lane[aria-pressed="true"]')?.focus();
+  });
   $('melody-clip-add').disabled=melody.clips.length>=MAX_MELODY_CLIPS;
   $('melody-clip-add').onclick=()=>{
     if(melody.clips.length>=MAX_MELODY_CLIPS)return;
