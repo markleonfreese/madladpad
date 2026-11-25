@@ -410,7 +410,7 @@ function renderMelody(project, save, onAudition, rollFocusIndex) {
   const noteLimit=selectedClip?selectedClip.patternBars*16:MAX_MELODY_STEPS;
   const drawRoll = focusIndex => renderMelodyRoll($('melody-roll'),notes,index=>{
     save();renderMelody(project,save,onAudition,index);
-  },onAudition,focusIndex,noteLimit);
+  },onAudition,focusIndex,noteLimit,{key:melody.key,scale:melody.scale});
   notes.forEach((note, index) => {
     const row = document.createElement('div'); row.className = 'melody-note';
     const noteLabel = `${note.layer === 'harmony' ? 'Harmony' : 'Note'} ${index + 1}`;
@@ -2131,10 +2131,11 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     transcript.words.forEach(word => { word.selected = false; }); save(); render();
   });
   $('melody-tuning').addEventListener('change', () => { project.voice.melody.tuning = clamp($('melody-tuning').value, 400, 480); save(); renderMelody(project, save,auditionMelodyNote); });
-  $('melody-key').addEventListener('change', () => { project.voice.melody.key = clamp(Math.round($('melody-key').value), 0, 11); save(); });
-  $('melody-scale').addEventListener('change', () => { const scale = $('melody-scale').value; if (Object.hasOwn(MELODY_SCALES, scale)) { project.voice.melody.scale = scale; save(); } });
+  $('melody-key').addEventListener('change', () => { project.voice.melody.key = clamp(Math.round($('melody-key').value), 0, 11); save(); renderMelody(project,save,auditionMelodyNote); });
+  $('melody-scale').addEventListener('change', () => { const scale = $('melody-scale').value; if (Object.hasOwn(MELODY_SCALES, scale)) { project.voice.melody.scale = scale; save(); renderMelody(project,save,auditionMelodyNote); } });
   $('melody-snap-scale').addEventListener('click', () => {
-    const notes = project.voice.melody.notes;
+    const melody=project.voice.melody;
+    const notes=melody.clips.find(clip=>clip.id===melody.activeClipId)?.notes||melody.notes;
     if (!notes.length) { $('melody-scale-status').textContent = 'Add melody notes before snapping them to a scale.'; return; }
     let changed = 0;
     notes.forEach((note, index) => {

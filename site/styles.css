@@ -558,6 +558,12 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
 .melody-roll-scroll{overflow-x:auto;border:1px solid #35463a;border-radius:6px;background:#111812}
 .melody-roll-svg{display:block;width:100%;min-width:270px;height:406px;touch-action:none}
 .melody-roll-key{fill:#a9b9a8;font:11px var(--mono)}
+.melody-piano-key{fill:#dce6d9;stroke:#8c9e8b;stroke-width:.5;cursor:pointer}
+.melody-piano-key.accidental{fill:#35443b;stroke:#758577}
+.melody-piano-key:focus{stroke:#f1d977;stroke-width:2;outline:none}
+.melody-piano-label{fill:#17201a;font:10px var(--mono)}
+.melody-piano-label.accidental{fill:#e1e9df}
+.melody-roll-toolbar button[aria-pressed="true"]{border-color:var(--acid);color:var(--acid)}
 .melody-roll-bar-label{fill:#d7e5d3;font:11px var(--mono)}
 .melody-roll-row{stroke:#29362c;stroke-width:.7;pointer-events:none}
 .melody-roll-step{stroke:#253127;stroke-width:.5;pointer-events:none}

@@ -1241,6 +1241,25 @@ try {
   assert.equal(Number(await page.locator('#melody-roll [data-resize-index="2"]').getAttribute('aria-valuenow')),6,'drag across six cells should create a six-step note');
   await page.locator('#melody-roll [data-note-index="2"]').focus();
   await page.keyboard.press('Delete');
+  // The guide is non-destructive and a tap uses the selected note length.
+  const tapLength=page.getByRole('combobox',{name:'Piano roll tap note length'});
+  await tapLength.selectOption('2');
+  const lengthBox=await rollSvg.boundingBox();
+  const lengthScale=lengthBox.width/596;
+  await page.mouse.click(lengthBox.x+(84+4*16+8)*lengthScale,lengthBox.y+206);
+  assert.equal(Number(await page.locator('#melody-roll [data-resize-index="2"]').getAttribute('aria-valuenow')),2);
+  const guideButton=page.getByRole('button',{name:'Show scale guidance in piano roll'});
+  assert.equal(await guideButton.getAttribute('aria-pressed'),'true');
+  await guideButton.click();
+  assert.equal(await page.locator('#melody-roll [data-scale-role="root"]').count(),0);
+  assert.equal(await page.locator('#melody-notes .melody-note').count(),3);
+  await guideButton.click();
+  assert.ok(await page.locator('#melody-roll [data-scale-role="root"]').count()>0);
+  await page.locator('#melody-roll [data-piano-midi="60"]').click();
+  assert.equal(await page.locator('#melody-notes .melody-note').count(),3,'piano keys audition without adding notes');
+  await page.locator('#melody-roll [data-note-index="2"]').focus();
+  await page.keyboard.press('Delete');
+  await tapLength.selectOption('4');
   await page.locator('#melody-play').click();
   await page.locator('#melody-follow-beat').check();
   await page.locator('[data-voice-jump="rap-title"]').click();
