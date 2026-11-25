@@ -306,6 +306,13 @@
           <section class="melody-roll-panel" aria-labelledby="melody-roll-title">
             <h4 id="melody-roll-title">Piano roll · up to 256 bars</h4>
             <p class="voice-note">Tap piano keys to hear pitches. Use the scale guide for tonal hints, then tap a lane with your chosen note length or drag to draw a custom length. Tap a note to audition; drag to move or pull its right edge to resize. Focus a note and use arrows to edit, Enter to audition or Delete to remove. Set dynamics and exact values in Note details below.</p>
+            <div class="melody-midi-controls" role="group" aria-label="MIDI keyboard">
+              <button class="pill-button" id="connect-melody-midi" type="button" aria-pressed="false">Connect MIDI keyboard</button>
+              <span id="melody-midi-connection" class="voice-note" role="status">MIDI disconnected.</span>
+              <label class="consent-line"><input type="checkbox" id="melody-midi-step-entry" disabled> Step entry (write played notes)</label>
+              <label class="voice-label">NEXT STEP (1-based)<input id="melody-midi-step" aria-label="MIDI step entry position" type="number" min="1" max="4096" step="1" value="1" inputmode="numeric"></label>
+              <p class="voice-note">Play live polyphonic tones with velocity, or enable step entry to place each played note at the next step using the piano roll's tap length. Step entry is sequential, not real-time recording. Only active in Melody writing; sampler pads retain their MIDI mapping.</p>
+            </div>
             <div id="melody-roll" aria-label="Interactive Melody piano roll"></div>
           </section>
           <h4 class="melody-note-list-title">Note details</h4>

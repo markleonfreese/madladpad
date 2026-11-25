@@ -3,6 +3,7 @@ import { getValue, saveVoiceLayer, deleteVoiceLayer, saveSongVideoLayer, deleteS
 import { detectPitch } from './tuner.js';
 import { analyseLyrics } from './lyric-intelligence.js';
 import { renderMelodyRoll } from './melody-roll.js';
+import { createMidiKeyboard, appendMidiStepNote } from './midi-keyboard.js';
 import { buildSongRenderPlan, renderSongAudioWav, songRenderVisualsAtTime } from './song-render.js';
 import { renderSongVideo } from './song-video-render.js';
 
@@ -408,6 +409,9 @@ function renderMelody(project, save, onAudition, rollFocusIndex) {
   $('melody-clip-end').onchange=event=>updateClip('placementEndBar',event.target.value);
   $('melody-clip-repeat').onchange=event=>updateClip('repeatEnabled',event.target.checked);
   const noteLimit=selectedClip?selectedClip.patternBars*16:MAX_MELODY_STEPS;
+  const midiStep=$('melody-midi-step'),midiEntry=$('melody-midi-step-entry'),laneId=selectedClip?.id||'';
+  if(midiStep.dataset.lane!==laneId){midiStep.dataset.lane=laneId;midiStep.value='1';midiEntry.checked=false;}
+  midiStep.max=String(noteLimit);midiStep.value=String(clamp(Math.round(Number(midiStep.value)||1),1,noteLimit));
   const drawRoll = focusIndex => renderMelodyRoll($('melody-roll'),notes,index=>{
     save();renderMelody(project,save,onAudition,index);
   },onAudition,focusIndex,noteLimit,{key:melody.key,scale:melody.scale});
@@ -570,6 +574,7 @@ function renderRap(project, save, audio, notify) {
 
 export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTransport, notify, save, assignWordsToPads, onTimelineScale, rememberAudioTake, rememberVideoTake }) {
   const project = getProject(), audio = getAudio();
+  const midiKeyboard=createMidiKeyboard({start:startMidiKeyboardNote});
   let activeTranscript = null;
   let activeWordPreview = null;
   let wordPreviewToken = 0;
@@ -2219,6 +2224,41 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     save(); renderMelody(project, save,auditionMelodyNote);
     notify(`${added} harmony note${added === 1 ? '' : 's'} added at ${interval > 0 ? '+' : ''}${interval} semitones${skipped ? `; ${skipped} skipped` : ''}.`);
   });
+  function stopMidiKeyboard(){
+    midiKeyboard.stopAll();
+    $('melody-midi-step-entry').checked=false;
+  }
+  function startMidiKeyboardNote(message){
+    const {midi,velocity}=message;
+    // Polyphonic held-note preview, independent of transport and note-entry.
+    let stopped=false,release=null;
+    audio.unlock().then(()=>{
+      if(stopped)return;
+      const ctx=audio.context,now=ctx.currentTime,osc=ctx.createOscillator(),gain=ctx.createGain();
+      osc.type='triangle';osc.frequency.setValueAtTime(midiFrequency(midi,project.voice.melody.tuning),now);
+      gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(.08*velocity/127,now+.008);
+      osc.connect(gain).connect(audio.master);
+      osc.onended=()=>{osc.disconnect();gain.disconnect();};
+      osc.start(now);osc.stop(now+60); // safety bound if the controller never sends note-off
+      release=()=>{
+        const end=ctx.currentTime;
+        if(end>=now+60)return;
+        gain.gain.cancelScheduledValues(end);gain.gain.setTargetAtTime(0,end,.008);
+        osc.stop(Math.min(now+60,end+.045));
+      };
+    }).catch(error=>notify('MIDI preview unavailable: '+error.message));
+    const entry=$('melody-midi-step-entry');
+    if(entry.checked&&!entry.disabled){
+      const melody=project.voice.melody,clip=melody.clips.find(item=>item.id===melody.activeClipId),notes=clip?.notes||melody.notes,limit=clip?clip.patternBars*16:MAX_MELODY_STEPS;
+      const cursor=$('melody-midi-step'),length=Number(document.querySelector('#melody-roll [aria-label="Piano roll tap note length"]')?.value)||4;
+      const result=appendMidiStepNote(notes,Math.round(Number(cursor.value)||1)-1,limit,midi,velocity,length);
+      if(result){
+        cursor.value=String(Math.min(limit,result.nextStep+1));save();renderMelody(project,save,auditionMelodyNote,result.index);
+        if(result.nextStep>=limit){entry.checked=false;notify('End of MIDI lane. Choose a new step to continue.');}
+      }else{entry.checked=false;notify('MIDI step entry stopped: lane is full or cursor is outside it.');}
+    }
+    return ()=>{stopped=true;release?.();};
+  }
   function scheduleMelodyNote(note,start,secondsPerStep){
     const length=note.duration*secondsPerStep;
     const cue=note.word&&project.voice.phrases.flatMap(phrase=>phrase.words).find(word=>word.text===note.word&&audio.sources.get(word.sourcePad)?.file);
@@ -2344,6 +2384,8 @@ export async function initVoiceLab({ getProject, getMediaFiles, getAudio, getTra
     renderSongAudioExport,
     stopSongVideoVisualPlayback,
     stopTuner,
+    stopMidiKeyboard,
+    handleMidiKeyboard(source,data){midiKeyboard.handle(source,data);},
     refreshTimeline() { renderOverdubTimeline(); },
     transportChanged() { updateSongCycleControlAvailability();updateOverdubControls(); },
     isRecording() { return Boolean(vocalRecording||videoRecording||videoRecordingActivity.phase==='starting'); },

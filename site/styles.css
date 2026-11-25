@@ -548,6 +548,10 @@ body.pad-edit-mode .pad .pad-hit:focus-visible{outline-color:var(--coral)}
 .melody-clip-toolbar .pill-button{min-height:44px}
 .melody-clip-status{min-height:1.5em;margin:8px 0 0;color:var(--acid);font-size:14px;line-height:1.5}
 .melody-clip-only[hidden]{display:none!important}
+.melody-midi-controls{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0 12px}
+.melody-midi-controls .pill-button,.melody-midi-controls input[type=number]{min-height:44px}
+.melody-midi-controls .voice-note:last-child{flex-basis:100%;margin:0}
+.melody-midi-controls .voice-label input{max-width:125px}
 .melody-roll-panel h4,.melody-note-list-title{margin:0 0 6px;color:#dce9d8;font-size:14px}
 .melody-roll-panel>.voice-note{margin:6px 0 10px;font-size:14px}
 .melody-roll-toolbar{display:flex;flex-wrap:wrap;align-items:end;gap:7px;margin:8px 0}

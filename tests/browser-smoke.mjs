@@ -1241,6 +1241,27 @@ try {
   assert.equal(Number(await page.locator('#melody-roll [data-resize-index="2"]').getAttribute('aria-valuenow')),6,'drag across six cells should create a six-step note');
   await page.locator('#melody-roll [data-note-index="2"]').focus();
   await page.keyboard.press('Delete');
+  // Mock Web MIDI without requesting a physical-device permission.
+  await page.evaluate(()=>{
+    const input={id:'synthetic-test-midi',state:'connected',onmidimessage:null};
+    const access={inputs:new Map([[input.id,input]]),onstatechange:null};
+    Object.defineProperty(navigator,'requestMIDIAccess',{configurable:true,value:async()=>access});
+    window.__testMidiSend=data=>input.onmidimessage?.({data:new Uint8Array(data)});
+  });
+  await page.locator('#connect-melody-midi').click();
+  await page.waitForFunction(()=>document.querySelector('#melody-midi-connection').textContent.includes('1 MIDI input connected'));
+  await page.evaluate(()=>{window.__testMidiSend([0x90,60,88]);window.__testMidiSend([0x80,60,0]);});
+  assert.equal(await page.locator('#melody-notes .melody-note').count(),2,'live keyboard audition must not add notes unless armed');
+  await page.locator('#melody-midi-step').fill('1029');
+  await page.locator('#melody-midi-step-entry').check();
+  await page.evaluate(()=>{window.__testMidiSend([0x90,67,83]);window.__testMidiSend([0x90,67,0]);});
+  assert.equal(await page.locator('#melody-notes .melody-note').count(),3,'armed MIDI entry adds exactly one note');
+  assert.equal(await page.locator('#melody-notes input[aria-label="Note 3 MIDI velocity"]').inputValue(),'83');
+  assert.equal(await page.locator('#melody-midi-step').inputValue(),'1033');
+  await page.locator('#melody-roll [data-note-index="2"]').focus();
+  await page.keyboard.press('Delete');
+  await page.locator('#connect-melody-midi').click();
+  assert.equal(await page.locator('#melody-midi-step-entry').isChecked(),false,'disconnect disarms step entry');
   // The guide is non-destructive and a tap uses the selected note length.
   const tapLength=page.getByRole('combobox',{name:'Piano roll tap note length'});
   await tapLength.selectOption('2');
