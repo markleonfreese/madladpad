@@ -301,3 +301,25 @@ test('offline WAV renderer rejects invalid local trims and over-limit reversed v
   await assert.rejects(renderSongAudioWav(reversePlan, { vocals: new Map([['vocal', oversized]]) }, { OfflineAudioContextClass: FakeOfflineAudioContext }), /exceeds the local reverse-buffer limit/);
   assert.equal(FakeOfflineAudioContext.instances.length, 0, 'invalid source work is rejected before allocating the offline renderer');
 });
+
+
+test('dense demo visual retriggers do not crowd out other audible lanes',()=>{
+  const project=makeProject();
+  const events=Array.from({length:8},(_,i)=>({kind:'demo',trackId:'demo',padId:1,demoSound:'bell',startSeconds:i*.125,durationSeconds:2}));
+  events.push({kind:'demo',trackId:'other',padId:2,demoSound:'bass',startSeconds:0,durationSeconds:2});
+  const plan={durationSeconds:3,bpm:120,bars:1,events};
+  const visuals=songRenderVisualsAtTime(project,plan,1);
+  assert.equal(visuals.filter(v=>v.padId===1).length,1);
+  assert.equal(visuals.find(v=>v.padId===1).sourceSeconds,.125);
+  assert.equal(visuals.filter(v=>v.padId===2).length,1);
+  assert.equal(songRenderVisualsAtTime(project,plan,.125).filter(v=>v.padId===1).length,1);
+});
+
+
+test('sample visual retriggers retain only the current source position per pad',()=>{
+  const project={pads:[{kind:'video',name:'Synthetic camera'}],voice:{videoLayers:[]}};
+  const events=[0,.25].map(startSeconds=>({kind:'sample',trackId:'pad-0',padId:0,startSeconds,durationSeconds:2,sourceStartSeconds:0,sourceEndSeconds:2,speed:1}));
+  const visuals=songRenderVisualsAtTime(project,{bpm:120,bars:1,durationSeconds:2,events},.5);
+  assert.equal(visuals.length,1);
+  assert.equal(visuals[0].sourceSeconds,.25);
+});
