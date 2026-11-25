@@ -3,6 +3,7 @@ import { SamplerAudio } from './audio.js';
 import { getValue, putValue, deleteValue, collectProjectMedia, collectVoiceMedia, collectSongVideoMedia, blobAsDataUrl, dataUrlAsBlob, replaceProjectMedia, saveCapturedPad } from './storage.js';
 import { isGooglePickerConfigured, pickFromDrive, pickFromPhotos } from './google.js';
 import { initVoiceLab } from './voice.js';
+import { decodeMidiMessage, midiInputTarget } from './midi-keyboard.js';
 import { detectPitch } from './tuning.js';
 import { processInputFiles } from './file-input.js';
 
@@ -21,6 +22,8 @@ let selectedSampleNote = null;
 let notePointer = null;
 let audio;
 let voiceLab = null;
+let midiAccess=null,midiConnecting=false;
+const midiInputs=new Map();
 let transportTimer = null;
 const transportActivity = new AsyncActivity();
 let nextStep = 0;
@@ -102,7 +105,7 @@ function showStudioScreen() {
   if(screen!=='beats' && $('sample-note-dialog')?.open)$('sample-note-dialog').close();
   if(screen!=='sounds'&&padEditMode)setPadEditMode(false);
   if(screen!=='sounds' && $('sample-editor-dialog')?.open)closeSampleEditor();
-  if (screen !== 'voice') voiceLab?.stopTuner?.('Melody & Rhythm closed. Microphone is off.');
+  if (screen !== 'voice') {voiceLab?.stopTuner?.('Melody & Rhythm closed. Microphone is off.');voiceLab?.stopMidiKeyboard?.();}
   document.body.dataset.screen = screen;
   // Beat Maker owns the sequencer; Tracks shows only its own editing workspace.
   const workspace=$('studio-workspace'),sequencer=$('sequencer');
@@ -191,7 +194,7 @@ function startDemoBeat(){
 function showVoiceTool(tool,{focus=false}={}) {
   const allowed=['transcript-title','melody-title','rap-title'];
   if(!allowed.includes(tool))return;
-  if(activeVoiceTool==='melody-title'&&tool!=='melody-title')voiceLab?.stopTuner?.('Melody tool closed. Microphone is off.');
+  if(activeVoiceTool==='melody-title'&&tool!=='melody-title'){voiceLab?.stopTuner?.('Melody tool closed. Microphone is off.');voiceLab?.stopMidiKeyboard?.();}
   activeVoiceTool=tool;
   for(const button of document.querySelectorAll('[data-voice-jump]')){
     button.setAttribute('aria-pressed',String(button.dataset.voiceJump===tool));
@@ -251,7 +254,7 @@ function notify(message) {
   toastTimer = setTimeout(() => toast.classList.remove('show'), 5000);
 }
 
-function replaceProjectState(next) { Object.assign(project, next); }
+function replaceProjectState(next) { voiceLab?.stopMidiKeyboard?.();Object.assign(project, next); }
 
 function persistProject(revision, snapshot) {
   return putValue('project', snapshot).then(() => {
@@ -291,9 +294,10 @@ function queueSave() {
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') flushSave();
+  if (document.visibilityState === 'hidden') {voiceLab?.stopMidiKeyboard?.();flushSave();}
 });
-window.addEventListener('pagehide', flushSave);
+window.addEventListener('pagehide',()=>{voiceLab?.stopMidiKeyboard?.();flushSave();});
+window.addEventListener('blur',()=>voiceLab?.stopMidiKeyboard?.());
 
 function buildGrid() {
   const grid = $('pad-grid');
@@ -2438,19 +2442,56 @@ function bindControls() {
     if(id>=0 && id<PAD_COUNT[project.layout]){event.preventDefault();playPad(id);keys.add(key);}
   });
   document.addEventListener('keyup',event=>keys.delete(event.key.toUpperCase()));
-  $('connect-midi').addEventListener('click',async()=>{
-    if(!navigator.requestMIDIAccess)return notify('Web MIDI is not supported by this browser. Touch and keyboard are ready.');
-    try {
-      const midi=await navigator.requestMIDIAccess();
-      const bind=input=>input.onmidimessage=event=>{
-        const [status,note,velocity]=event.data;
-        if((status&0xf0)===0x90 && velocity>0 && note>=36 && note<36+PAD_COUNT[project.layout])playPad(note-36);
+  const updateMidiConnection=()=>{
+    const count=midiInputs.size;
+    for(const id of ['connect-midi','connect-melody-midi']){
+      const button=$(id);button.disabled=midiConnecting;
+      button.textContent=midiConnecting?'Connecting MIDI…':midiAccess?'Disconnect MIDI':'Connect MIDI keyboard';
+      button.setAttribute('aria-pressed',String(Boolean(midiAccess)));
+    }
+    $('melody-midi-connection').textContent=midiAccess?(count?count+' MIDI input'+(count===1?'':'s')+' connected.':'MIDI enabled; connect a keyboard.'):'MIDI disconnected.';
+    $('melody-midi-step-entry').disabled=!count;
+    if(!count)voiceLab?.stopMidiKeyboard?.();
+  };
+  const syncMidiInputs=()=>{
+    const available=new Map([...midiAccess.inputs.values()].filter(input=>input.state!=='disconnected').map(input=>[input.id,input]));
+    for(const [id,input] of midiInputs){
+      if(available.get(id)!==input){input.onmidimessage=null;midiInputs.delete(id);voiceLab?.stopMidiKeyboard?.();}
+    }
+    for(const [id,input] of available){
+      if(midiInputs.has(id))continue;
+      midiInputs.set(id,input);
+      input.onmidimessage=event=>{
+        const target=midiInputTarget(document.body.dataset.screen,activeVoiceTool,document.hidden,Boolean(document.querySelector('dialog[open]')));
+        if(target==='melody'){voiceLab?.handleMidiKeyboard?.(id,event.data);return;}
+        if(!target){voiceLab?.stopMidiKeyboard?.();return;}
+        const message=decodeMidiMessage(event.data);
+        if(message?.type==='on'&&message.midi>=36&&message.midi<36+PAD_COUNT[project.layout])playPad(message.midi-36);
       };
-      for(const input of midi.inputs.values())bind(input);
-      midi.onstatechange=()=>{for(const input of midi.inputs.values())bind(input);};
-      notify('MIDI connected. Note On 36–51 maps to pads 1–16.');
-    } catch(error){notify(`MIDI access failed: ${error.message}`);}
-  });
+    }
+    updateMidiConnection();
+  };
+  const toggleMidi=async()=>{
+    if(midiConnecting)return;
+    if(midiAccess){
+      midiAccess.onstatechange=null;
+      for(const input of midiInputs.values())input.onmidimessage=null;
+      midiInputs.clear();midiAccess=null;voiceLab?.stopMidiKeyboard?.();updateMidiConnection();return;
+    }
+    if(!navigator.requestMIDIAccess)return notify('Web MIDI is not supported by this browser. Touch and computer keyboard are available.');
+    midiConnecting=true;updateMidiConnection();
+    try{
+      const audioReady=audio.unlock().catch(()=>{});
+      midiAccess=await navigator.requestMIDIAccess({sysex:false});
+      await audioReady;
+      midiAccess.onstatechange=syncMidiInputs;syncMidiInputs();
+      notify('MIDI connected. Play the melody or use notes 36–51 on sampler pads.');
+    }catch(error){midiAccess=null;notify('MIDI access failed: '+error.message);}
+    finally{midiConnecting=false;updateMidiConnection();}
+  };
+  $('connect-midi').addEventListener('click',toggleMidi);
+  $('connect-melody-midi').addEventListener('click',toggleMidi);
+  updateMidiConnection();
 }
 
 async function initialise() {
