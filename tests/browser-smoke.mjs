@@ -1320,6 +1320,16 @@ try {
   assert.equal(await page.locator('#melody-notes input[aria-label="Note 1 sixteenth step"]').getAttribute('max'),'31','the selected clip piano roll should constrain notes to its two-bar source phrase');
   await page.locator('#melody-add').click();
   assert.equal(await page.locator('#melody-notes .melody-note').count(),legacyMelodyCount+1,'adding notes while a MIDI clip is selected should edit only that independent phrase');
+  // Scale snap applies to the active MIDI clip, not the standalone lane.
+  const clipPitch=page.locator('#melody-notes select[aria-label="Note 1 pitch"]');
+  const pitchBeforeClipSnap=await clipPitch.inputValue();
+  await clipPitch.selectOption('63');
+  await page.locator('#melody-snap-scale').click();
+  assert.equal(await clipPitch.inputValue(),'62','D-major snap should edit the selected clip');
+  await page.locator('#melody-lane-select').selectOption('');
+  assert.equal(await melodyPitch.inputValue(),pitchBeforeClipSnap,'snap on the clip must leave standalone melody pitch unchanged');
+  await page.locator('#melody-lane-select').selectOption(await page.locator('#melody-lane-select option').nth(1).getAttribute('value'));
+  await page.locator('#melody-notes select[aria-label="Note 1 pitch"]').selectOption(pitchBeforeClipSnap);
   await page.addScriptTag({path:axePath});
   const clipAxe=await page.evaluate(async()=>axe.run(document.querySelector('#voice-melody-tool')));
   const clipAxeViolations=JSON.stringify(clipAxe.violations.map(item=>({id:item.id,nodes:item.nodes.map(node=>node.target)})));
