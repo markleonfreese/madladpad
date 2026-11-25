@@ -57,7 +57,7 @@ export function renderMelodyRoll(host,notes,onChange,onAudition,focusIndex,maxSt
     }
     host.querySelector('.melody-roll-scroll')?.replaceChildren(svg);
     const status=host.querySelector('.melody-roll-status');
-    status.textContent=shown.length?`${shown.length} note${shown.length===1?'':'s'} in this view. Tap an empty row to add a note. Drag a note to move it and its right handle to resize it.`:'No notes in this view. Tap an empty row to add a note.';
+    status.textContent=shown.length?`${shown.length} note${shown.length===1?'':'s'} in this view. Tap to add a note, or drag across an empty row to choose its length. Tap a note to audition; drag to move or resize.`:'No notes in this view. Tap to add a note, or drag across an empty row to choose its length.';
     status.setAttribute('aria-label',status.textContent);
     if(Number.isInteger(focusIndex))host.querySelector(`[data-note-index="${focusIndex}"]`)?.focus();
     attachInteractions(svg,{notes,start,end,visibleSteps,width,high,onChange,onAudition,maxSteps});
@@ -74,35 +74,79 @@ export function renderMelodyRoll(host,notes,onChange,onAudition,focusIndex,maxSt
   render(focusIndex);
 }
 
-function attachInteractions(svg,{notes,start,end,visibleSteps,width,high,onChange,onAudition,maxSteps}){
+export function attachInteractions(svg,{notes,start,end,width,high,onChange,onAudition,maxSteps}){
   const position=event=>{const rect=svg.getBoundingClientRect();return {x:clamp((event.clientX-rect.left)/rect.width*width,AXIS,width),y:clamp((event.clientY-rect.top)/rect.height*HEIGHT,TOP,HEIGHT-1)};};
+  const stepAt=point=>clamp(start+Math.floor((point.x-AXIS)/STEP),start,Math.min(end,maxSteps)-1);
+  const pitchAt=point=>clamp(high-Math.floor((point.y-TOP)/ROW),24,108);
   let gesture=null;
+  const paintNote=(index,note)=>{
+    const group=svg.querySelector('[data-note-group="'+index+'"]');if(!group)return;
+    const clippedStart=Math.max(start,note.step),clippedEnd=Math.min(end,note.step+note.duration),x=AXIS+(clippedStart-start)*STEP,y=TOP+(high-note.midi)*ROW,w=Math.max(3,(clippedEnd-clippedStart)*STEP-2);
+    const shape=group.querySelector('[data-note-index]'),handle=group.querySelector('[data-resize-index]');
+    shape.setAttribute('x',x);shape.setAttribute('y',y+1);shape.setAttribute('width',w);
+    shape.setAttribute('aria-label',(note.layer==='harmony'?'Harmony':'Lead')+' '+midiNoteName(note.midi)+' at '+melodyPositionLabel(note.step)+', length '+note.duration+' sixteenth steps, velocity '+(note.velocity??96)+' of 127. Arrow keys move; Shift plus left or right resizes; Enter auditions; Delete removes.');
+    handle.setAttribute('x',x+w-5);handle.setAttribute('y',y+1);handle.setAttribute('aria-valuenow',note.duration);
+  };
+  const paintDraw=g=>{
+    const note=g.preview;
+    for(const [key,value] of Object.entries({x:AXIS+(note.step-start)*STEP,y:TOP+(high-note.midi)*ROW+1,width:Math.max(3,(Math.min(end,note.step+note.duration)-note.step)*STEP-2),height:ROW-2,rx:3,class:'melody-roll-note',opacity:.45,'pointer-events':'none','aria-hidden':'true','data-draw-preview':'true'}))g.ghost.setAttribute(key,String(value));
+  };
+  const update=event=>{
+    const g=gesture,point=position(event);
+    if(g.kind==='draw'){
+      const step=stepAt(point);
+      if(step!==g.anchor)g.dragged=true;
+      const first=g.dragged?Math.min(step,g.anchor):g.anchor;
+      const duration=g.dragged?Math.abs(step-g.anchor)+1:4;
+      g.preview.step=first;g.preview.duration=Math.min(duration,maxSteps-first);
+      paintDraw(g);return;
+    }
+    // The time axis starts after the piano keys: one grid STEP is one sixteenth.
+    const deltaStep=Math.round((point.x-g.x)/STEP);
+    const deltaPitch=Math.round((point.y-g.y)/ROW);
+    const preview={...g.original};
+    if(g.kind==='resize')preview.duration=clamp(g.original.duration+deltaStep,.125,maxSteps-g.original.step);
+    else{
+      preview.step=clamp(g.original.step+deltaStep,0,maxSteps-1);
+      preview.midi=clamp(g.original.midi-deltaPitch,24,108);
+      preview.duration=clamp(g.original.duration,.125,maxSteps-preview.step);
+    }
+    g.preview=preview;paintNote(g.index,preview);
+  };
   svg.addEventListener('pointerdown',event=>{
+    if(gesture||event.button!==0||event.isPrimary===false)return;
     const handle=event.target.closest('[data-resize-index]'),shape=event.target.closest('[data-note-index]');
     if(handle||shape){
       const index=Number((handle||shape).getAttribute(handle?'data-resize-index':'data-note-index')),note=notes[index],point=position(event);
       if(!note)return;
-      gesture={kind:handle?'resize':'move',index,note,x:point.x,y:point.y,step:note.step,midi:note.midi,duration:note.duration};
-      svg.setPointerCapture(event.pointerId);event.preventDefault();return;
+      gesture={kind:handle?'resize':'move',index,original:{...note},preview:{...note},x:point.x,y:point.y,pointerId:event.pointerId};
+    }else{
+      if(!event.target.closest('[data-roll-grid]'))return;
+      if(notes.length>=MAX_MELODY_NOTES){const status=svg.parentElement.parentElement.querySelector('.melody-roll-status');status.textContent='The melody has reached its '+MAX_MELODY_NOTES+'-note limit.';return;}
+      const point=position(event),step=stepAt(point);
+      const ghost=svg.ownerDocument.createElementNS('http://www.w3.org/2000/svg','rect');
+      gesture={kind:'draw',anchor:step,dragged:false,pointerId:event.pointerId,ghost,preview:{midi:pitchAt(point),step,duration:Math.min(4,maxSteps-step),velocity:96,word:'',layer:'lead'}};
+      svg.append(ghost);paintDraw(gesture);
     }
-    if(!event.target.closest('[data-roll-grid]'))return;
-    const point=position(event),row=clamp(Math.floor((point.y-TOP)/ROW),0,ROWS-1),step=clamp(start+Math.floor((point.x-AXIS)/STEP),start,end-1);
-    if(notes.length>=MAX_MELODY_NOTES){const status=svg.parentElement.parentElement.querySelector('.melody-roll-status');status.textContent=`The melody has reached its ${MAX_MELODY_NOTES}-note limit.`;return;}
-    notes.push({midi:high-row,step,duration:Math.min(4,maxSteps-step),velocity:96,word:'',layer:'lead'});
-    onChange(notes.length-1);
+    svg.setPointerCapture(event.pointerId);event.preventDefault();
   });
-  svg.addEventListener('pointermove',event=>{
-    if(!gesture)return;const point=position(event),deltaStep=Math.round((point.x-gesture.x)/width*visibleSteps);
-    if(gesture.kind==='resize')gesture.note.duration=clamp(gesture.duration+deltaStep,.125,maxSteps-gesture.note.step);
-    else {gesture.note.step=clamp(gesture.step+deltaStep,0,maxSteps-1);gesture.note.midi=clamp(gesture.midi-Math.round((point.y-gesture.y)/HEIGHT*HEIGHT/ROW),24,108);gesture.note.duration=clamp(gesture.duration,.125,maxSteps-gesture.note.step);}
-    const group=svg.querySelector(`[data-note-group="${gesture.index}"]`);if(!group)return;
-    const note=gesture.note,clippedStart=Math.max(start,note.step),clippedEnd=Math.min(end,note.step+note.duration),x=AXIS+(clippedStart-start)*STEP,y=TOP+(high-note.midi)*ROW,w=Math.max(3,(clippedEnd-clippedStart)*STEP-2);
-    const shape=group.querySelector('[data-note-index]'),handle=group.querySelector('[data-resize-index]');
-    shape.setAttribute('x',x);shape.setAttribute('y',y+1);shape.setAttribute('width',w);shape.setAttribute('aria-label',`${note.layer==='harmony'?'Harmony':'Lead'} ${midiNoteName(note.midi)} at ${melodyPositionLabel(note.step)}, length ${note.duration} sixteenth steps, velocity ${note.velocity??96} of 127. Arrow keys move; Shift plus left or right resizes; Enter auditions; Delete removes.`);
-    handle.setAttribute('x',x+w-5);handle.setAttribute('y',y+1);handle.setAttribute('aria-valuenow',note.duration);
-  });
-  const finish=event=>{if(!gesture)return;const index=gesture.index;gesture=null;if(svg.hasPointerCapture(event.pointerId))svg.releasePointerCapture(event.pointerId);onChange(index);};
-  svg.addEventListener('pointerup',finish);svg.addEventListener('pointercancel',finish);
+  svg.addEventListener('pointermove',event=>{if(gesture&&gesture.pointerId===event.pointerId)update(event);});
+  const finish=(event,commit)=>{
+    if(!gesture||gesture.pointerId!==event.pointerId)return;
+    if(commit)update(event);
+    const g=gesture;gesture=null;
+    if(g.kind==='draw')g.ghost.remove();
+    else if(!commit)paintNote(g.index,g.original);
+    if(svg.hasPointerCapture(event.pointerId))svg.releasePointerCapture(event.pointerId);
+    if(!commit)return;
+    if(g.kind==='draw'){notes.push(g.preview);onChange(notes.length-1);}
+    else if(g.preview.step!==g.original.step||g.preview.midi!==g.original.midi||g.preview.duration!==g.original.duration){
+      Object.assign(notes[g.index],g.preview);onChange(g.index);
+    }else if(g.kind==='move')onAudition?.(notes[g.index]);
+  };
+  svg.addEventListener('pointerup',event=>finish(event,true));
+  svg.addEventListener('pointercancel',event=>finish(event,false));
+  svg.addEventListener('lostpointercapture',event=>finish(event,false));
   svg.addEventListener('keydown',event=>{
     const handle=event.target.closest('[data-resize-index]'),shape=event.target.closest('[data-note-index]');if(!handle&&!shape)return;
     const index=Number((handle||shape).getAttribute(handle?'data-resize-index':'data-note-index')),note=notes[index];if(!note)return;
@@ -111,7 +155,7 @@ function attachInteractions(svg,{notes,start,end,visibleSteps,width,high,onChang
     const resize=handle||event.shiftKey;
     if(event.key==='ArrowLeft'||event.key==='ArrowRight'){
       event.preventDefault();const delta=event.key==='ArrowLeft'?-1:1;
-      if(resize)note.duration=clamp(note.duration+delta,.125,maxSteps-note.step);else note.step=clamp(note.step+delta,0,maxSteps-1);
+      if(resize)note.duration=clamp(note.duration+delta,.125,maxSteps-note.step);else {note.step=clamp(note.step+delta,0,maxSteps-1);note.duration=clamp(note.duration,.125,maxSteps-note.step);}
     }else if(!handle&&(event.key==='ArrowUp'||event.key==='ArrowDown')){
       event.preventDefault();note.midi=clamp(note.midi+(event.key==='ArrowUp'?1:-1),24,108);
     }else return;
