@@ -2,6 +2,8 @@
 
 An installable, local-first audiovisual sampler inspired by Smule's MadPad and the looper/pitch-play ideas in [Mr Not So Brightside](https://github.com/markleonfreese/mr-not-so-brightside).
 
+**Maturity:** prototype · local-first PWA with a public static demo. **Created by [Mark Freese](https://markfreese.com).** Try the [live demo](https://madladpad.pages.dev), browse the [source](https://github.com/markleonfreese/madladpad), or send [feedback](https://github.com/markleonfreese/madladpad/issues/new).
+
 ## MVP features
 
 - Play 4, 12 or 16 audio, video and photo pads with touch, keyboard or optional Web MIDI.
